@@ -3,7 +3,7 @@
  * URLs relatives → fonctionne en dev comme en prod sans config.
  */
 
-async function fetcher<T>(url: string, options?: RequestInit): Promise<T> {
+async function fetcher<T = any>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...options,
     headers: { 'Content-Type': 'application/json', ...options?.headers },

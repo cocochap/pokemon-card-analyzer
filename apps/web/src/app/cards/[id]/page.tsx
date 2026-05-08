@@ -25,7 +25,7 @@ interface CardPageProps {
 export async function generateMetadata({ params }: CardPageProps): Promise<Metadata> {
   const { id } = await params
   try {
-    const card = await api.cards.getById(id)
+    const card: any = await api.cards.getById(id)
     return {
       title: `${card.name} — ${card.set.name}`,
       description: `Track ${card.name} prices, market trends, and AI predictions. Current price: ${card.marketData?.currentPrice ?? 'N/A'}`,
@@ -41,7 +41,7 @@ export async function generateMetadata({ params }: CardPageProps): Promise<Metad
 export default async function CardDetailPage({ params }: CardPageProps) {
   const { id } = await params
 
-  let card
+  let card: any
   try {
     card = await api.cards.getById(id)
   } catch {

@@ -54,8 +54,8 @@ export function AlertsDashboard() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
   })
 
-  const activeAlerts = alerts?.filter((a: any) => a.status === 'ACTIVE') ?? []
-  const triggeredAlerts = alerts?.filter((a: any) => a.status === 'TRIGGERED') ?? []
+  const activeAlerts = (alerts as any[])?.filter((a: any) => a.status === 'ACTIVE') ?? []
+  const triggeredAlerts = (alerts as any[])?.filter((a: any) => a.status === 'TRIGGERED') ?? []
 
   return (
     <div className="space-y-6">

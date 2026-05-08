@@ -116,7 +116,7 @@ export function CardAiAnalysis({ cardId }: CardAiAnalysisProps) {
           <div>
             <h3 className="font-semibold">AI Market Analysis</h3>
             <p className="text-xs text-muted-foreground">
-              Confidence: {(data.confidenceScore * 100).toFixed(0)}% · Updated {new Date(data.updatedAt).toRelativeTimeString?.() ?? 'recently'}
+              Confidence: {(data.confidenceScore * 100).toFixed(0)}% · Updated recently
             </p>
           </div>
         </div>
