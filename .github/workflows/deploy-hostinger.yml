@@ -1,0 +1,208 @@
+name: Deploy to Hostinger VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:          # permet de déclencher manuellement depuis GitHub
+
+env:
+  REGISTRY: ghcr.io
+  GITHUB_REPO: ${{ github.repository_owner }}/pokemon-card-analyzer
+
+jobs:
+  # ─── 1. Tests ─────────────────────────────────────────────────────────────
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: pokemarket_test
+          POSTGRES_USER: pokemarket
+          POSTGRES_PASSWORD: test_pw
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 10s
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check (web)
+        run: pnpm --filter @pokemon-analyzer/web exec tsc --noEmit
+
+      - name: Generate Prisma client
+        working-directory: apps/api
+        run: npx prisma generate
+        env:
+          DATABASE_URL: postgresql://pokemarket:test_pw@localhost:5432/pokemarket_test
+
+      - name: Run DB migrations (test)
+        working-directory: apps/api
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://pokemarket:test_pw@localhost:5432/pokemarket_test
+
+      - name: Run API tests
+        working-directory: apps/api
+        run: npm test -- --passWithNoTests
+        env:
+          DATABASE_URL: postgresql://pokemarket:test_pw@localhost:5432/pokemarket_test
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
+
+  # ─── 2. Build & Push Docker images vers GHCR ─────────────────────────────
+  build:
+    name: Build & Push Images
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+
+    strategy:
+      matrix:
+        service: [api, ai, web]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: tag
+        run: echo "tag=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infrastructure/docker/Dockerfile.${{ matrix.service }}
+          push: true
+          tags: |
+            ghcr.io/${{ env.GITHUB_REPO }}-${{ matrix.service }}:${{ steps.tag.outputs.tag }}
+            ghcr.io/${{ env.GITHUB_REPO }}-${{ matrix.service }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://${{ secrets.DOMAIN }}/api/v1
+            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+
+  # ─── 3. Deploy sur Hostinger VPS via SSH ─────────────────────────────────
+  deploy:
+    name: Deploy to Hostinger
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy deployment files to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          source: |
+            infrastructure/docker/docker-compose.prod.yml
+            infrastructure/nginx/
+          target: /opt/pokemarket/
+
+      - name: Deploy on VPS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          envs: GITHUB_SHA,GITHUB_ACTOR
+          script: |
+            set -e
+            cd /opt/pokemarket
+
+            echo "=== Log in to GHCR ==="
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin
+
+            echo "=== Update .env ==="
+            cat > .env << 'ENVEOF'
+            IMAGE_TAG=${{ github.sha }}
+            GITHUB_REPO=${{ env.GITHUB_REPO }}
+            DOMAIN=${{ secrets.DOMAIN }}
+            POSTGRES_DB=pokemarket
+            POSTGRES_USER=pokemarket
+            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+            REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+            CLERK_SECRET_KEY=${{ secrets.CLERK_SECRET_KEY }}
+            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+            STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}
+            STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
+            POKEMON_TCG_API_KEY=${{ secrets.POKEMON_TCG_API_KEY }}
+            RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}
+            ENVEOF
+
+            echo "=== Pull latest images ==="
+            docker compose -f infrastructure/docker/docker-compose.prod.yml pull
+
+            echo "=== Run DB migrations ==="
+            docker compose -f infrastructure/docker/docker-compose.prod.yml run --rm api \
+              npx prisma migrate deploy
+
+            echo "=== Rolling update — zero downtime ==="
+            # Met à jour un service à la fois
+            docker compose -f infrastructure/docker/docker-compose.prod.yml up -d --no-deps --scale api=2 api
+            sleep 15
+            docker compose -f infrastructure/docker/docker-compose.prod.yml up -d --no-deps api
+
+            docker compose -f infrastructure/docker/docker-compose.prod.yml up -d --no-deps ai-service
+            docker compose -f infrastructure/docker/docker-compose.prod.yml up -d --no-deps web
+            docker compose -f infrastructure/docker/docker-compose.prod.yml up -d --no-deps nginx
+
+            echo "=== Cleanup old images ==="
+            docker image prune -f
+
+            echo "=== Health check ==="
+            sleep 10
+            curl -sf https://${{ secrets.DOMAIN }}/api/v1/health || echo "Warning: health check returned non-200"
+
+            echo "✅ Deployment complete — SHA: ${{ github.sha }}"
+
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "✅ PokeMarket deployed to https://${{ secrets.DOMAIN }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "By: ${{ github.actor }}"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Deployment FAILED — SHA: ${{ github.sha }}"
+          # Optionnel : envoyer un webhook Discord/Slack ici

@@ -1,0 +1,659 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum Language {
+  EN
+  JP
+  FR
+  DE
+  IT
+  ES
+  PT
+  KO
+  ZH
+}
+
+enum Rarity {
+  COMMON
+  UNCOMMON
+  RARE
+  RARE_HOLO
+  RARE_HOLO_EX
+  RARE_HOLO_GX
+  RARE_HOLO_V
+  RARE_HOLO_VMAX
+  RARE_HOLO_VSTAR
+  RARE_ULTRA
+  RARE_RAINBOW
+  RARE_SECRET
+  RARE_SHINY
+  RARE_SHINY_GX
+  RARE_PRISM
+  AMAZING_RARE
+  LEGEND
+  PROMO
+  ILLUSTRATION_RARE
+  SPECIAL_ILLUSTRATION_RARE
+  HYPER_RARE
+  TRAINER_GALLERY_HOLO
+  TRAINER_GALLERY_HOLO_V
+  TRAINER_GALLERY_HOLO_VMAX
+  CROWN_RARE
+  UNKNOWN
+}
+
+enum CardVariant {
+  NORMAL
+  HOLO
+  REVERSE_HOLO
+  FIRST_EDITION
+  SHADOWLESS
+  UNLIMITED
+  PROMO
+  STAMP
+  PRERELEASE
+  STAFF
+  ERROR
+}
+
+enum GradeCompany {
+  PSA
+  BGS
+  CGC
+  SGC
+  HGA
+  ACE
+}
+
+enum TrendDirection {
+  BULLISH
+  BEARISH
+  STABLE
+  VOLATILE
+}
+
+enum AlertType {
+  PRICE_ABOVE
+  PRICE_BELOW
+  PRICE_CHANGE_PERCENT
+  VOLUME_SPIKE
+  GRADE_LISTING
+  NEW_SALE
+  AI_SIGNAL
+}
+
+enum AlertStatus {
+  ACTIVE
+  TRIGGERED
+  PAUSED
+  EXPIRED
+}
+
+enum SubscriptionTier {
+  FREE
+  STARTER
+  PRO
+  ELITE
+}
+
+enum TransactionType {
+  BUY
+  SELL
+  TRADE
+  GIFT
+  FOUND
+}
+
+// ============================================================
+// USERS & AUTH
+// ============================================================
+
+model User {
+  id               String           @id @default(cuid())
+  clerkId          String           @unique
+  email            String           @unique
+  username         String?          @unique
+  displayName      String?
+  avatarUrl        String?
+  bio              String?
+  tier             SubscriptionTier @default(FREE)
+  stripeCustomerId String?          @unique
+  isVerified       Boolean          @default(false)
+  isAdmin          Boolean          @default(false)
+  preferences      Json             @default("{}")
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  portfolio        Portfolio?
+  watchlist        WatchlistItem[]
+  alerts           Alert[]
+  transactions     Transaction[]
+  subscriptions    Subscription[]
+  apiKeys          ApiKey[]
+
+  @@index([clerkId])
+  @@index([email])
+}
+
+model Subscription {
+  id                 String           @id @default(cuid())
+  userId             String
+  stripeSubscriptionId String?        @unique
+  tier               SubscriptionTier
+  status             String
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean          @default(false)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  key       String   @unique
+  hashedKey String   @unique
+  lastUsed  DateTime?
+  expiresAt DateTime?
+  isActive  Boolean  @default(true)
+  rateLimit Int      @default(1000)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([hashedKey])
+}
+
+// ============================================================
+// POKEMON SETS
+// ============================================================
+
+model PokemonSet {
+  id           String    @id @default(cuid())
+  externalId   String    @unique
+  name         String
+  series       String
+  language     Language  @default(EN)
+  releaseDate  DateTime
+  totalCards   Int
+  printedTotal Int
+  symbolUrl    String?
+  logoUrl      String?
+  isLegal      Boolean   @default(true)
+  isSealed     Boolean   @default(false)
+  ptcgoCode    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  cards        Card[]
+  sealedProducts SealedProduct[]
+  marketData   SetMarketData[]
+
+  @@index([series])
+  @@index([language])
+  @@index([releaseDate])
+}
+
+// ============================================================
+// CARDS
+// ============================================================
+
+model Card {
+  id                String      @id @default(cuid())
+  externalId        String      @unique
+  setId             String
+  name              String
+  localeName        Json        @default("{}")
+  number            String
+  supertype         String
+  subtypes          String[]
+  types             String[]
+  rarity            Rarity      @default(UNKNOWN)
+  variant           CardVariant @default(NORMAL)
+  language          Language    @default(EN)
+  imageSmUrl        String?
+  imageLgUrl        String?
+  illustrator       String?
+  flavorText        String?
+  hp                Int?
+  evolvesFrom       String?
+  evolvesTo         String[]
+  attacks           Json        @default("[]")
+  abilities         Json        @default("[]")
+  weaknesses        Json        @default("[]")
+  resistances       Json        @default("[]")
+  retreatCost       String[]
+  regulationMark    String?
+  isLegal           Boolean     @default(true)
+  nationalPokedexNumbers Int[]
+  tcgplayerId       String?
+  cardmarketId      String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  set               PokemonSet        @relation(fields: [setId], references: [id])
+  prices            CardPrice[]
+  gradedPrices      GradedCardPrice[]
+  marketData        CardMarketData?
+  aiAnalysis        CardAiAnalysis?
+  portfolioItems    PortfolioItem[]
+  watchlistItems    WatchlistItem[]
+  alerts            Alert[]
+  priceHistory      PriceHistory[]
+  salesHistory      SaleEvent[]
+  popularityMetrics PopularityMetric[]
+
+  @@index([setId])
+  @@index([name])
+  @@index([rarity])
+  @@index([language])
+  @@index([number])
+  @@index([illustrator])
+  @@index([tcgplayerId])
+  @@index([cardmarketId])
+}
+
+// ============================================================
+// PRICE DATA
+// ============================================================
+
+model CardPrice {
+  id           String      @id @default(cuid())
+  cardId       String
+  source       String
+  variant      CardVariant @default(NORMAL)
+  low          Decimal?    @db.Decimal(10, 2)
+  mid          Decimal?    @db.Decimal(10, 2)
+  high         Decimal?    @db.Decimal(10, 2)
+  market       Decimal?    @db.Decimal(10, 2)
+  directLow    Decimal?    @db.Decimal(10, 2)
+  currency     String      @default("EUR")
+  updatedAt    DateTime    @updatedAt
+  fetchedAt    DateTime    @default(now())
+
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId, source, variant])
+  @@index([cardId])
+  @@index([source])
+  @@index([fetchedAt])
+}
+
+model GradedCardPrice {
+  id           String       @id @default(cuid())
+  cardId       String
+  company      GradeCompany
+  grade        Decimal      @db.Decimal(4, 1)
+  avgSalePrice Decimal?     @db.Decimal(10, 2)
+  lastSalePrice Decimal?    @db.Decimal(10, 2)
+  population   Int?
+  currency     String       @default("USD")
+  updatedAt    DateTime     @updatedAt
+  fetchedAt    DateTime     @default(now())
+
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId, company, grade])
+  @@index([cardId])
+  @@index([company])
+  @@index([grade])
+}
+
+model PriceHistory {
+  id        String      @id @default(cuid())
+  cardId    String
+  source    String
+  variant   CardVariant @default(NORMAL)
+  price     Decimal     @db.Decimal(10, 2)
+  volume    Int?
+  currency  String      @default("EUR")
+  recordedAt DateTime
+
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@index([cardId, recordedAt])
+  @@index([cardId, source])
+  @@index([recordedAt])
+}
+
+model SaleEvent {
+  id          String      @id @default(cuid())
+  cardId      String
+  source      String
+  variant     CardVariant @default(NORMAL)
+  grade       Decimal?    @db.Decimal(4, 1)
+  gradeCompany GradeCompany?
+  salePrice   Decimal     @db.Decimal(10, 2)
+  currency    String      @default("EUR")
+  platform    String
+  listingUrl  String?
+  condition   String?
+  soldAt      DateTime
+  fetchedAt   DateTime    @default(now())
+
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@index([cardId])
+  @@index([soldAt])
+  @@index([source])
+}
+
+// ============================================================
+// MARKET DATA & ANALYTICS
+// ============================================================
+
+model CardMarketData {
+  id                  String         @id @default(cuid())
+  cardId              String         @unique
+  marketCap           Decimal?       @db.Decimal(14, 2)
+  volume24h           Decimal?       @db.Decimal(14, 2)
+  volume7d            Decimal?       @db.Decimal(14, 2)
+  priceChange24h      Decimal?       @db.Decimal(8, 4)
+  priceChange7d       Decimal?       @db.Decimal(8, 4)
+  priceChange30d      Decimal?       @db.Decimal(8, 4)
+  priceChange1y       Decimal?       @db.Decimal(8, 4)
+  allTimeHigh         Decimal?       @db.Decimal(10, 2)
+  allTimeLow          Decimal?       @db.Decimal(10, 2)
+  allTimeHighDate     DateTime?
+  allTimeLowDate      DateTime?
+  volatility7d        Decimal?       @db.Decimal(8, 4)
+  volatility30d       Decimal?       @db.Decimal(8, 4)
+  rsi14               Decimal?       @db.Decimal(6, 2)
+  investmentScore     Int?
+  rarityScore         Int?
+  liquidityScore      Int?
+  trendDirection      TrendDirection @default(STABLE)
+  updatedAt           DateTime       @updatedAt
+
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+}
+
+model SetMarketData {
+  id             String   @id @default(cuid())
+  setId          String
+  totalMarketCap Decimal? @db.Decimal(16, 2)
+  volume24h      Decimal? @db.Decimal(14, 2)
+  priceChange24h Decimal? @db.Decimal(8, 4)
+  avgCardPrice   Decimal? @db.Decimal(10, 2)
+  recordedAt     DateTime @default(now())
+
+  set PokemonSet @relation(fields: [setId], references: [id], onDelete: Cascade)
+
+  @@index([setId, recordedAt])
+}
+
+model MarketIndex {
+  id         String   @id @default(cuid())
+  indexType  String
+  value      Decimal  @db.Decimal(12, 4)
+  change24h  Decimal? @db.Decimal(8, 4)
+  change7d   Decimal? @db.Decimal(8, 4)
+  change30d  Decimal? @db.Decimal(8, 4)
+  recordedAt DateTime @default(now())
+
+  @@index([indexType, recordedAt])
+}
+
+model PopularityMetric {
+  id         String   @id @default(cuid())
+  cardId     String
+  views      Int      @default(0)
+  searches   Int      @default(0)
+  watchlists Int      @default(0)
+  socialMentions Int  @default(0)
+  recordedAt DateTime @default(now())
+
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@index([cardId, recordedAt])
+}
+
+// ============================================================
+// AI PREDICTIONS & ANALYSIS
+// ============================================================
+
+model CardAiAnalysis {
+  id                  String         @id @default(cuid())
+  cardId              String         @unique
+  investmentScore     Int
+  rarityScore         Int
+  liquidityScore      Int
+  riskLevel           Int
+  predictedRoi30d     Decimal?       @db.Decimal(8, 4)
+  predictedRoi90d     Decimal?       @db.Decimal(8, 4)
+  trendDirection      TrendDirection
+  confidenceScore     Decimal        @db.Decimal(5, 4)
+  bullishSignals      String[]
+  bearishSignals      String[]
+  keyInsight          String?
+  modelVersion        String
+  analyzedAt          DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  card                Card             @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  predictions         PricePrediction[]
+}
+
+model PricePrediction {
+  id             String   @id @default(cuid())
+  analysisId     String
+  horizonDays    Int
+  predictedPrice Decimal  @db.Decimal(10, 2)
+  lowerBound     Decimal  @db.Decimal(10, 2)
+  upperBound     Decimal  @db.Decimal(10, 2)
+  confidence     Decimal  @db.Decimal(5, 4)
+  modelName      String
+  createdAt      DateTime @default(now())
+
+  analysis CardAiAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@index([analysisId])
+}
+
+// ============================================================
+// SEALED PRODUCTS
+// ============================================================
+
+model SealedProduct {
+  id          String   @id @default(cuid())
+  setId       String
+  name        String
+  type        String
+  language    Language @default(EN)
+  msrp        Decimal? @db.Decimal(10, 2)
+  imageUrl    String?
+  releaseDate DateTime?
+  isRetail    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  set        PokemonSet         @relation(fields: [setId], references: [id])
+  prices     SealedProductPrice[]
+
+  @@index([setId])
+}
+
+model SealedProductPrice {
+  id        String   @id @default(cuid())
+  productId String
+  source    String
+  price     Decimal  @db.Decimal(10, 2)
+  currency  String   @default("EUR")
+  url       String?
+  updatedAt DateTime @updatedAt
+
+  product SealedProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, source])
+}
+
+// ============================================================
+// PORTFOLIO
+// ============================================================
+
+model Portfolio {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  name        String   @default("My Collection")
+  description String?
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items        PortfolioItem[]
+  snapshots    PortfolioSnapshot[]
+
+  @@index([userId])
+}
+
+model PortfolioItem {
+  id           String          @id @default(cuid())
+  portfolioId  String
+  cardId       String
+  variant      CardVariant     @default(NORMAL)
+  grade        Decimal?        @db.Decimal(4, 1)
+  gradeCompany GradeCompany?
+  quantity     Int             @default(1)
+  purchasePrice Decimal?       @db.Decimal(10, 2)
+  purchasedAt  DateTime?
+  notes        String?
+  condition    String?
+  imageUrl     String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  portfolio    Portfolio       @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  card         Card            @relation(fields: [cardId], references: [id])
+  transactions Transaction[]
+
+  @@index([portfolioId])
+  @@index([cardId])
+}
+
+model PortfolioSnapshot {
+  id          String   @id @default(cuid())
+  portfolioId String
+  totalValue  Decimal  @db.Decimal(14, 2)
+  totalCost   Decimal  @db.Decimal(14, 2)
+  totalPnl    Decimal  @db.Decimal(14, 2)
+  pnlPercent  Decimal  @db.Decimal(8, 4)
+  cardCount   Int
+  recordedAt  DateTime @default(now())
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@index([portfolioId, recordedAt])
+}
+
+model Transaction {
+  id              String          @id @default(cuid())
+  userId          String
+  portfolioItemId String?
+  cardId          String?
+  type            TransactionType
+  quantity        Int             @default(1)
+  price           Decimal         @db.Decimal(10, 2)
+  fees            Decimal?        @db.Decimal(10, 2)
+  platform        String?
+  notes           String?
+  transactedAt    DateTime
+  createdAt       DateTime        @default(now())
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portfolioItem PortfolioItem? @relation(fields: [portfolioItemId], references: [id])
+
+  @@index([userId])
+  @@index([transactedAt])
+}
+
+// ============================================================
+// ALERTS & WATCHLIST
+// ============================================================
+
+model Alert {
+  id          String      @id @default(cuid())
+  userId      String
+  cardId      String
+  type        AlertType
+  status      AlertStatus @default(ACTIVE)
+  targetValue Decimal?    @db.Decimal(10, 2)
+  targetPercent Decimal?  @db.Decimal(8, 4)
+  source      String?
+  variant     CardVariant @default(NORMAL)
+  notifyEmail Boolean     @default(true)
+  notifyPush  Boolean     @default(false)
+  triggeredAt DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  card       Card       @relation(fields: [cardId], references: [id])
+  history    AlertHistory[]
+
+  @@index([userId])
+  @@index([cardId])
+  @@index([status])
+}
+
+model AlertHistory {
+  id          String   @id @default(cuid())
+  alertId     String
+  triggeredAt DateTime @default(now())
+  triggerValue Decimal @db.Decimal(10, 2)
+  notified    Boolean  @default(false)
+
+  alert Alert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+
+  @@index([alertId])
+}
+
+model WatchlistItem {
+  id        String   @id @default(cuid())
+  userId    String
+  cardId    String
+  notes     String?
+  addedAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  card Card @relation(fields: [cardId], references: [id])
+
+  @@unique([userId, cardId])
+  @@index([userId])
+  @@index([cardId])
+}
+
+// ============================================================
+// PSA POPULATION DATA
+// ============================================================
+
+model PsaPopulation {
+  id           String       @id @default(cuid())
+  cardId       String
+  company      GradeCompany
+  grade        Decimal      @db.Decimal(4, 1)
+  population   Int
+  qualifyCount Int?
+  updatedAt    DateTime     @updatedAt
+  fetchedAt    DateTime     @default(now())
+
+  @@unique([cardId, company, grade])
+  @@index([cardId])
+}

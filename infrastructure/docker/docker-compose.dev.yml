@@ -1,0 +1,144 @@
+version: '3.9'
+
+services:
+  # ─── Infrastructure ──────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: pokemarket-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pokemarket
+      POSTGRES_USER: pokemarket
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pokemarket"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: pokemarket-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save ""
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: pokemarket-redis-ui
+    environment:
+      REDIS_HOSTS: "local:redis:6379"
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    profiles: [tools]
+
+  # ─── API (NestJS) ─────────────────────────────────────────────────────
+
+  api:
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile.dev
+    container_name: pokemarket-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://pokemarket:${POSTGRES_PASSWORD:-dev_password}@postgres:5432/pokemarket
+      REDIS_URL: redis://redis:6379
+      FRONTEND_URL: http://localhost:3000
+      AI_SERVICE_URL: http://ai-service:8000
+      PORT: 3001
+    ports:
+      - "3001:3001"
+    volumes:
+      - ../../apps/api/src:/app/src
+      - ../../apps/api/prisma:/app/prisma
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["npm", "run", "dev"]
+
+  # ─── AI Service (Python/FastAPI) ──────────────────────────────────────
+
+  ai-service:
+    build:
+      context: ../../apps/ai-service
+      dockerfile: Dockerfile
+    container_name: pokemarket-ai
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://pokemarket:${POSTGRES_PASSWORD:-dev_password}@postgres:5432/pokemarket
+      REDIS_URL: redis://redis:6379
+      FRONTEND_URL: http://localhost:3000
+      API_URL: http://api:3001
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../../apps/ai-service/src:/app/src
+      - ai_models:/app/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  # ─── Web (Next.js) — optional in dev, usually run locally ─────────────
+
+  web:
+    build:
+      context: ../../apps/web
+      dockerfile: Dockerfile.dev
+    container_name: pokemarket-web
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1
+      NEXT_PUBLIC_WS_URL: ws://localhost:3001
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../../apps/web/src:/app/src
+      - ../../apps/web/public:/app/public
+    depends_on:
+      - api
+    profiles: [full]
+
+  # ─── PgAdmin ──────────────────────────────────────────────────────────
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pokemarket-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@pokemarket.io
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    profiles: [tools]
+
+volumes:
+  postgres_data:
+  redis_data:
+  ai_models:
+
+networks:
+  default:
+    name: pokemarket-network
