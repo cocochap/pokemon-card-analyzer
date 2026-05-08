@@ -4,10 +4,9 @@ const nextConfig: NextConfig = {
   output: 'standalone',   // nécessaire pour Vercel + Prisma
   images: {
     remotePatterns: [
-      { protocol: 'https', hostname: 'images.pokemontcg.io' },
+      { protocol: 'https', hostname: 'assets.tcgdex.net' },
       { protocol: 'https', hostname: 'limitlesstcg.nyc3.cdn.digitaloceanspaces.com' },
       { protocol: 'https', hostname: '*.cloudfront.net' },
-      { protocol: 'https', hostname: 'img.pokemoncard.io' },
     ],
   },
   experimental: {
