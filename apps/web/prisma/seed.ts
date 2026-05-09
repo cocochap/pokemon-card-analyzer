@@ -224,7 +224,10 @@ async function main() {
   console.log('🚀 Starting database seed...\n')
 
   try {
-    const sets = await fetchAllSets()
+    const RECENT_SET_IDS = ['sv10.5w', 'sv10.5b']
+    const allSets = await fetchAllSets()
+    const sets = allSets.filter(s => RECENT_SET_IDS.includes(s.id))
+    console.log(`Seeding sets: ${sets.map(s => s.name ?? s.id).join(', ')}\n`)
     await seedSets(sets)
     await seedCards(sets)
     await seedMarketData()
