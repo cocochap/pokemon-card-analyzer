@@ -100,15 +100,26 @@ export async function POST(req: NextRequest) {
   const results: Record<string, number> = {}
 
   for (const [ptcgId, setCards] of Object.entries(byPtcgId)) {
-    const tcgdexId = PTCG_TO_TCGDEX[ptcgId]
-    if (!tcgdexId) {
-      console.log(`⚠ Pas de mapping TCGdex pour: ${ptcgId}`)
-      continue
+    // Essayer le mapping explicite, puis le ptcgId directement (même ID dans TCGdex pour la plupart)
+    const candidates = [
+      PTCG_TO_TCGDEX[ptcgId],
+      ptcgId,
+      // ptcgId avec zéro padding : bw1 → bw01, dp1 → dp01
+      ptcgId.replace(/^([a-z]+)(\d+)(.*)$/, (_, p, n, s) => `${p}0${n}${s}`),
+    ].filter(Boolean) as string[]
+
+    let frNames: Record<string, string> = {}
+    for (const candidate of candidates) {
+      frNames = await fetchFrNames(candidate)
+      if (Object.keys(frNames).length > 0) break
     }
 
-    const frNames = await fetchFrNames(tcgdexId)
     if (Object.keys(frNames).length === 0) {
-      console.log(`✗ Aucun nom FR pour set ${tcgdexId}`)
+      failed++
+      continue
+    }
+    if (Object.keys(frNames).length === 0) {
+      console.log(`✗ Aucun nom FR pour set ${ptcgId}`)
       failed++
       continue
     }
@@ -131,7 +142,7 @@ export async function POST(req: NextRequest) {
     }
 
     results[ptcgId] = setUpdated
-    console.log(`✓ ${ptcgId} → ${tcgdexId}: ${setUpdated}/${setCards.length} noms FR`)
+    console.log(`✓ ${ptcgId}: ${setUpdated}/${setCards.length} noms FR`)
     await sleep(200) // rate limit
   }
 
