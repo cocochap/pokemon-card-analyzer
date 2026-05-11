@@ -25,7 +25,7 @@ function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)) }
 async function fixMarketData(limit: number) {
   // Cartes sans CardMarketData
   const cards = await prisma.card.findMany({
-    where: { marketData: null },
+    where: { marketData: { is: null } },
     select: { id: true, rarity: true, prices: { select: { market: true, source: true }, take: 1 } },
     take: limit,
   })
@@ -186,7 +186,7 @@ async function fixDigitalPrices(limit: number) {
       prices: { none: {} },
       set: { externalId: { in: digitalSets } },
     },
-    select: { id: true },
+    select: { id: true, externalId: true },
     take: limit,
   })
 
@@ -236,7 +236,7 @@ export async function POST(req: NextRequest) {
 
 export async function GET() {
   const [noMarket, noImage, noPrice, total] = await Promise.all([
-    prisma.card.count({ where: { marketData: null } }),
+    prisma.card.count({ where: { marketData: { is: null } } }),
     prisma.card.count({ where: { OR: [{ imageSmUrl: null }, { imageSmUrl: '' }] } }),
     prisma.card.count({ where: { prices: { none: {} } } }),
     prisma.card.count(),
