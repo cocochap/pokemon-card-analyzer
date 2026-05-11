@@ -91,6 +91,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, action, deleted: result as number })
   }
 
+  // ── TRUNCATE (libère l'espace immédiatement, contrairement à DELETE) ────
+  if (action === 'truncate-history') {
+    await prisma.$executeRawUnsafe('TRUNCATE TABLE "PriceHistory" RESTART IDENTITY')
+    return NextResponse.json({ ok: true, action, message: 'PriceHistory vidé instantanément' })
+  }
+
+  if (action === 'truncate-sales') {
+    await prisma.$executeRawUnsafe('TRUNCATE TABLE "SaleEvent" RESTART IDENTITY')
+    return NextResponse.json({ ok: true, action, message: 'SaleEvent vidé' })
+  }
+
   // ── VACUUM ───────────────────────────────────────────────────────────────
   if (action === 'vacuum') {
     try {
