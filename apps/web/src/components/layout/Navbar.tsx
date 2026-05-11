@@ -3,9 +3,9 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { SignInButton, SignedIn, SignedOut, UserButton } from '@clerk/nextjs'
-import { BarChart3, Bell, Briefcase, Home, Search, Sparkles, TrendingUp, Menu, X } from 'lucide-react'
+import { BarChart3, Bell, Briefcase, Home, Search, Sparkles, TrendingUp } from 'lucide-react'
 import { clsx } from 'clsx'
 import { CommandPalette } from '@/components/ui/CommandPalette'
 import { LivePriceBadge } from '@/components/market/LivePriceBadge'
@@ -15,7 +15,6 @@ import type { Locale } from '@/lib/i18n/translations'
 export function Navbar() {
   const pathname = usePathname()
   const [scrolled, setScrolled] = useState(false)
-  const [mobileOpen, setMobileOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
   const { t, locale, setLocale } = useLanguage()
 
@@ -107,7 +106,7 @@ export function Navbar() {
 
             {/* Right Actions */}
             <div className="flex items-center gap-2">
-              <LivePriceBadge />
+              <div className="hidden sm:block"><LivePriceBadge /></div>
 
               {/* Search */}
               <button
@@ -145,60 +144,17 @@ export function Navbar() {
                 <UserButton afterSignOutUrl="/" appearance={{ elements: { avatarBox: 'w-9 h-9' } }} />
               </SignedIn>
 
-              {/* Mobile toggle */}
+              {/* Mobile search button */}
               <button
                 className="md:hidden p-2 hover:bg-white/5 rounded-xl transition-colors"
-                onClick={() => setMobileOpen(!mobileOpen)}
+                onClick={() => setCommandOpen(true)}
               >
-                {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                <Search className="w-5 h-5" />
               </button>
             </div>
           </div>
         </div>
 
-        {/* Mobile Menu */}
-        <AnimatePresence>
-          {mobileOpen && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="md:hidden border-t border-white/10 bg-background/95 backdrop-blur-xl"
-            >
-              <div className="container mx-auto px-4 py-4 flex flex-col gap-2">
-                {navLinks.map(({ href, label, icon: Icon, badge }) => (
-                  <Link
-                    key={href}
-                    href={href}
-                    onClick={() => setMobileOpen(false)}
-                    className={clsx(
-                      'flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium transition-colors',
-                      pathname === href
-                        ? 'bg-pokemon-yellow/10 text-pokemon-yellow border border-pokemon-yellow/20'
-                        : 'text-muted-foreground hover:bg-white/5 hover:text-foreground',
-                    )}
-                  >
-                    <Icon className="w-5 h-5" />
-                    {label}
-                    {badge && (
-                      <span className="ml-auto px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-pokemon-yellow/20 text-pokemon-yellow">
-                        {badge}
-                      </span>
-                    )}
-                  </Link>
-                ))}
-                {/* Lang in mobile */}
-                <button
-                  onClick={toggleLang}
-                  className="flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium text-muted-foreground hover:bg-white/5"
-                >
-                  <span className="text-xl">{locale === 'fr' ? '🇫🇷' : '🇬🇧'}</span>
-                  <span>{locale === 'fr' ? 'Passer en anglais' : 'Switch to French'}</span>
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </nav>
 
       <CommandPalette open={commandOpen} onClose={() => setCommandOpen(false)} />

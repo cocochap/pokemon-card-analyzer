@@ -6,6 +6,7 @@ import { QueryProvider } from '@/components/providers/QueryProvider'
 import { ThemeProvider } from '@/components/providers/ThemeProvider'
 import { LanguageProvider } from '@/lib/i18n/LanguageContext'
 import { LanguageModal } from '@/components/ui/LanguageModal'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { Toaster } from 'react-hot-toast'
 import '@/styles/globals.css'
 
@@ -70,7 +71,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <QueryProvider>
               <LanguageProvider>
                 <LanguageModal />
-                {children}
+                <div className="pb-mobile-nav md:pb-0">
+                  {children}
+                </div>
+                <MobileBottomNav />
               </LanguageProvider>
               <Toaster
                 position="bottom-right"
