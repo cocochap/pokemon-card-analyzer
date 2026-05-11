@@ -44,17 +44,19 @@ export async function POST(req: NextRequest) {
     }
 
   } else if (action === 'sparse-history') {
-    // Garder seulement 1 point par semaine (supprimer les doublons jour-par-jour)
-    // Garde: le premier point de chaque semaine par carte
+    // Garder 1 point par semaine : supprimer tout ce qui n'est pas un lundi
+    // + garder les 7 derniers jours intacts
+    // Batch de 50K pour éviter timeout
     const result = await prisma.$executeRaw`
       DELETE FROM "PriceHistory"
-      WHERE id NOT IN (
-        SELECT DISTINCT ON ("cardId", date_trunc('week', "recordedAt")) id
-        FROM "PriceHistory"
-        ORDER BY "cardId", date_trunc('week', "recordedAt"), "recordedAt" ASC
+      WHERE id IN (
+        SELECT id FROM "PriceHistory"
+        WHERE EXTRACT(DOW FROM "recordedAt") != 1
+        AND "recordedAt" < NOW() - INTERVAL '7 days'
+        LIMIT 100000
       )
     `
-    deleted = result
+    deleted = result as number
 
   } else if (action === 'sale-events') {
     // Supprimer les ventes simulées > 60 jours
