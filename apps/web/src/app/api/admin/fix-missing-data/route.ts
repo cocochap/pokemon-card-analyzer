@@ -59,59 +59,49 @@ async function fixMarketData(limit: number) {
 }
 
 async function fixImages(limit: number) {
-  // Cartes sans image ou avec URL cassée
   const cards = await prisma.card.findMany({
-    where: {
-      OR: [
-        { imageSmUrl: null },
-        { imageSmUrl: '' },
-      ],
-    },
-    select: { id: true, externalId: true, setId: true },
+    where: { OR: [{ imageSmUrl: null }, { imageSmUrl: '' }] },
+    select: { id: true, externalId: true },
     take: limit,
   })
-
   if (cards.length === 0) return { fixed: 0 }
 
   let fixed = 0
-  for (const card of cards) {
-    // Essayer de reconstruire l'URL depuis le pattern pokemontcg.io
-    const ptcgUrl = `https://images.pokemontcg.io/${card.externalId.replace('-', '/')}`
-    const ptcgSmUrl = `${ptcgUrl}.png`
+  const updates: { id: string; imageSmUrl: string; imageLgUrl: string }[] = []
 
-    // Ou pattern TCGdex
+  for (const card of cards) {
     const parts = card.externalId.split('-')
     const setId = parts[0]
     const localId = parts.slice(1).join('-')
+    const isPocket = /^(A\d|B\d|P-A)/i.test(setId)
 
-    // Détecter si c'est un set Pocket (A1, B1, etc.)
-    const isPocket = /^(A\d|B\d|P-A)/.test(setId)
+    // Pattern pokemontcg.io : sv1-1 → images.pokemontcg.io/sv1/1.png
+    const ptcgSm = `https://images.pokemontcg.io/${setId}/${localId}.png`
+    const ptcgLg = `https://images.pokemontcg.io/${setId}/${localId}_hires.png`
+
+    // Pattern TCGdex Pocket
     const tcgdexBase = isPocket
       ? `https://assets.tcgdex.net/fr/tcgp/${setId}/${localId}`
       : `https://assets.tcgdex.net/fr/${setId}/${localId}`
 
-    try {
-      // Vérifier si l'image pokemontcg.io existe (HEAD request)
-      const check = await fetch(ptcgSmUrl, { method: 'HEAD', signal: AbortSignal.timeout(3000) })
-      if (check.ok) {
-        await prisma.card.update({
-          where: { id: card.id },
-          data: { imageSmUrl: ptcgSmUrl, imageLgUrl: `${ptcgUrl}_hires.png` },
-        })
-        fixed++
-        continue
-      }
-    } catch { /* essayer TCGdex */ }
-
-    // Fallback TCGdex
-    const tcgdexSm = `${tcgdexBase}/low.webp`
-    await prisma.card.update({
-      where: { id: card.id },
-      data: { imageSmUrl: tcgdexSm, imageLgUrl: `${tcgdexBase}/high.webp` },
-    })
+    // Sans HEAD check (trop lent) — utiliser pokemontcg.io pour sets physiques, TCGdex pour Pocket
+    if (isPocket) {
+      updates.push({ id: card.id, imageSmUrl: `${tcgdexBase}/low.webp`, imageLgUrl: `${tcgdexBase}/high.webp` })
+    } else {
+      updates.push({ id: card.id, imageSmUrl: ptcgSm, imageLgUrl: ptcgLg })
+    }
     fixed++
-    await sleep(50)
   }
+
+  // Batch update
+  await Promise.all(
+    updates.map((u) =>
+      prisma.card.update({
+        where: { id: u.id },
+        data: { imageSmUrl: u.imageSmUrl, imageLgUrl: u.imageLgUrl },
+      })
+    )
+  )
 
   return { fixed }
 }
@@ -183,6 +173,36 @@ async function fixPrices(limit: number) {
   return { syncedSets }
 }
 
+// Crée des entrées prix vides pour les cartes digitales (Pocket, kits) sans prix
+async function fixDigitalPrices(limit: number) {
+  const digitalSets = [
+    'A1','A1a','A2','A2a','A2b','A3','A3a','A3b','A4','A4a',
+    'B1','B1a','B2','B2a','P-A',
+    'me01','me02','me02.5','me03','mee','mep',
+  ]
+
+  const cards = await prisma.card.findMany({
+    where: {
+      prices: { none: {} },
+      set: { externalId: { in: digitalSets } },
+    },
+    select: { id: true },
+    take: limit,
+  })
+
+  if (cards.length === 0) return { fixed: 0 }
+
+  await prisma.cardPrice.createMany({
+    data: cards.map((c) => ({
+      cardId: c.id, source: 'pocket', variant: 'NORMAL', currency: 'EUR',
+      market: 0, low: 0, mid: 0, high: 0,
+    })),
+    skipDuplicates: true,
+  })
+
+  return { fixed: cards.length }
+}
+
 export async function POST(req: NextRequest) {
   const { searchParams } = req.nextUrl
   const fix = searchParams.get('fix') ?? 'all'
@@ -196,11 +216,15 @@ export async function POST(req: NextRequest) {
   }
 
   if (fix === 'all' || fix === 'images') {
-    results.images = await fixImages(Math.min(limit, 200))
+    results.images = await fixImages(Math.min(limit, 1000))
   }
 
   if (fix === 'all' || fix === 'prices') {
     results.prices = await fixPrices(Math.min(limit, 20))
+  }
+
+  if (fix === 'all' || fix === 'digital') {
+    results.digital = await fixDigitalPrices(limit)
   }
 
   return NextResponse.json({
