@@ -20,6 +20,8 @@ export async function GET(req: NextRequest) {
         { name: { contains: q, mode: 'insensitive' } },
         { number: { contains: q, mode: 'insensitive' } },
         { illustrator: { contains: q, mode: 'insensitive' } },
+        // Recherche dans le nom français stocké en JSON
+        { localeName: { path: ['fr'], string_contains: q } },
       ],
     }),
     ...(set && { setId: set }),
