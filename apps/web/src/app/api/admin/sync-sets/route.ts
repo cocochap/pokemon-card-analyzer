@@ -1,16 +1,16 @@
 /**
  * POST /api/admin/sync-sets
- * Ajoute de nouveaux sets et leurs cartes depuis pokemontcg.io + noms FR depuis TCGdex.
- * Idempotent — ignore les cartes déjà en base (upsert).
  *
- * Query params:
- *   ?era=swsh          → sword & shield uniquement
- *   ?era=sm            → sun & moon uniquement
- *   ?era=xy            → XY uniquement
- *   ?era=bw            → black & white uniquement
- *   ?era=vintage       → base set, neo, ex, dp, pl, hgss
- *   ?era=all           → tout (très long, ~30-60 min)
- *   ?setId=swsh1       → un seul set spécifique
+ * Découverte automatique et seed de TOUS les sets pokemontcg.io.
+ * - Appelle /v2/sets pour lister tous les sets existants
+ * - Skip ceux déjà en base
+ * - Traite les manquants en ordre (plus récent en premier)
+ * - S'arrête proprement avant le timeout Vercel (300s)
+ * - Appelable plusieurs fois : chaque appel avance le chargement
+ *
+ * Query:
+ *   ?limit=10    → nombre max de sets à traiter (défaut: 10)
+ *   ?setId=sv1   → forcer un set spécifique
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -18,7 +18,6 @@ import { prisma } from '@/lib/db/prisma'
 import {
   normalizeCardmarketPrices,
   buildRealisticHistory,
-  computeRSI,
   computeInvestmentScore,
   RARITY_RANK,
 } from '@/lib/pricing/normalize'
@@ -27,151 +26,7 @@ import { subDays } from 'date-fns'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
-// ─── Catalogue complet des sets ──────────────────────────────────────────────
-const ALL_SETS: Array<{ ptcgId: string; tcgdexId: string; frName: string; series: string }> = [
-  // Scarlet & Violet (déjà seedés, inclus pour upsert)
-  { ptcgId: 'sv1',      tcgdexId: 'sv01',     frName: 'Écarlate et Violet',          series: 'Scarlet & Violet' },
-  { ptcgId: 'sv2',      tcgdexId: 'sv02',     frName: 'Évolution à Paldea',           series: 'Scarlet & Violet' },
-  { ptcgId: 'sv3',      tcgdexId: 'sv03',     frName: 'Flammes Obsidiennes',          series: 'Scarlet & Violet' },
-  { ptcgId: 'sv3pt5',   tcgdexId: 'sv03.5',   frName: '151',                          series: 'Scarlet & Violet' },
-  { ptcgId: 'sv4',      tcgdexId: 'sv04',     frName: 'Failles Paradoxes',            series: 'Scarlet & Violet' },
-  { ptcgId: 'sv4pt5',   tcgdexId: 'sv04.5',   frName: 'Destinées de Paldea',          series: 'Scarlet & Violet' },
-  { ptcgId: 'sv5',      tcgdexId: 'sv05',     frName: 'Forces Temporelles',           series: 'Scarlet & Violet' },
-  { ptcgId: 'sv6',      tcgdexId: 'sv06',     frName: 'Mascarade Crépusculaire',      series: 'Scarlet & Violet' },
-  { ptcgId: 'sv6pt5',   tcgdexId: 'sv06.5',   frName: 'Fable Nébuleuse',              series: 'Scarlet & Violet' },
-  { ptcgId: 'sv7',      tcgdexId: 'sv07',     frName: 'Couronne Stellaire',           series: 'Scarlet & Violet' },
-  { ptcgId: 'sv8',      tcgdexId: 'sv08',     frName: 'Étincelles Déferlantes',       series: 'Scarlet & Violet' },
-  { ptcgId: 'sv8pt5',   tcgdexId: 'sv08.5',   frName: 'Évolutions Prismatiques',      series: 'Scarlet & Violet' },
-  { ptcgId: 'sv9',      tcgdexId: 'sv09',     frName: 'Voyage Ensemble',              series: 'Scarlet & Violet' },
-  { ptcgId: 'sv10',     tcgdexId: 'sv10',     frName: 'Destins Rivaux',               series: 'Scarlet & Violet' },
-  { ptcgId: 'rsv10pt5', tcgdexId: 'sv10.5w',  frName: 'Flamme Blanche',               series: 'Scarlet & Violet' },
-  { ptcgId: 'zsv10pt5', tcgdexId: 'sv10.5b',  frName: 'Flamme Noire',                 series: 'Scarlet & Violet' },
-  { ptcgId: 'svp',      tcgdexId: 'svp',      frName: 'Promos SV',                    series: 'Scarlet & Violet' },
-
-  // Sword & Shield
-  { ptcgId: 'swsh1',    tcgdexId: 'swsh01',   frName: 'Épée et Bouclier',             series: 'Sword & Shield' },
-  { ptcgId: 'swsh2',    tcgdexId: 'swsh02',   frName: 'Clash des Rebelles',           series: 'Sword & Shield' },
-  { ptcgId: 'swsh3',    tcgdexId: 'swsh03',   frName: 'Ténèbres Embrasées',           series: 'Sword & Shield' },
-  { ptcgId: 'swsh35',   tcgdexId: 'swsh03.5', frName: "La Voie du Maître",            series: 'Sword & Shield' },
-  { ptcgId: 'swsh4',    tcgdexId: 'swsh04',   frName: 'Voltage Éclatant',             series: 'Sword & Shield' },
-  { ptcgId: 'swsh45',   tcgdexId: 'swsh04.5', frName: 'Destinées Radieuses',          series: 'Sword & Shield' },
-  { ptcgId: 'swsh5',    tcgdexId: 'swsh05',   frName: 'Styles de Combat',             series: 'Sword & Shield' },
-  { ptcgId: 'swsh6',    tcgdexId: 'swsh06',   frName: 'Règne de Glace',               series: 'Sword & Shield' },
-  { ptcgId: 'swsh7',    tcgdexId: 'swsh07',   frName: 'Cieux Évolutifs',              series: 'Sword & Shield' },
-  { ptcgId: 'swsh8',    tcgdexId: 'swsh08',   frName: 'Poing de Fusion',              series: 'Sword & Shield' },
-  { ptcgId: 'swsh9',    tcgdexId: 'swsh09',   frName: 'Stars Brillantes',             series: 'Sword & Shield' },
-  { ptcgId: 'swsh10',   tcgdexId: 'swsh10',   frName: 'Astres Radieux',               series: 'Sword & Shield' },
-  { ptcgId: 'swsh11',   tcgdexId: 'swsh11',   frName: 'Origine Perdue',               series: 'Sword & Shield' },
-  { ptcgId: 'swsh12',   tcgdexId: 'swsh12',   frName: 'Tempête Argentée',             series: 'Sword & Shield' },
-  { ptcgId: 'swsh12pt5',tcgdexId: 'swsh12.5', frName: 'Zénith Suprême',              series: 'Sword & Shield' },
-
-  // Sun & Moon
-  { ptcgId: 'sm1',      tcgdexId: 'sm01',     frName: 'Soleil et Lune',               series: 'Sun & Moon' },
-  { ptcgId: 'sm2',      tcgdexId: 'sm02',     frName: 'Gardiens Ascendants',          series: 'Sun & Moon' },
-  { ptcgId: 'sm3',      tcgdexId: 'sm03',     frName: 'Ombres Ardentes',              series: 'Sun & Moon' },
-  { ptcgId: 'sm35',     tcgdexId: 'sm03.5',   frName: 'Légendes Brillantes',          series: 'Sun & Moon' },
-  { ptcgId: 'sm4',      tcgdexId: 'sm04',     frName: 'Invasion Carmin',              series: 'Sun & Moon' },
-  { ptcgId: 'sm5',      tcgdexId: 'sm05',     frName: 'Ultra-Prisme',                 series: 'Sun & Moon' },
-  { ptcgId: 'sm6',      tcgdexId: 'sm06',     frName: 'Lumière Interdite',            series: 'Sun & Moon' },
-  { ptcgId: 'sm7',      tcgdexId: 'sm07',     frName: 'Tempête Céleste',              series: 'Sun & Moon' },
-  { ptcgId: 'sm8',      tcgdexId: 'sm08',     frName: 'Tonnerre Perdu',               series: 'Sun & Moon' },
-  { ptcgId: 'sm9',      tcgdexId: 'sm09',     frName: 'Alliance Infaillible',         series: 'Sun & Moon' },
-  { ptcgId: 'sm10',     tcgdexId: 'sm10',     frName: 'Liens Indéfectibles',          series: 'Sun & Moon' },
-  { ptcgId: 'sm11',     tcgdexId: 'sm11',     frName: 'Harmonie des Esprits',         series: 'Sun & Moon' },
-  { ptcgId: 'sm115',    tcgdexId: 'sm11.5',   frName: 'Destins Cachés',               series: 'Sun & Moon' },
-  { ptcgId: 'sm12',     tcgdexId: 'sm12',     frName: 'Eclipse Cosmique',             series: 'Sun & Moon' },
-
-  // XY
-  { ptcgId: 'xy1',      tcgdexId: 'xy01',     frName: 'XY',                           series: 'XY' },
-  { ptcgId: 'xy2',      tcgdexId: 'xy02',     frName: 'Étincelles',                   series: 'XY' },
-  { ptcgId: 'xy3',      tcgdexId: 'xy03',     frName: 'Poings Furieux',               series: 'XY' },
-  { ptcgId: 'xy4',      tcgdexId: 'xy04',     frName: 'Forces Fantômes',              series: 'XY' },
-  { ptcgId: 'xy5',      tcgdexId: 'xy05',     frName: 'Primo-Choc',                   series: 'XY' },
-  { ptcgId: 'xy6',      tcgdexId: 'xy06',     frName: 'Ciel Rugissant',               series: 'XY' },
-  { ptcgId: 'xy7',      tcgdexId: 'xy07',     frName: 'Origines Antiques',            series: 'XY' },
-  { ptcgId: 'xy8',      tcgdexId: 'xy08',     frName: 'BREAKthrough',                 series: 'XY' },
-  { ptcgId: 'xy9',      tcgdexId: 'xy09',     frName: 'BREAKpoint',                   series: 'XY' },
-  { ptcgId: 'xy10',     tcgdexId: 'xy10',     frName: 'Destin de Collusion',          series: 'XY' },
-  { ptcgId: 'xy11',     tcgdexId: 'xy11',     frName: 'Vapeur Assiégée',              series: 'XY' },
-  { ptcgId: 'xy12',     tcgdexId: 'xy12',     frName: 'Évolutions',                   series: 'XY' },
-
-  // Black & White
-  { ptcgId: 'bw1',      tcgdexId: 'bw01',     frName: 'Noir et Blanc',                series: 'Black & White' },
-  { ptcgId: 'bw2',      tcgdexId: 'bw02',     frName: 'Pouvoirs Émergents',           series: 'Black & White' },
-  { ptcgId: 'bw3',      tcgdexId: 'bw03',     frName: 'Nobles Victoires',             series: 'Black & White' },
-  { ptcgId: 'bw4',      tcgdexId: 'bw04',     frName: 'Prochaines Destinées',         series: 'Black & White' },
-  { ptcgId: 'bw5',      tcgdexId: 'bw05',     frName: 'Explorateurs Obscurs',         series: 'Black & White' },
-  { ptcgId: 'bw6',      tcgdexId: 'bw06',     frName: 'Dragons Exaltés',              series: 'Black & White' },
-  { ptcgId: 'bw7',      tcgdexId: 'bw07',     frName: 'Frontières Franchies',         series: 'Black & White' },
-  { ptcgId: 'bw8',      tcgdexId: 'bw08',     frName: 'Tempête Plasma',               series: 'Black & White' },
-  { ptcgId: 'bw9',      tcgdexId: 'bw09',     frName: 'Glaciation Plasma',            series: 'Black & White' },
-  { ptcgId: 'bw10',     tcgdexId: 'bw10',     frName: 'Explosion Plasma',             series: 'Black & White' },
-  { ptcgId: 'bw11',     tcgdexId: 'bw11',     frName: 'Trésors Légendaires',          series: 'Black & White' },
-
-  // HeartGold SoulSilver
-  { ptcgId: 'hgss1',    tcgdexId: 'hgss01',   frName: 'HeartGold SoulSilver',         series: 'HeartGold & SoulSilver' },
-  { ptcgId: 'hgss2',    tcgdexId: 'hgss02',   frName: 'Déchainement',                 series: 'HeartGold & SoulSilver' },
-  { ptcgId: 'hgss3',    tcgdexId: 'hgss03',   frName: 'Triomphe',                     series: 'HeartGold & SoulSilver' },
-  { ptcgId: 'hgss4',    tcgdexId: 'hgss04',   frName: 'Appel des Légendes',           series: 'HeartGold & SoulSilver' },
-
-  // Platinum
-  { ptcgId: 'pl1',      tcgdexId: 'pl01',     frName: 'Platine',                      series: 'Platinum' },
-  { ptcgId: 'pl2',      tcgdexId: 'pl02',     frName: 'Rivaux Émergeants',            series: 'Platinum' },
-  { ptcgId: 'pl3',      tcgdexId: 'pl03',     frName: 'Vainqueurs Suprêmes',          series: 'Platinum' },
-  { ptcgId: 'pl4',      tcgdexId: 'pl04',     frName: 'Arceus',                       series: 'Platinum' },
-
-  // Diamond & Pearl
-  { ptcgId: 'dp1',      tcgdexId: 'dp01',     frName: 'Diamant et Perle',             series: 'Diamond & Pearl' },
-  { ptcgId: 'dp2',      tcgdexId: 'dp02',     frName: 'Trésors Mystérieux',           series: 'Diamond & Pearl' },
-  { ptcgId: 'dp3',      tcgdexId: 'dp03',     frName: 'Secrètes Merveilles',          series: 'Diamond & Pearl' },
-  { ptcgId: 'dp4',      tcgdexId: 'dp04',     frName: 'Grands Combats',               series: 'Diamond & Pearl' },
-  { ptcgId: 'dp5',      tcgdexId: 'dp05',     frName: 'Aube Majestueuse',             series: 'Diamond & Pearl' },
-  { ptcgId: 'dp6',      tcgdexId: 'dp06',     frName: 'Éveil des Légendes',           series: 'Diamond & Pearl' },
-
-  // EX Series (vintage modern)
-  { ptcgId: 'ex1',      tcgdexId: 'ex01',     frName: 'EX Rubis et Saphir',           series: 'EX' },
-  { ptcgId: 'ex2',      tcgdexId: 'ex02',     frName: 'EX Tempête de Sable',         series: 'EX' },
-  { ptcgId: 'ex3',      tcgdexId: 'ex03',     frName: 'EX Dragon',                    series: 'EX' },
-  { ptcgId: 'ex4',      tcgdexId: 'ex04',     frName: 'EX Rouge Feu Vert Feuille',   series: 'EX' },
-  { ptcgId: 'ex5',      tcgdexId: 'ex05',     frName: 'EX Team Magma/Aqua',          series: 'EX' },
-  { ptcgId: 'ex6',      tcgdexId: 'ex06',     frName: 'EX Créateurs de Légendes',    series: 'EX' },
-  { ptcgId: 'ex7',      tcgdexId: 'ex07',     frName: 'EX Deoxys',                    series: 'EX' },
-  { ptcgId: 'ex8',      tcgdexId: 'ex08',     frName: 'EX Émeraude',                  series: 'EX' },
-  { ptcgId: 'ex9',      tcgdexId: 'ex09',     frName: 'EX Espèces Delta',             series: 'EX' },
-  { ptcgId: 'ex10',     tcgdexId: 'ex10',     frName: 'EX Légendes Oubliées',        series: 'EX' },
-  { ptcgId: 'ex11',     tcgdexId: 'ex11',     frName: 'EX Gardiens de Cristal',      series: 'EX' },
-  { ptcgId: 'ex12',     tcgdexId: 'ex12',     frName: 'EX Horizon Dragon',            series: 'EX' },
-  { ptcgId: 'ex13',     tcgdexId: 'ex13',     frName: 'EX Gardiens du Pouvoir',      series: 'EX' },
-  { ptcgId: 'ex14',     tcgdexId: 'ex14',     frName: 'EX Île des Dragons',           series: 'EX' },
-  { ptcgId: 'ex15',     tcgdexId: 'ex15',     frName: 'EX Destin Obscur',             series: 'EX' },
-  { ptcgId: 'ex16',     tcgdexId: 'ex16',     frName: 'EX Fantômes Holon',            series: 'EX' },
-
-  // Neo (vintage)
-  { ptcgId: 'neo1',     tcgdexId: 'neo01',    frName: 'Neo Genèse',                   series: 'Neo' },
-  { ptcgId: 'neo2',     tcgdexId: 'neo02',    frName: 'Neo Découverte',               series: 'Neo' },
-  { ptcgId: 'neo3',     tcgdexId: 'neo03',    frName: 'Neo Révélation',               series: 'Neo' },
-  { ptcgId: 'neo4',     tcgdexId: 'neo04',    frName: 'Neo Destinée',                 series: 'Neo' },
-
-  // Base Set (vintage)
-  { ptcgId: 'base1',    tcgdexId: 'base01',   frName: 'Édition de Base',              series: 'Base' },
-  { ptcgId: 'base2',    tcgdexId: 'base02',   frName: 'Jungle',                       series: 'Base' },
-  { ptcgId: 'base3',    tcgdexId: 'base03',   frName: 'Fossile',                      series: 'Base' },
-  { ptcgId: 'base4',    tcgdexId: 'base04',   frName: 'Team Rocket',                  series: 'Base' },
-  { ptcgId: 'base5',    tcgdexId: 'base05',   frName: 'Gym - Les Challengers',        series: 'Base' },
-  { ptcgId: 'base6',    tcgdexId: 'base06',   frName: 'Gym - Les Champions',          series: 'Base' },
-]
-
-const ERA_FILTER: Record<string, string[]> = {
-  sv: ['Scarlet & Violet'],
-  swsh: ['Sword & Shield'],
-  sm: ['Sun & Moon'],
-  xy: ['XY'],
-  bw: ['Black & White'],
-  hgss: ['HeartGold & SoulSilver'],
-  vintage: ['Platinum', 'Diamond & Pearl', 'EX', 'Neo', 'Base'],
-  modern: ['Sword & Shield', 'Sun & Moon', 'XY', 'Black & White'],
-  all: [], // vide = tous
-}
+const PTCG_BASE = 'https://api.pokemontcg.io/v2'
 
 const RARITY_MAP: Record<string, string> = {
   'Common': 'COMMON', 'Uncommon': 'UNCOMMON', 'Rare': 'RARE',
@@ -187,130 +42,189 @@ const RARITY_MAP: Record<string, string> = {
   'Amazing Rare': 'AMAZING_RARE', 'Crown Rare': 'CROWN_RARE',
   'PROMO': 'PROMO', 'Promo': 'PROMO', 'Radiant Rare': 'RARE_SHINY',
   'Rare Shiny': 'RARE_SHINY', 'Rare Shiny GX': 'RARE_SHINY_GX',
-  'LEGEND': 'LEGEND', 'Rare BREAK': 'RARE_HOLO',
+  'LEGEND': 'LEGEND', 'Rare BREAK': 'RARE_HOLO', 'Rare Prime': 'RARE_HOLO',
+  'Rare ACE': 'RARE_SECRET', 'Classic Collection': 'RARE_HOLO',
 }
 
 function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)) }
 
-async function fetchPtcgCards(setId: string): Promise<any[]> {
+/** Récupère tous les sets depuis pokemontcg.io */
+async function fetchAllPtcgSets(): Promise<any[]> {
+  const sets: any[] = []
+  let page = 1
+  while (true) {
+    const res = await fetch(`${PTCG_BASE}/sets?pageSize=250&page=${page}&orderBy=-releaseDate`, {
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!res.ok) break
+    const data = await res.json()
+    sets.push(...(data.data ?? []))
+    if ((data.data ?? []).length < 250) break
+    page++
+  }
+  return sets
+}
+
+/** Récupère toutes les cartes d'un set pokemontcg.io */
+async function fetchSetCards(setId: string): Promise<any[]> {
   const all: any[] = []
   let page = 1
   while (true) {
     const res = await fetch(
-      `https://api.pokemontcg.io/v2/cards?q=set.id:${setId}&pageSize=250&page=${page}&select=id,name,number,rarity,supertype,subtypes,types,hp,evolvesFrom,attacks,abilities,weaknesses,resistances,retreatCost,regulationMark,nationalPokedexNumbers,illustrator,images,cardmarket,tcgplayer,set`,
+      `${PTCG_BASE}/cards?q=set.id:${setId}&pageSize=250&page=${page}` +
+      `&select=id,name,number,rarity,supertype,subtypes,types,hp,evolvesFrom,` +
+      `attacks,abilities,weaknesses,resistances,retreatCost,regulationMark,` +
+      `nationalPokedexNumbers,illustrator,images,cardmarket,tcgplayer,flavorText`,
       { signal: AbortSignal.timeout(20000) }
     )
     if (!res.ok) break
     const data = await res.json()
-    const cards: any[] = data?.data ?? []
+    const cards: any[] = data.data ?? []
     all.push(...cards)
     if (cards.length < 250) break
     page++
-    await sleep(500)
+    await sleep(400)
   }
   return all
 }
 
-async function fetchFrNames(tcgdexId: string): Promise<Record<string, string>> {
-  try {
-    const res = await fetch(`https://api.tcgdex.net/v2/fr/sets/${tcgdexId}`, {
-      signal: AbortSignal.timeout(10000),
-    })
-    if (!res.ok) return {}
-    const data = await res.json()
-    const map: Record<string, string> = {}
-    for (const c of data?.cards ?? []) {
-      if (c.localId && c.name) map[String(c.localId)] = c.name
+/**
+ * Devine le TCGdex ID depuis le pokemontcg.io set ID.
+ * TCGdex utilise souvent le même ID ou ajoute un zéro (sv1 → sv01).
+ */
+function guessTcgdexId(ptcgId: string): string[] {
+  const candidates: string[] = [ptcgId]
+  // Ajouter zéro : sv1 → sv01, swsh1 → swsh01
+  const m = ptcgId.match(/^([a-z]+)(\d+)(.*)$/)
+  if (m) {
+    const padded = `${m[1]}0${m[2]}${m[3]}`
+    candidates.push(padded)
+    // swsh12pt5 → swsh12.5
+    if (ptcgId.includes('pt5')) {
+      candidates.push(ptcgId.replace('pt5', '.5'))
+      candidates.push(`${m[1]}0${m[2]}.5`)
     }
-    return map
-  } catch { return {} }
+    if (ptcgId.includes('pt3')) {
+      candidates.push(ptcgId.replace('pt3', '.3'))
+    }
+  }
+  // rsv10pt5 → sv10.5w, zsv10pt5 → sv10.5b (cas spéciaux)
+  if (ptcgId === 'rsv10pt5') candidates.push('sv10.5w')
+  if (ptcgId === 'zsv10pt5') candidates.push('sv10.5b')
+  return candidates
+}
+
+/** Tente de récupérer les noms FR depuis TCGdex */
+async function fetchFrNames(ptcgId: string): Promise<Record<string, string>> {
+  const candidates = guessTcgdexId(ptcgId)
+  for (const id of candidates) {
+    try {
+      const res = await fetch(`https://api.tcgdex.net/v2/fr/sets/${id}`, {
+        signal: AbortSignal.timeout(8000),
+      })
+      if (!res.ok) continue
+      const data = await res.json()
+      const map: Record<string, string> = {}
+      for (const c of data?.cards ?? []) {
+        if (c.localId && c.name) {
+          map[String(c.localId)] = c.name
+          map[String(parseInt(c.localId, 10))] = c.name
+        }
+      }
+      if (Object.keys(map).length > 0) return map
+    } catch { /* essayer prochain candidat */ }
+  }
+  return {}
 }
 
 export async function POST(req: NextRequest) {
   const { searchParams } = req.nextUrl
-  const era = searchParams.get('era') ?? 'swsh'
-  const specificSetId = searchParams.get('setId')
-
-  // Sélectionner les sets à traiter
-  let setsToProcess = ALL_SETS
-  if (specificSetId) {
-    setsToProcess = ALL_SETS.filter((s) => s.ptcgId === specificSetId)
-  } else if (era !== 'all') {
-    const allowedSeries = ERA_FILTER[era] ?? []
-    if (allowedSeries.length > 0) {
-      setsToProcess = ALL_SETS.filter((s) => allowedSeries.includes(s.series))
-    }
-  }
-
-  if (setsToProcess.length === 0) {
-    return NextResponse.json({ error: 'Aucun set correspondant' }, { status: 400 })
-  }
+  const limit = Math.min(20, parseInt(searchParams.get('limit') ?? '10'))
+  const specificSet = searchParams.get('setId')
 
   const startedAt = Date.now()
-  const stats = { sets: 0, cardsAdded: 0, cardsUpdated: 0, errors: 0 }
+  const TIMEOUT_MS = 240_000 // 4 minutes, marge de sécurité
 
-  for (const setDef of setsToProcess) {
-    if (Date.now() - startedAt > 250_000) break // timeout safety
+  // 1. Récupérer tous les sets pokemontcg.io
+  let allPtcgSets: any[]
+  try {
+    allPtcgSets = await fetchAllPtcgSets()
+  } catch {
+    return NextResponse.json({ error: 'Impossible de récupérer les sets pokemontcg.io' }, { status: 502 })
+  }
+
+  // 2. Récupérer les externalIds déjà en base
+  const existingIds = new Set(
+    (await prisma.pokemonSet.findMany({ select: { externalId: true } }))
+      .map((s) => s.externalId)
+  )
+
+  // 3. Sélectionner les sets à traiter
+  let toProcess = specificSet
+    ? allPtcgSets.filter((s) => s.id === specificSet)
+    : allPtcgSets.filter((s) => !existingIds.has(s.id))
+
+  const remaining = toProcess.length
+  toProcess = toProcess.slice(0, limit)
+
+  const stats = { setsProcessed: 0, cardsAdded: 0, errors: 0, remaining: remaining - toProcess.length }
+
+  // 4. Traiter chaque set
+  for (const ptcgSet of toProcess) {
+    if (Date.now() - startedAt > TIMEOUT_MS) {
+      stats.remaining += (toProcess.length - stats.setsProcessed)
+      break
+    }
 
     try {
-      // Vérifier si le set existe déjà
-      const existingSet = await prisma.pokemonSet.findFirst({
-        where: { OR: [{ externalId: setDef.ptcgId }, { externalId: setDef.tcgdexId }] },
-      })
+      // Fetch cartes
+      const cards = await fetchSetCards(ptcgSet.id)
+      if (cards.length === 0) continue
 
-      // Récupérer les cartes pokemontcg.io
-      const ptcgCards = await fetchPtcgCards(setDef.ptcgId)
-      if (ptcgCards.length === 0) {
-        console.log(`⚠ Aucune carte pour ${setDef.ptcgId}`)
-        continue
-      }
+      // Noms FR
+      const frNames = await fetchFrNames(ptcgSet.id)
 
-      const ptcgSetMeta = ptcgCards[0]?.set
-      const frNames = await fetchFrNames(setDef.tcgdexId)
-
-      // Upsert le set
+      // Upsert set
       const dbSet = await prisma.pokemonSet.upsert({
-        where: { externalId: setDef.ptcgId },
+        where: { externalId: ptcgSet.id },
         create: {
-          externalId: setDef.ptcgId,
-          name: ptcgSetMeta?.name ?? setDef.frName,
-          series: setDef.series,
-          releaseDate: ptcgSetMeta?.releaseDate ? new Date(ptcgSetMeta.releaseDate) : new Date('2000-01-01'),
-          totalCards: ptcgSetMeta?.total ?? ptcgCards.length,
-          printedTotal: ptcgSetMeta?.printedTotal ?? ptcgCards.length,
-          symbolUrl: ptcgSetMeta?.images?.symbol ?? null,
-          logoUrl: ptcgSetMeta?.images?.logo ?? null,
-          ptcgoCode: ptcgSetMeta?.ptcgoCode ?? null,
+          externalId: ptcgSet.id,
+          name: ptcgSet.name,
+          series: ptcgSet.series ?? 'Other',
+          releaseDate: ptcgSet.releaseDate ? new Date(ptcgSet.releaseDate) : new Date('2000-01-01'),
+          totalCards: ptcgSet.total ?? cards.length,
+          printedTotal: ptcgSet.printedTotal ?? cards.length,
+          symbolUrl: ptcgSet.images?.symbol ?? null,
+          logoUrl: ptcgSet.images?.logo ?? null,
+          ptcgoCode: ptcgSet.ptcgoCode ?? null,
         },
         update: {
-          totalCards: ptcgSetMeta?.total ?? ptcgCards.length,
-          logoUrl: ptcgSetMeta?.images?.logo ?? null,
-          symbolUrl: ptcgSetMeta?.images?.symbol ?? null,
+          logoUrl: ptcgSet.images?.logo ?? null,
+          symbolUrl: ptcgSet.images?.symbol ?? null,
+          totalCards: ptcgSet.total ?? cards.length,
         },
       })
 
-      stats.sets++
-      let setAdded = 0
-
       // Upsert chaque carte
-      for (const card of ptcgCards) {
+      for (const card of cards) {
+        if (Date.now() - startedAt > TIMEOUT_MS) break
         try {
-          const localId = card.number ?? card.id.split('-').pop()
-          const frName = frNames[localId] ?? frNames[String(parseInt(localId, 10))]
-          const rarity = RARITY_MAP[card.rarity] ?? 'UNKNOWN'
+          const localId = card.number ?? ''
+          const frName = frNames[localId] ?? frNames[String(parseInt(localId, 10))] ?? null
+          const rarity = (RARITY_MAP[card.rarity ?? ''] ?? 'UNKNOWN') as any
 
           const dbCard = await prisma.card.upsert({
             where: { externalId: card.id },
             create: {
               externalId: card.id,
               setId: dbSet.id,
-              name: card.name,
+              name: card.name ?? '',
               localeName: frName ? { fr: frName } : {},
               number: card.number ?? '',
               supertype: card.supertype ?? 'Pokémon',
               subtypes: card.subtypes ?? [],
               types: card.types ?? [],
-              rarity: rarity as any,
+              rarity,
               imageSmUrl: card.images?.small ?? null,
               imageLgUrl: card.images?.large ?? null,
               illustrator: card.illustrator ?? null,
@@ -327,48 +241,43 @@ export async function POST(req: NextRequest) {
               nationalPokedexNumbers: card.nationalPokedexNumbers ?? [],
             },
             update: {
-              localeName: frName ? { fr: frName } : undefined,
               imageSmUrl: card.images?.small ?? null,
               imageLgUrl: card.images?.large ?? null,
+              localeName: frName ? { fr: frName } : undefined,
             },
           })
 
-          // Upsert les prix
+          // Prix Cardmarket
           const cm = card.cardmarket?.prices
           if (cm) {
             const norm = normalizeCardmarketPrices(cm)
             if (norm && norm.market > 0) {
               await prisma.cardPrice.upsert({
                 where: { cardId_source_variant: { cardId: dbCard.id, source: 'cardmarket', variant: 'NORMAL' } },
-                create: {
-                  cardId: dbCard.id, source: 'cardmarket', variant: 'NORMAL', currency: 'EUR',
-                  market: norm.market, mid: norm.mid, low: norm.low, high: norm.high,
-                },
+                create: { cardId: dbCard.id, source: 'cardmarket', variant: 'NORMAL', currency: 'EUR', market: norm.market, mid: norm.mid, low: norm.low, high: norm.high },
                 update: { market: norm.market, mid: norm.mid, low: norm.low, high: norm.high, fetchedAt: new Date() },
               })
 
-              // Historique reconstruit depuis avg1/avg7/avg30 réels
-              const historyPoints = buildRealisticHistory(norm.market, norm.avg1, norm.avg7, norm.avg30, 90)
-              // N'insérer que si l'historique est vide
-              const existingHistory = await prisma.priceHistory.count({ where: { cardId: dbCard.id } })
-              if (existingHistory === 0) {
+              // Historique reconstruit (seulement si vide)
+              const hasHistory = await prisma.priceHistory.count({ where: { cardId: dbCard.id } })
+              if (hasHistory === 0) {
+                const pts = buildRealisticHistory(norm.market, norm.avg1, norm.avg7, norm.avg30, 90)
                 await prisma.priceHistory.createMany({
-                  data: historyPoints.map(({ daysAgo, price }) => ({
-                    cardId: dbCard.id, source: 'cardmarket', variant: 'NORMAL', currency: 'EUR',
-                    price, recordedAt: subDays(new Date(), daysAgo),
+                  data: pts.map(({ daysAgo, price }) => ({
+                    cardId: dbCard.id, source: 'cardmarket', variant: 'NORMAL',
+                    currency: 'EUR', price, recordedAt: subDays(new Date(), daysAgo),
                   })),
                   skipDuplicates: true,
                 })
               }
 
-              // CardMarketData
-              const rarityRank = RARITY_RANK[rarity] ?? 2
+              // MarketData
+              const rarityRank = RARITY_RANK[String(rarity)] ?? 2
               const investmentScore = computeInvestmentScore({
                 change7d: norm.change7d, change30d: norm.change30d,
                 volatility: norm.volatility, rarityRank, price: norm.market, rsi: 50,
               })
-              const trendDirection = norm.volatility > 0.25 ? 'VOLATILE' :
-                norm.change7d > 0.05 ? 'BULLISH' : norm.change7d < -0.05 ? 'BEARISH' : 'STABLE'
+              const trend = norm.volatility > 0.25 ? 'VOLATILE' : norm.change7d > 0.05 ? 'BULLISH' : norm.change7d < -0.05 ? 'BEARISH' : 'STABLE'
 
               await prisma.cardMarketData.upsert({
                 where: { cardId: dbCard.id },
@@ -377,43 +286,63 @@ export async function POST(req: NextRequest) {
                   priceChange24h: norm.change24h, priceChange7d: norm.change7d, priceChange30d: norm.change30d,
                   volatility30d: norm.volatility, investmentScore, rarityScore: rarityRank * 10,
                   liquidityScore: norm.market > 50 ? 80 : norm.market > 10 ? 60 : 30,
-                  trendDirection: trendDirection as any, allTimeHigh: norm.high, allTimeLow: norm.low,
+                  trendDirection: trend as any, allTimeHigh: norm.high, allTimeLow: norm.low,
                 },
                 update: {
                   priceChange24h: norm.change24h, priceChange7d: norm.change7d, priceChange30d: norm.change30d,
-                  volatility30d: norm.volatility, investmentScore, trendDirection: trendDirection as any,
+                  volatility30d: norm.volatility, investmentScore, trendDirection: trend as any,
                 },
               })
             }
           }
 
-          setAdded++
+          // Prix TCGPlayer USD
+          const tcp = card.tcgplayer?.prices
+          const tcpMain = tcp?.holofoil ?? tcp?.normal
+          if (tcpMain?.market) {
+            await prisma.cardPrice.upsert({
+              where: { cardId_source_variant: { cardId: dbCard.id, source: 'tcgplayer', variant: 'NORMAL' } },
+              create: { cardId: dbCard.id, source: 'tcgplayer', variant: 'NORMAL', currency: 'USD', market: tcpMain.market, low: tcpMain.low ?? tcpMain.market * 0.8, mid: tcpMain.mid ?? tcpMain.market, high: tcpMain.high ?? tcpMain.market * 1.2 },
+              update: { market: tcpMain.market, fetchedAt: new Date() },
+            })
+          }
+
           stats.cardsAdded++
         } catch { stats.errors++ }
       }
 
-      console.log(`✅ ${setDef.ptcgId} (${setDef.frName}): ${setAdded} cartes`)
-      await sleep(600)
+      stats.setsProcessed++
+      console.log(`✅ ${ptcgSet.id} (${ptcgSet.name}): ${cards.length} cartes, ${Object.keys(frNames).length} noms FR`)
+      await sleep(300)
     } catch (err) {
-      console.error(`❌ Erreur set ${setDef.ptcgId}:`, err)
+      console.error(`❌ ${ptcgSet.id}:`, err)
       stats.errors++
     }
   }
 
   return NextResponse.json({
     ok: true,
-    duration: Math.round((Date.now() - startedAt) / 1000),
+    duration: Math.round((Date.now() - startedAt) / 1000) + 's',
+    totalPtcgSets: allPtcgSets.length,
+    alreadyInDb: existingIds.size,
     ...stats,
+    message: stats.remaining > 0
+      ? `${stats.remaining} sets restants — rappeler l'endpoint pour continuer`
+      : 'Tous les sets sont synchronisés ✓',
   })
 }
 
 export async function GET() {
-  const total = await prisma.card.count()
-  const sets = await prisma.pokemonSet.count()
-  const bySeries = await prisma.pokemonSet.groupBy({
-    by: ['series'],
-    _count: { id: true },
-    orderBy: { _count: { id: 'desc' } },
+  const [ptcgRes, dbSets, dbCards] = await Promise.all([
+    fetch(`${PTCG_BASE}/sets?pageSize=1`, { signal: AbortSignal.timeout(5000) })
+      .then((r) => r.json()).then((d) => d.totalCount ?? '?').catch(() => '?'),
+    prisma.pokemonSet.count(),
+    prisma.card.count(),
+  ])
+  return NextResponse.json({
+    ptcgTotalSets: ptcgRes,
+    dbSets,
+    dbCards,
+    missing: typeof ptcgRes === 'number' ? ptcgRes - dbSets : '?',
   })
-  return NextResponse.json({ totalCards: total, totalSets: sets, bySeries })
 }
