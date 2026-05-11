@@ -59,11 +59,29 @@ export async function POST(req: NextRequest) {
     deleted = result as number
 
   } else if (action === 'sale-events') {
-    // Supprimer les ventes simulées > 60 jours
     const cutoff = new Date()
     cutoff.setDate(cutoff.getDate() - 60)
     const result = await prisma.saleEvent.deleteMany({
       where: { soldAt: { lt: cutoff } },
+    })
+    deleted = result.count
+
+  } else if (action === 'vacuum') {
+    // Forcer VACUUM pour récupérer l'espace disque après suppression
+    try {
+      await prisma.$executeRawUnsafe('VACUUM "PriceHistory"')
+      await prisma.$executeRawUnsafe('VACUUM "CardPrice"')
+      return NextResponse.json({ ok: true, action: 'vacuum', message: 'VACUUM exécuté' })
+    } catch (e: any) {
+      return NextResponse.json({ ok: false, error: e.message })
+    }
+
+  } else if (action === 'delete-all-history') {
+    // Supprimer TOUT l'historique sauf les 30 derniers jours
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - 30)
+    const result = await prisma.priceHistory.deleteMany({
+      where: { recordedAt: { lt: cutoff } },
     })
     deleted = result.count
   }
