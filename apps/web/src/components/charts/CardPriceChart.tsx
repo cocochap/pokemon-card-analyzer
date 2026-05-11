@@ -1,25 +1,50 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis,
-  Tooltip, CartesianGrid, ReferenceLine,
+  ResponsiveContainer, ComposedChart, Area, Line, Bar,
+  XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, Legend,
 } from 'recharts'
 import { clsx } from 'clsx'
-import { TrendingUp, TrendingDown } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatCurrency } from '@/lib/formatters'
 import { useT, useLanguage } from '@/lib/i18n/LanguageContext'
 
-type Range = '7d' | '30d' | '90d'
+type Range = '7d' | '30d' | '90d' | '1y'
 
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
+  const price = payload.find((p: any) => p.dataKey === 'price')
+  const ma = payload.find((p: any) => p.dataKey === 'ma20')
   return (
-    <div className="bg-[#080d14] border border-white/15 rounded-xl px-3 py-2 shadow-xl text-xs">
-      <p className="text-muted-foreground mb-1">{label}</p>
-      <p className="font-mono font-bold text-pokemon-yellow">{formatCurrency(payload[0]?.value ?? 0)}</p>
+    <div className="bg-[#06080f] border border-white/15 rounded-xl px-4 py-3 shadow-2xl text-xs min-w-[140px]">
+      <p className="text-muted-foreground mb-2 font-medium">{label}</p>
+      {price && (
+        <p className="font-mono font-bold text-base" style={{ color: price.color }}>
+          {formatCurrency(price.value)}
+        </p>
+      )}
+      {ma && ma.value && (
+        <p className="font-mono text-xs mt-1" style={{ color: '#94a3b8' }}>
+          MA20 {formatCurrency(ma.value)}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function PriceStat({ label, value, change }: { label: string; value: number; change?: number }) {
+  return (
+    <div className="text-center">
+      <div className="text-xs text-muted-foreground mb-0.5">{label}</div>
+      <div className="font-mono font-semibold text-sm">{formatCurrency(value)}</div>
+      {change !== undefined && (
+        <div className={clsx('text-[10px] font-medium mt-0.5', change >= 0 ? 'text-market-bull' : 'text-market-bear')}>
+          {change >= 0 ? '+' : ''}{change.toFixed(1)}%
+        </div>
+      )}
     </div>
   )
 }
@@ -28,83 +53,109 @@ export function CardPriceChart({ cardId }: { cardId: string }) {
   const t = useT()
   const { locale } = useLanguage()
   const [range, setRange] = useState<Range>('90d')
+  const [showMA, setShowMA] = useState(true)
 
   const { data, isLoading } = useQuery({
     queryKey: ['card-price-history', cardId, range],
     queryFn: () => api.cards.getPriceHistory(cardId, { range, type: 'line' }),
-    staleTime: 60_000,
+    staleTime: 120_000,
   })
 
-  // API returns { prices: [{time, value}], priceChange, ... }
   const rawPrices: { time: number; value: number }[] =
-    data && typeof data === 'object' && 'prices' in (data as any)
-      ? (data as any).prices
-      : Array.isArray(data) ? data : []
+    data && 'prices' in (data as any) ? (data as any).prices : []
+  const rawMA20: { time: number; value: number }[] =
+    data && 'ma20' in (data as any) ? ((data as any).ma20 ?? []) : []
+  const priceChange: number = data && 'priceChange' in (data as any) ? Number((data as any).priceChange) : 0
+  const rsi: number = data && 'rsi' in (data as any) ? Number((data as any).rsi) : 50
 
-  const priceChange: number = data && typeof data === 'object' && 'priceChange' in (data as any)
-    ? Number((data as any).priceChange)
-    : 0
-
-  const chartData = rawPrices.map((d) => ({
-    date: new Date(d.time * 1000).toLocaleDateString(locale === 'fr' ? 'fr-FR' : 'en-US', {
-      month: 'short', day: 'numeric',
-    }),
-    price: Number(d.value.toFixed(2)),
-  }))
+  // Merger prix + MA20 en un seul tableau
+  const chartData = useMemo(() => {
+    const maMap = new Map(rawMA20.map((m) => [m.time, m.value]))
+    return rawPrices.map((d) => ({
+      date: new Date(d.time * 1000).toLocaleDateString(locale === 'fr' ? 'fr-FR' : 'en-US', {
+        month: 'short',
+        day: 'numeric',
+      }),
+      price: +d.value.toFixed(2),
+      ma20: maMap.has(d.time) ? +maMap.get(d.time)!.toFixed(2) : null,
+    }))
+  }, [rawPrices, rawMA20, locale])
 
   const currentPrice = chartData.at(-1)?.price ?? 0
   const startPrice = chartData[0]?.price ?? 0
   const isPositive = priceChange >= 0
+  const color = isPositive ? '#22C55E' : '#EF4444'
 
   const RANGES: { key: Range; label: string }[] = [
     { key: '7d', label: t.chart.range7d },
     { key: '30d', label: t.chart.range30d },
     { key: '90d', label: t.chart.range90d },
+    { key: '1y', label: t.chart.range1y },
   ]
+
+  const rsiColor = rsi < 30 ? '#22C55E' : rsi > 70 ? '#EF4444' : '#FFCB05'
+  const rsiLabel = rsi < 30 ? (locale === 'fr' ? 'Survendu' : 'Oversold') :
+    rsi > 70 ? (locale === 'fr' ? 'Suracheté' : 'Overbought') :
+    (locale === 'fr' ? 'Neutre' : 'Neutral')
 
   return (
     <div className="glass-card overflow-hidden">
       {/* Header */}
-      <div className="px-5 pt-5 pb-3 border-b border-white/10 flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h3 className="font-semibold">{t.chart.title}</h3>
-          <div className="flex items-center gap-3 mt-1">
-            <span className="text-2xl font-bold font-mono">{formatCurrency(currentPrice)}</span>
-            {priceChange !== 0 && (
+      <div className="px-5 pt-5 pb-3 border-b border-white/10">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider mb-1">
+              {t.chart.title}
+            </h3>
+            <div className="flex items-center gap-3">
+              <span className="text-3xl font-bold font-mono">{formatCurrency(currentPrice)}</span>
               <span className={clsx(
-                'flex items-center gap-1 text-sm font-semibold px-2 py-0.5 rounded-full',
-                isPositive
-                  ? 'text-market-bull bg-market-bull/10'
-                  : 'text-market-bear bg-market-bear/10',
+                'flex items-center gap-1 text-sm font-semibold px-2.5 py-1 rounded-full',
+                isPositive ? 'text-market-bull bg-market-bull/10' : 'text-market-bear bg-market-bear/10',
               )}>
                 {isPositive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
                 {isPositive ? '+' : ''}{priceChange.toFixed(2)}%
               </span>
-            )}
+            </div>
           </div>
-        </div>
 
-        {/* Range selector */}
-        <div className="flex gap-1 bg-white/5 rounded-xl p-1">
-          {RANGES.map(({ key, label }) => (
+          <div className="flex flex-col gap-2 items-end">
+            {/* Range */}
+            <div className="flex gap-1 bg-white/5 rounded-xl p-1">
+              {RANGES.map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setRange(key)}
+                  className={clsx(
+                    'px-3 py-1 rounded-lg text-xs font-medium transition-all',
+                    range === key
+                      ? 'bg-pokemon-yellow text-background font-bold'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* MA toggle */}
             <button
-              key={key}
-              onClick={() => setRange(key)}
+              onClick={() => setShowMA(!showMA)}
               className={clsx(
-                'px-3 py-1 rounded-lg text-sm font-medium transition-all',
-                range === key
-                  ? 'bg-pokemon-yellow text-background font-bold'
-                  : 'text-muted-foreground hover:text-foreground',
+                'text-[10px] px-2 py-0.5 rounded-full border transition-colors',
+                showMA
+                  ? 'border-blue-400/50 text-blue-400 bg-blue-400/10'
+                  : 'border-white/10 text-muted-foreground',
               )}
             >
-              {label}
+              MA20
             </button>
-          ))}
+          </div>
         </div>
       </div>
 
       {/* Chart */}
-      <div className="p-5">
+      <div className="px-5 pt-4 pb-2">
         {isLoading ? (
           <div className="h-64 skeleton rounded-xl" />
         ) : chartData.length === 0 ? (
@@ -112,12 +163,12 @@ export function CardPriceChart({ cardId }: { cardId: string }) {
             {t.chart.noPriceData}
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height={256}>
-            <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+          <ResponsiveContainer width="100%" height={280}>
+            <ComposedChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={isPositive ? '#22C55E' : '#EF4444'} stopOpacity={0.3} />
-                  <stop offset="100%" stopColor={isPositive ? '#22C55E' : '#EF4444'} stopOpacity={0} />
+                  <stop offset="0%" stopColor={color} stopOpacity={0.25} />
+                  <stop offset="100%" stopColor={color} stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
@@ -129,34 +180,76 @@ export function CardPriceChart({ cardId }: { cardId: string }) {
                 interval="preserveStartEnd"
               />
               <YAxis
+                yAxisId="price"
                 tick={{ fontSize: 10, fill: '#64748B' }}
                 tickLine={false}
                 axisLine={false}
                 domain={['auto', 'auto']}
-                tickFormatter={(v) => `€${Number(v) >= 1 ? Number(v).toFixed(0) : Number(v).toFixed(2)}`}
+                tickFormatter={(v) => `€${v >= 1 ? Number(v).toFixed(0) : Number(v).toFixed(2)}`}
                 width={52}
               />
               <Tooltip content={<CustomTooltip />} />
               {startPrice > 0 && (
                 <ReferenceLine
+                  yAxisId="price"
                   y={startPrice}
-                  stroke="rgba(255,255,255,0.1)"
+                  stroke="rgba(255,255,255,0.08)"
                   strokeDasharray="4 4"
                 />
               )}
               <Area
+                yAxisId="price"
                 type="monotone"
                 dataKey="price"
-                stroke={isPositive ? '#22C55E' : '#EF4444'}
+                stroke={color}
                 strokeWidth={2}
                 fill="url(#priceGrad)"
                 dot={false}
-                activeDot={{ r: 4, strokeWidth: 0, fill: isPositive ? '#22C55E' : '#EF4444' }}
+                activeDot={{ r: 4, strokeWidth: 0, fill: color }}
               />
-            </AreaChart>
+              {showMA && (
+                <Line
+                  yAxisId="price"
+                  type="monotone"
+                  dataKey="ma20"
+                  stroke="#3D7DCA"
+                  strokeWidth={1.5}
+                  dot={false}
+                  strokeDasharray="5 3"
+                  connectNulls
+                  activeDot={false}
+                />
+              )}
+            </ComposedChart>
           </ResponsiveContainer>
         )}
       </div>
+
+      {/* Footer stats */}
+      {!isLoading && chartData.length > 0 && (
+        <div className="px-5 pb-4">
+          <div className="flex items-center justify-between pt-3 border-t border-white/5">
+            <div className="grid grid-cols-3 gap-6 flex-1">
+              <PriceStat
+                label={locale === 'fr' ? 'Début période' : 'Period Open'}
+                value={startPrice}
+              />
+              <PriceStat
+                label={locale === 'fr' ? 'Actuel' : 'Current'}
+                value={currentPrice}
+                change={priceChange}
+              />
+              <div className="text-center">
+                <div className="text-xs text-muted-foreground mb-0.5">RSI 14</div>
+                <div className="font-mono font-semibold text-sm" style={{ color: rsiColor }}>
+                  {rsi.toFixed(0)}
+                </div>
+                <div className="text-[10px] mt-0.5" style={{ color: rsiColor }}>{rsiLabel}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

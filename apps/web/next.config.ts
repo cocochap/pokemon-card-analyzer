@@ -9,7 +9,8 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: 'limitlesstcg.nyc3.cdn.digitaloceanspaces.com' },
       { protocol: 'https', hostname: '*.cloudfront.net' },
     ],
-    unoptimized: true,
+    formats: ['image/avif', 'image/webp'],
+    minimumCacheTTL: 86400,
   },
   experimental: {
     optimizePackageImports: ['lucide-react', 'recharts', 'framer-motion'],
