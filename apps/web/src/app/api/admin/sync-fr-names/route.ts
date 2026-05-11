@@ -73,11 +73,11 @@ export async function POST(req: NextRequest) {
       : undefined,
   })
 
-  // Filtrer si onlyMissing
+  // Filtrer si onlyMissing — carte sans nom FR = localeName vide ou sans clé 'fr'
   const toProcess = onlyMissing
     ? cards.filter((c) => {
-        const ln = c.localeName as any
-        return !ln?.fr || ln.fr === c.externalId
+        const ln = c.localeName as Record<string, string> | null | undefined
+        return !ln || !ln.fr || ln.fr.trim() === ''
       })
     : cards
 
