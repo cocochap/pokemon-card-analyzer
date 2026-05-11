@@ -9,6 +9,8 @@ import { clsx } from 'clsx'
 import { api } from '@/lib/api'
 import { formatCurrency } from '@/lib/formatters'
 import { RarityBadge } from '@/components/ui/RarityBadge'
+import { useLanguage, useT } from '@/lib/i18n/LanguageContext'
+import { getCardName } from '@/lib/i18n/cardLocale'
 
 interface TopMoversProps {
   direction: 'up' | 'down'
@@ -22,6 +24,8 @@ export function TopMovers({ direction }: TopMoversProps) {
     refetchInterval: 120_000,
   })
 
+  const { locale } = useLanguage()
+  const t = useT()
   const isUp = direction === 'up'
 
   return (
@@ -92,7 +96,7 @@ export function TopMovers({ direction }: TopMoversProps) {
                   {/* Info */}
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm truncate group-hover:text-pokemon-yellow transition-colors">
-                      {card.name}
+                      {getCardName(card, locale)}
                     </div>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <RarityBadge rarity={card.rarity} size="xs" />
@@ -131,7 +135,7 @@ export function TopMovers({ direction }: TopMoversProps) {
             isUp ? 'text-market-bull hover:text-market-bull/80' : 'text-market-bear hover:text-market-bear/80',
           )}
         >
-          View all {isUp ? 'gainers' : 'losers'} →
+          {isUp ? t.common.viewAllGainers : t.common.viewAllLosers}
         </Link>
       </div>
     </div>

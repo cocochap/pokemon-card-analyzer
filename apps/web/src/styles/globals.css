@@ -4,38 +4,42 @@
 
 @layer base {
   :root {
-    --background: 222 47% 6%;
+    --background: 228 35% 5%;
     --foreground: 210 40% 98%;
-    --card: 222 47% 8%;
+    --card: 228 35% 7%;
     --card-foreground: 210 40% 98%;
-    --popover: 222 47% 8%;
+    --popover: 228 35% 7%;
     --popover-foreground: 210 40% 98%;
     --primary: 47 100% 51%;
-    --primary-foreground: 222 47% 6%;
-    --secondary: 217 32% 17%;
+    --primary-foreground: 228 35% 5%;
+    --secondary: 220 30% 15%;
     --secondary-foreground: 210 40% 98%;
-    --muted: 217 32% 17%;
-    --muted-foreground: 215 20% 55%;
-    --accent: 217 32% 17%;
+    --muted: 220 30% 14%;
+    --muted-foreground: 215 20% 50%;
+    --accent: 220 30% 15%;
     --accent-foreground: 210 40% 98%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 210 40% 98%;
-    --border: 217 32% 17%;
-    --input: 217 32% 17%;
+    --border: 220 30% 14%;
+    --input: 220 30% 14%;
     --ring: 47 100% 51%;
     --radius: 0.75rem;
-    --chart-1: 47 100% 51%;
-    --chart-2: 142 76% 36%;
-    --chart-3: 221 83% 53%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 0 72% 51%;
+    /* Pokémon type energy colors */
+    --poke-fire: 25 100% 55%;
+    --poke-water: 210 90% 65%;
+    --poke-grass: 130 60% 50%;
+    --poke-electric: 47 100% 60%;
+    --poke-psychic: 330 80% 65%;
+    --poke-dragon: 260 65% 60%;
+    --poke-dark: 240 20% 30%;
+    --poke-fairy: 340 75% 70%;
+    --poke-ice: 195 70% 70%;
+    --poke-fighting: 10 85% 50%;
   }
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
+  * { @apply border-border; }
 
   html {
     @apply scroll-smooth;
@@ -46,108 +50,161 @@
   body {
     @apply bg-background text-foreground;
     background-image:
-      radial-gradient(ellipse at 20% 50%, rgba(61, 125, 202, 0.05) 0%, transparent 50%),
-      radial-gradient(ellipse at 80% 20%, rgba(255, 203, 5, 0.03) 0%, transparent 50%);
+      /* Pokéball top-right */
+      radial-gradient(circle at 95% 5%, rgba(204,0,0,0.06) 0%, transparent 30%),
+      radial-gradient(circle at 95% 5%, rgba(255,255,255,0.02) 12%, transparent 14%),
+      /* Blue energy bottom-left */
+      radial-gradient(ellipse at 5% 95%, rgba(61,125,202,0.08) 0%, transparent 40%),
+      /* Yellow glow center */
+      radial-gradient(ellipse at 50% 120%, rgba(255,203,5,0.04) 0%, transparent 50%);
+    min-height: 100vh;
   }
 
-  ::selection {
-    @apply bg-pokemon-yellow/20 text-white;
-  }
+  ::selection { @apply bg-pokemon-yellow/25 text-white; }
 
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-
-  ::-webkit-scrollbar-track {
-    @apply bg-transparent;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    @apply bg-white/10 rounded-full;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    @apply bg-white/20;
-  }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-white/10 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-white/20; }
 }
 
 @layer components {
+  /* ── Glass card ───────────────────────────────────────────── */
   .glass-card {
-    @apply bg-white/5 backdrop-blur-md border border-white/10 rounded-xl shadow-glass;
+    @apply bg-white/[0.04] backdrop-blur-md border border-white/10 rounded-2xl shadow-glass;
+    background-image: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%);
   }
-
   .glass-card-hover {
-    @apply glass-card transition-all duration-300 hover:bg-white/8 hover:border-white/20 hover:shadow-glass-lg;
+    @apply glass-card transition-all duration-300 hover:bg-white/[0.07] hover:border-pokemon-yellow/20 hover:shadow-glass-lg;
   }
 
+  /* ── Pokémon type pill ────────────────────────────────────── */
+  .type-fire    { @apply bg-orange-500/20 text-orange-300 border border-orange-500/30; }
+  .type-water   { @apply bg-blue-400/20 text-blue-300 border border-blue-400/30; }
+  .type-grass   { @apply bg-green-500/20 text-green-300 border border-green-500/30; }
+  .type-electric{ @apply bg-yellow-400/20 text-yellow-300 border border-yellow-400/30; }
+  .type-psychic { @apply bg-pink-500/20 text-pink-300 border border-pink-500/30; }
+  .type-dragon  { @apply bg-purple-500/20 text-purple-300 border border-purple-500/30; }
+  .type-fairy   { @apply bg-pink-300/20 text-pink-200 border border-pink-300/30; }
+  .type-dark    { @apply bg-gray-600/20 text-gray-300 border border-gray-600/30; }
+  .type-ice     { @apply bg-cyan-400/20 text-cyan-300 border border-cyan-400/30; }
+  .type-fighting{ @apply bg-red-600/20 text-red-300 border border-red-600/30; }
+  .type-normal  { @apply bg-gray-400/20 text-gray-300 border border-gray-400/30; }
+  .type-poison  { @apply bg-purple-400/20 text-purple-300 border border-purple-400/30; }
+  .type-ground  { @apply bg-yellow-700/20 text-yellow-200 border border-yellow-700/30; }
+  .type-rock    { @apply bg-yellow-800/20 text-yellow-300 border border-yellow-800/30; }
+  .type-bug     { @apply bg-lime-500/20 text-lime-300 border border-lime-500/30; }
+  .type-ghost   { @apply bg-indigo-500/20 text-indigo-300 border border-indigo-500/30; }
+  .type-steel   { @apply bg-slate-400/20 text-slate-300 border border-slate-400/30; }
+  .type-flying  { @apply bg-sky-400/20 text-sky-300 border border-sky-400/30; }
+
+  /* ── Gradient text ────────────────────────────────────────── */
   .gradient-text {
-    @apply bg-gradient-to-r from-pokemon-yellow to-pokemon-blue bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-pokemon-yellow via-orange-300 to-pokemon-yellow bg-clip-text text-transparent;
+    background-size: 200% auto;
+    animation: gradient-shift 3s linear infinite;
   }
 
-  .market-bull {
-    @apply text-market-bull;
-  }
+  /* ── Rarity glow ──────────────────────────────────────────── */
+  .rarity-crown    { box-shadow: 0 0 24px rgba(255, 215, 0, 0.6), 0 0 48px rgba(255, 215, 0, 0.2); border-color: rgba(255,215,0,0.5); }
+  .rarity-hyper    { box-shadow: 0 0 20px rgba(232, 121, 249, 0.5), 0 0 40px rgba(232,121,249,0.15); border-color: rgba(232,121,249,0.4); }
+  .rarity-special  { box-shadow: 0 0 16px rgba(99, 102, 241, 0.4), 0 0 32px rgba(99,102,241,0.15); border-color: rgba(99,102,241,0.4); }
+  .rarity-ultra    { box-shadow: 0 0 12px rgba(251, 146, 60, 0.4), 0 0 24px rgba(251,146,60,0.15); border-color: rgba(251,146,60,0.35); }
+  .rarity-holo     { box-shadow: 0 0 10px rgba(56, 189, 248, 0.3), 0 0 20px rgba(56,189,248,0.1); border-color: rgba(56,189,248,0.3); }
 
-  .market-bear {
-    @apply text-market-bear;
-  }
-
+  /* ── Skeleton ─────────────────────────────────────────────── */
   .skeleton {
-    @apply animate-pulse bg-white/10 rounded-lg;
-  }
-
-  .price-tag {
-    @apply font-mono text-sm tabular-nums;
-  }
-
-  .badge-rare {
-    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-pokemon-yellow/20 text-pokemon-yellow border border-pokemon-yellow/30;
-  }
-
-  .badge-holo {
-    background: linear-gradient(135deg, rgba(255,203,5,0.2), rgba(61,125,202,0.2), rgba(204,0,0,0.2));
-    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border border-white/20 text-white;
-  }
-
-  .chart-container {
-    @apply w-full h-full relative;
-  }
-
-  .number-ticker {
-    @apply tabular-nums font-mono;
-  }
-
-  .neon-border {
-    box-shadow: 0 0 0 1px rgba(255, 203, 5, 0.3), 0 0 10px rgba(255, 203, 5, 0.1);
-  }
-
-  .shimmer-bg {
-    background: linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0) 0%,
-      rgba(255, 255, 255, 0.05) 50%,
-      rgba(255, 255, 255, 0) 100%
-    );
+    @apply animate-pulse rounded-xl;
+    background: linear-gradient(90deg, rgba(255,255,255,0.06) 25%, rgba(255,255,255,0.10) 50%, rgba(255,255,255,0.06) 75%);
     background-size: 200% 100%;
-    @apply animate-shimmer;
+    animation: shimmer 1.6s ease-in-out infinite;
+  }
+
+  /* ── Market colors ────────────────────────────────────────── */
+  .market-bull { @apply text-market-bull; }
+  .market-bear { @apply text-market-bear; }
+
+  /* ── Pokéball badge ───────────────────────────────────────── */
+  .pokeball {
+    @apply relative rounded-full border-2 border-white/20 overflow-hidden;
+  }
+  .pokeball::before {
+    content: '';
+    @apply absolute inset-0;
+    background: linear-gradient(to bottom, #CC0000 50%, #fff 50%);
+  }
+  .pokeball::after {
+    content: '';
+    @apply absolute inset-0 flex items-center;
+    height: 2px;
+    top: 50%;
+    background: black;
   }
 }
 
 @layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+  .glow-yellow  { box-shadow: 0 0 20px rgba(255,203,5,0.5), 0 0 40px rgba(255,203,5,0.2); }
+  .glow-green   { box-shadow: 0 0 20px rgba(34,197,94,0.4), 0 0 40px rgba(34,197,94,0.15); }
+  .glow-red     { box-shadow: 0 0 20px rgba(239,68,68,0.4), 0 0 40px rgba(239,68,68,0.15); }
+  .glow-blue    { box-shadow: 0 0 20px rgba(61,125,202,0.4), 0 0 40px rgba(61,125,202,0.15); }
+  .glow-purple  { box-shadow: 0 0 20px rgba(168,85,247,0.4), 0 0 40px rgba(168,85,247,0.15); }
 
-  .glow-yellow {
-    box-shadow: 0 0 20px rgba(255, 203, 5, 0.4), 0 0 40px rgba(255, 203, 5, 0.2);
-  }
+  .text-balance { text-wrap: balance; }
 
-  .glow-green {
-    box-shadow: 0 0 20px rgba(34, 197, 94, 0.4), 0 0 40px rgba(34, 197, 94, 0.2);
+  .holo-shimmer {
+    background: linear-gradient(
+      115deg,
+      transparent 30%,
+      rgba(255,220,100,0.3) 40%,
+      rgba(100,200,255,0.3) 50%,
+      rgba(200,100,255,0.3) 55%,
+      transparent 65%
+    );
+    background-size: 300% 300%;
+    animation: holo 3s ease-in-out infinite;
   }
+}
 
-  .glow-red {
-    box-shadow: 0 0 20px rgba(239, 68, 68, 0.4), 0 0 40px rgba(239, 68, 68, 0.2);
-  }
+/* ── Keyframes ────────────────────────────────────────────────── */
+@keyframes ticker {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-8px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 16px rgba(255,203,5,0.3); }
+  50%       { box-shadow: 0 0 32px rgba(255,203,5,0.7); }
+}
+
+@keyframes gradient-shift {
+  0%   { background-position: 0% center; }
+  50%  { background-position: 100% center; }
+  100% { background-position: 0% center; }
+}
+
+@keyframes holo {
+  0%   { background-position: 0% 0%; }
+  50%  { background-position: 100% 100%; }
+  100% { background-position: 0% 0%; }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes bounce-in {
+  0%   { transform: scale(0.85); opacity: 0; }
+  60%  { transform: scale(1.05); }
+  100% { transform: scale(1); opacity: 1; }
 }

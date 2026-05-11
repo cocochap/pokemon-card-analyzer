@@ -17,6 +17,7 @@ import { clsx } from 'clsx'
 import Link from 'next/link'
 import { formatCurrency, formatPercent } from '@/lib/formatters'
 import { api } from '@/lib/api'
+import { useT } from '@/lib/i18n/LanguageContext'
 import { PortfolioChart } from '@/components/charts/PortfolioChart'
 import { PortfolioTable } from '@/components/portfolio/PortfolioTable'
 import { AddCardModal } from '@/components/portfolio/AddCardModal'
@@ -26,6 +27,7 @@ export function PortfolioDashboard() {
   const [showAddCard, setShowAddCard] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | '1y' | 'all'>('30d')
+  const t = useT()
 
   const { data: portfolio, isLoading } = useQuery({
     queryKey: ['portfolio'],
@@ -119,8 +121,8 @@ export function PortfolioDashboard() {
       {/* Action Bar */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">My Portfolio</h1>
-          <p className="text-muted-foreground text-sm">Track and optimize your collection</p>
+          <h1 className="text-2xl font-bold">{t.portfolio.title}</h1>
+          <p className="text-muted-foreground text-sm">{t.portfolio.subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -128,14 +130,14 @@ export function PortfolioDashboard() {
             className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm hover:bg-white/10 transition-colors"
           >
             <Upload className="w-4 h-4" />
-            Import CSV
+            {t.portfolio.importCsv}
           </button>
           <button
             onClick={() => {/* export */}}
             className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm hover:bg-white/10 transition-colors"
           >
             <Download className="w-4 h-4" />
-            Export
+            {t.portfolio.exportCsv}
           </button>
           <button
             onClick={() => setShowAddCard(true)}
@@ -177,7 +179,7 @@ export function PortfolioDashboard() {
       {/* Portfolio Value Chart */}
       <div className="glass-card overflow-hidden">
         <div className="flex items-center justify-between p-4 border-b border-white/10">
-          <h3 className="font-semibold">Portfolio Value</h3>
+          <h3 className="font-semibold">{t.portfolio.value}</h3>
           <div className="flex rounded-lg overflow-hidden border border-white/10">
             {(['7d', '30d', '90d', '1y', 'all'] as const).map((range) => (
               <button

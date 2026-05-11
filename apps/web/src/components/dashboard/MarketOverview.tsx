@@ -5,8 +5,10 @@ import { motion } from 'framer-motion'
 import { Activity, ArrowDownRight, ArrowUpRight, BarChart2, DollarSign, Flame, TrendingDown, TrendingUp } from 'lucide-react'
 import { formatCurrency, formatPercent } from '@/lib/formatters'
 import { api } from '@/lib/api'
+import { useT } from '@/lib/i18n/LanguageContext'
 
 export function MarketOverview() {
+  const t = useT()
   const { data, isLoading } = useQuery({
     queryKey: ['market-overview'],
     queryFn: api.market.getOverview,
@@ -17,7 +19,7 @@ export function MarketOverview() {
   const kpis = data
     ? [
         {
-          label: 'Global Market Cap',
+          label: t.market.globalMarketCap,
           value: formatCurrency(data.totalMarketCap),
           change: data.marketCapChange24h,
           icon: DollarSign,
@@ -25,7 +27,7 @@ export function MarketOverview() {
           bg: 'bg-pokemon-yellow/10',
         },
         {
-          label: '24h Volume',
+          label: t.market.volume24h,
           value: formatCurrency(data.volume24h),
           change: data.volumeChange24h,
           icon: BarChart2,
@@ -33,7 +35,7 @@ export function MarketOverview() {
           bg: 'bg-pokemon-blue/10',
         },
         {
-          label: 'Pokemon Index',
+          label: t.market.pokemonIndex,
           value: data.marketIndex.toFixed(2),
           change: data.indexChange24h,
           icon: Activity,
@@ -41,14 +43,14 @@ export function MarketOverview() {
           bg: 'bg-market-bull/10',
         },
         {
-          label: 'Trending Today',
-          value: `${data.trendingCount} cards`,
+          label: t.market.trending,
+          value: `${data.trendingCount}`,
           icon: Flame,
           color: 'text-orange-400',
           bg: 'bg-orange-400/10',
         },
         {
-          label: 'Top Gainers',
+          label: t.market.topGainers,
           value: formatPercent(data.topGainerChange),
           icon: TrendingUp,
           color: 'text-market-bull',
@@ -56,7 +58,7 @@ export function MarketOverview() {
           prefix: '+',
         },
         {
-          label: 'Top Losers',
+          label: t.market.topLosers,
           value: formatPercent(data.topLoserChange),
           icon: TrendingDown,
           color: 'text-market-bear',

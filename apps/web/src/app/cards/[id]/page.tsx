@@ -15,8 +15,7 @@ import { AddToPortfolioButton } from '@/components/portfolio/AddToPortfolioButto
 import { WatchlistButton } from '@/components/alerts/WatchlistButton'
 import { SetAlertButton } from '@/components/alerts/SetAlertButton'
 import { Navbar } from '@/components/layout/Navbar'
-import { CardSkeleton } from '@/components/ui/Skeletons'
-import { api } from '@/lib/api'
+import { getCardById } from '@/lib/db/getCard'
 
 interface CardPageProps {
   params: Promise<{ id: string }>
@@ -25,102 +24,91 @@ interface CardPageProps {
 export async function generateMetadata({ params }: CardPageProps): Promise<Metadata> {
   const { id } = await params
   try {
-    const card: any = await api.cards.getById(id)
+    const card = await getCardById(id)
+    if (!card) return { title: 'Carte introuvable' }
     return {
       title: `${card.name} — ${card.set.name}`,
-      description: `Track ${card.name} prices, market trends, and AI predictions. Current price: ${card.marketData?.currentPrice ?? 'N/A'}`,
+      description: `Prix, tendances et prédictions IA pour ${card.name}. Prix actuel : ${(card.marketData as any)?.currentPrice ?? 'N/A'}€`,
       openGraph: {
         images: [{ url: card.imageLgUrl ?? '', width: 600, height: 825 }],
       },
     }
   } catch {
-    return { title: 'Card Not Found' }
+    return { title: 'Carte introuvable' }
   }
 }
 
 export default async function CardDetailPage({ params }: CardPageProps) {
   const { id } = await params
-
-  let card: any
-  try {
-    card = await api.cards.getById(id)
-  } catch {
-    notFound()
-  }
+  const card = await getCardById(id)
+  if (!card) notFound()
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
 
       <main className="container mx-auto px-4 py-8 max-w-[1600px]">
-        {/* Card Hero Section */}
+        {/* Hero + données principales */}
         <div className="grid grid-cols-1 xl:grid-cols-5 gap-8">
-          {/* Left — Card Image & Quick Actions */}
-          <div className="xl:col-span-2">
-            <Suspense fallback={<div className="skeleton aspect-[5/7] w-full max-w-sm mx-auto" />}>
-              <CardHero card={card} />
-            </Suspense>
 
-            {/* Action Buttons */}
-            <div className="mt-4 flex flex-col gap-3">
-              <AddToPortfolioButton cardId={card.id} />
+          {/* Colonne gauche — image + actions + scores */}
+          <div className="xl:col-span-2 space-y-4">
+            <CardHero card={card as any} />
+
+            <div className="flex flex-col gap-3">
+              <AddToPortfolioButton cardId={card!.id} />
               <div className="grid grid-cols-2 gap-3">
-                <WatchlistButton cardId={card.id} />
-                <SetAlertButton cardId={card.id} />
+                <WatchlistButton cardId={card!.id} />
+                <SetAlertButton cardId={card!.id} />
               </div>
             </div>
 
-            {/* Investment Score */}
-            <Suspense fallback={<div className="skeleton h-48 w-full mt-4" />}>
-              <CardInvestmentScore cardId={card.id} />
+            <Suspense fallback={<div className="skeleton h-52 w-full rounded-2xl" />}>
+              <CardInvestmentScore cardId={card!.id} />
             </Suspense>
 
-            {/* PSA Population */}
-            <Suspense fallback={<div className="skeleton h-48 w-full mt-4" />}>
-              <CardPsaPopulation cardId={card.id} />
+            <Suspense fallback={<div className="skeleton h-44 w-full rounded-2xl" />}>
+              <CardPsaPopulation cardId={card!.id} />
             </Suspense>
           </div>
 
-          {/* Right — Main Data */}
+          {/* Colonne droite — stats, chart, IA */}
           <div className="xl:col-span-3 space-y-6">
-            {/* Market Stats Header */}
-            <Suspense fallback={<div className="skeleton h-32 w-full" />}>
-              <CardMarketStats card={card} />
+            <Suspense fallback={<div className="skeleton h-40 w-full rounded-2xl" />}>
+              <CardMarketStats card={card as any} />
             </Suspense>
 
-            {/* Price Chart */}
-            <Suspense fallback={<div className="skeleton h-80 w-full" />}>
-              <CardPriceChart cardId={card.id} />
+            <Suspense fallback={<div className="skeleton h-80 w-full rounded-2xl" />}>
+              <CardPriceChart cardId={card!.id} />
             </Suspense>
 
-            {/* AI Analysis */}
-            <Suspense fallback={<div className="skeleton h-64 w-full" />}>
-              <CardAiAnalysis cardId={card.id} />
+            <Suspense fallback={<div className="skeleton h-72 w-full rounded-2xl" />}>
+              <CardAiAnalysis cardId={card!.id} />
             </Suspense>
           </div>
         </div>
 
-        {/* Bottom sections */}
+        {/* Historique prix + Graded prices */}
         <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Suspense fallback={<div className="skeleton h-64 w-full" />}>
-            <CardPriceTable cardId={card.id} />
+          <Suspense fallback={<div className="skeleton h-72 w-full rounded-2xl" />}>
+            <CardPriceTable cardId={card!.id} />
           </Suspense>
-          <Suspense fallback={<div className="skeleton h-64 w-full" />}>
-            <CardGradedPrices cardId={card.id} />
+          <Suspense fallback={<div className="skeleton h-72 w-full rounded-2xl" />}>
+            <CardGradedPrices cardId={card!.id} />
           </Suspense>
         </div>
 
-        {/* Recent Sales */}
+        {/* Ventes récentes */}
         <div className="mt-6">
-          <Suspense fallback={<div className="skeleton h-80 w-full" />}>
-            <CardRecentSales cardId={card.id} />
+          <Suspense fallback={<div className="skeleton h-80 w-full rounded-2xl" />}>
+            <CardRecentSales cardId={card!.id} />
           </Suspense>
         </div>
 
-        {/* Similar Cards */}
+        {/* Cartes similaires */}
         <div className="mt-8">
-          <Suspense fallback={<div className="skeleton h-64 w-full" />}>
-            <SimilarCards cardId={card.id} setId={card.setId} />
+          <Suspense fallback={<div className="skeleton h-64 w-full rounded-2xl" />}>
+            <SimilarCards cardId={card!.id} setId={card!.setId} />
           </Suspense>
         </div>
       </main>

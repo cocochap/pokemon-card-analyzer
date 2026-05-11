@@ -4,6 +4,8 @@ import { GeistMono } from 'geist/font/mono'
 import { ClerkProvider } from '@clerk/nextjs'
 import { QueryProvider } from '@/components/providers/QueryProvider'
 import { ThemeProvider } from '@/components/providers/ThemeProvider'
+import { LanguageProvider } from '@/lib/i18n/LanguageContext'
+import { LanguageModal } from '@/components/ui/LanguageModal'
 import { Toaster } from 'react-hot-toast'
 import '@/styles/globals.css'
 
@@ -66,7 +68,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <body className="min-h-screen bg-background font-sans antialiased">
           <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} forcedTheme="dark">
             <QueryProvider>
-              {children}
+              <LanguageProvider>
+                <LanguageModal />
+                {children}
+              </LanguageProvider>
               <Toaster
                 position="bottom-right"
                 toastOptions={{
@@ -80,6 +85,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   error: { iconTheme: { primary: '#EF4444', secondary: '#fff' } },
                 }}
               />
+
             </QueryProvider>
           </ThemeProvider>
         </body>

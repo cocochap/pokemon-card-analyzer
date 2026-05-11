@@ -23,9 +23,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
     // Si une analyse récente existe en base, la servir directement
     if (card.aiAnalysis?.updatedAt && card.aiAnalysis.updatedAt > subDays(new Date(), 1)) {
+      const currentPrice = Number(card.prices[0]?.market ?? 0)
+      const dbPredictions = card.aiAnalysis.predictions ?? []
+      const roi30d = Number(card.aiAnalysis.predictedRoi30d ?? 0)
+      const vol = Number(card.aiAnalysis.riskLevel ?? 50) / 100
+      // Augment with long-horizon predictions if not in DB
+      const augmented = augmentPredictions(dbPredictions, currentPrice, roi30d, vol)
       return {
         ...card.aiAnalysis,
-        currentPrice: Number(card.prices[0]?.market ?? 0),
+        currentPrice,
+        predictions: augmented,
         modelVersion: card.aiAnalysis.modelVersion,
         updatedAt: card.aiAnalysis.updatedAt,
       }
@@ -105,20 +112,8 @@ async function computeAnalysis(card: any) {
 
   const result = scoreCard(inp)
 
-  // Prédictions simples basées sur la tendance
-  const predictions = [7, 30, 90].map((days) => {
-    const decay = days === 7 ? 0.9 : days === 30 ? 0.7 : 0.5
-    const roi = result.predictedRoi30d * decay * (days / 30)
-    const predicted = currentPrice * (1 + roi)
-    const uncertainty = currentPrice * (0.05 + vol30 * 0.05 * (days / 30))
-    return {
-      horizonDays: days,
-      predictedPrice: Math.max(0.01, +predicted.toFixed(2)),
-      lowerBound: Math.max(0.01, +(predicted - uncertainty).toFixed(2)),
-      upperBound: +(predicted + uncertainty).toFixed(2),
-      confidence: +Math.max(0.3, Math.min(0.9, 1 - vol30 * 0.3 - days / 500)).toFixed(4),
-    }
-  })
+  // Prédictions basées sur la tendance avec décroissance temporelle
+  const predictions = buildPredictions(currentPrice, result.predictedRoi30d, vol30)
 
   const confidence = predictions.reduce((s, p) => s + p.confidence, 0) / predictions.length
 
@@ -140,6 +135,51 @@ async function computeAnalysis(card: any) {
     modelVersion: 'scorer-ts-v1',
     updatedAt: new Date().toISOString(),
   }
+}
+
+function buildPredictions(currentPrice: number, roi30d: number, vol30: number) {
+  const horizons = [
+    { days: 7, decay: 0.9 },
+    { days: 30, decay: 0.7 },
+    { days: 90, decay: 0.5 },
+    { days: 180, decay: 0.35 },
+    { days: 365, decay: 0.2 },
+  ]
+  return horizons.map(({ days, decay }) => {
+    const roi = roi30d * decay * (days / 30)
+    const predicted = currentPrice * (1 + roi)
+    const uncertainty = currentPrice * (0.05 + vol30 * 0.05 * (days / 30))
+    return {
+      horizonDays: days,
+      predictedPrice: Math.max(0.01, +predicted.toFixed(2)),
+      lowerBound: Math.max(0.01, +(predicted - uncertainty).toFixed(2)),
+      upperBound: +(predicted + uncertainty).toFixed(2),
+      confidence: +Math.max(0.2, Math.min(0.9, 1 - vol30 * 0.3 - days / 700)).toFixed(4),
+    }
+  })
+}
+
+function augmentPredictions(dbPredictions: any[], currentPrice: number, roi30d: number, vol: number) {
+  const existing = new Set(dbPredictions.map((p: any) => p.horizonDays))
+  const longHorizons = [
+    { days: 180, decay: 0.35 },
+    { days: 365, decay: 0.2 },
+  ]
+  const extra = longHorizons
+    .filter(({ days }) => !existing.has(days))
+    .map(({ days, decay }) => {
+      const roi = roi30d * decay * (days / 30)
+      const predicted = currentPrice * (1 + roi)
+      const uncertainty = currentPrice * (0.05 + vol * 0.05 * (days / 30))
+      return {
+        horizonDays: days,
+        predictedPrice: Math.max(0.01, +predicted.toFixed(2)),
+        lowerBound: Math.max(0.01, +(predicted - uncertainty).toFixed(2)),
+        upperBound: +(predicted + uncertainty).toFixed(2),
+        confidence: +Math.max(0.2, Math.min(0.9, 1 - vol * 0.3 - days / 700)).toFixed(4),
+      }
+    })
+  return [...dbPredictions, ...extra].sort((a: any, b: any) => a.horizonDays - b.horizonDays)
 }
 
 function computeRSI(prices: number[], period = 14): number {

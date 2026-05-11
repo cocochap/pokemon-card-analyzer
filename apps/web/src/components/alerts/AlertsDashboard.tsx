@@ -19,19 +19,21 @@ import Link from 'next/link'
 import { api } from '@/lib/api'
 import { formatCurrency, formatRelativeTime } from '@/lib/formatters'
 import { CreateAlertModal } from './CreateAlertModal'
+import { useT } from '@/lib/i18n/LanguageContext'
 import toast from 'react-hot-toast'
-
-const ALERT_TYPE_CONFIG = {
-  PRICE_ABOVE: { label: 'Price Above', icon: TrendingUp, color: 'text-market-bull' },
-  PRICE_BELOW: { label: 'Price Below', icon: TrendingDown, color: 'text-market-bear' },
-  PRICE_CHANGE_PERCENT: { label: 'Price Change', icon: Zap, color: 'text-pokemon-yellow' },
-  VOLUME_SPIKE: { label: 'Volume Spike', icon: Zap, color: 'text-pokemon-blue' },
-  AI_SIGNAL: { label: 'AI Signal', icon: Zap, color: 'text-purple-400' },
-}
 
 export function AlertsDashboard() {
   const [showCreate, setShowCreate] = useState(false)
   const queryClient = useQueryClient()
+  const t = useT()
+
+  const ALERT_TYPE_CONFIG = {
+    PRICE_ABOVE: { label: t.alerts.priceAbove, icon: TrendingUp, color: 'text-market-bull' },
+    PRICE_BELOW: { label: t.alerts.priceBelow, icon: TrendingDown, color: 'text-market-bear' },
+    PRICE_CHANGE_PERCENT: { label: t.alerts.priceChange, icon: Zap, color: 'text-pokemon-yellow' },
+    VOLUME_SPIKE: { label: t.alerts.volumeSpike, icon: Zap, color: 'text-pokemon-blue' },
+    AI_SIGNAL: { label: t.alerts.aiSignal, icon: Zap, color: 'text-purple-400' },
+  }
 
   const { data: alerts, isLoading } = useQuery({
     queryKey: ['alerts'],
@@ -62,9 +64,9 @@ export function AlertsDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Price Alerts</h1>
+          <h1 className="text-2xl font-bold">{t.alerts.title}</h1>
           <p className="text-muted-foreground text-sm">
-            {activeAlerts.length} active · {triggeredAlerts.length} triggered
+            {activeAlerts.length} {t.alerts.active.toLowerCase()} · {triggeredAlerts.length} {t.alerts.triggered.toLowerCase()}
           </p>
         </div>
         <button
@@ -100,15 +102,15 @@ export function AlertsDashboard() {
       ) : alerts?.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center glass-card">
           <Bell className="w-12 h-12 text-muted-foreground mb-4" />
-          <h3 className="font-semibold mb-2">No alerts yet</h3>
+          <h3 className="font-semibold mb-2">{t.alerts.noAlerts}</h3>
           <p className="text-muted-foreground text-sm max-w-sm mb-6">
-            Create price alerts to be notified when your favorite cards reach your target price.
+            {t.alerts.noAlertsDesc}
           </p>
           <button
             onClick={() => setShowCreate(true)}
             className="px-4 py-2 bg-pokemon-yellow text-background font-semibold rounded-lg text-sm"
           >
-            Create your first alert
+            {t.alerts.createFirst}
           </button>
         </div>
       ) : (

@@ -8,6 +8,8 @@ import { clsx } from 'clsx'
 import { formatCurrency, formatPercent } from '@/lib/formatters'
 import { RarityBadge } from '@/components/ui/RarityBadge'
 import { VariantBadge } from '@/components/ui/VariantBadge'
+import { useLanguage } from '@/lib/i18n/LanguageContext'
+import { getCardName, getSetName } from '@/lib/i18n/cardLocale'
 
 interface CardHeroProps {
   card: {
@@ -30,6 +32,7 @@ interface CardHeroProps {
 }
 
 export function CardHero({ card }: CardHeroProps) {
+  const { locale } = useLanguage()
   const [zoomed, setZoomed] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [tilt, setTilt] = useState({ x: 0, y: 0 })
@@ -85,7 +88,7 @@ export function CardHero({ card }: CardHeroProps) {
               {card.imageLgUrl && (
                 <Image
                   src={card.imageLgUrl}
-                  alt={card.name}
+                  alt={getCardName(card as any, locale)}
                   width={600}
                   height={840}
                   className={clsx(
@@ -133,13 +136,13 @@ export function CardHero({ card }: CardHeroProps) {
               <VariantBadge variant={card.variant} />
             </div>
 
-            <h1 className="text-2xl font-bold">{card.name}</h1>
+            <h1 className="text-2xl font-bold">{getCardName(card as any, locale)}</h1>
 
             <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
               {card.set.logoUrl && (
-                <Image src={card.set.logoUrl} alt={card.set.name} width={20} height={20} className="h-5 w-auto" />
+                <Image src={card.set.logoUrl} alt={getSetName(card.set, locale)} width={20} height={20} className="h-5 w-auto" />
               )}
-              <span>{card.set.name}</span>
+              <span>{getSetName(card.set, locale)}</span>
               <span className="text-white/20">·</span>
               <span>#{card.number}</span>
             </div>
@@ -199,7 +202,7 @@ export function CardHero({ card }: CardHeroProps) {
               {card.imageLgUrl && (
                 <Image
                   src={card.imageLgUrl}
-                  alt={card.name}
+                  alt={getCardName(card as any, locale)}
                   width={600}
                   height={840}
                   className="w-full h-auto rounded-2xl shadow-2xl"

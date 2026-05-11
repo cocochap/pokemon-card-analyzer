@@ -10,10 +10,9 @@ export async function GET(req: NextRequest) {
   const q = searchParams.get('q') ?? ''
   const set = searchParams.get('set') ?? ''
   const rarity = searchParams.get('rarity') ?? ''
-  const language = searchParams.get('language') ?? ''
-  const sort = searchParams.get('sort') ?? 'name_asc'
+  const sort = searchParams.get('sort') ?? 'price_desc'
   const page = Math.max(1, Number(searchParams.get('page') ?? 1))
-  const limit = Math.min(100, Number(searchParams.get('limit') ?? 20))
+  const limit = Math.min(100, Number(searchParams.get('limit') ?? 24))
 
   const where: Prisma.CardWhereInput = {
     ...(q && {
@@ -25,15 +24,22 @@ export async function GET(req: NextRequest) {
     }),
     ...(set && { setId: set }),
     ...(rarity && { rarity: rarity as any }),
-    ...(language && { language: language as any }),
+    // Only show cards with price data when sorting by price
+    ...((sort === 'price_desc' || sort === 'price_asc') && !q && {
+      prices: { some: { source: 'cardmarket', variant: 'NORMAL' } },
+    }),
   }
 
   const orderBy: Prisma.CardOrderByWithRelationInput =
+    sort === 'price_desc' ? { marketData: { allTimeHigh: 'desc' } } :
+    sort === 'price_asc'  ? { marketData: { allTimeHigh: 'asc' } } :
     sort === 'change_desc' ? { marketData: { priceChange24h: 'desc' } } :
-    sort === 'name_desc' ? { name: 'desc' } :
-    { name: 'asc' }
+    sort === 'name_desc'  ? { name: 'desc' } :
+    sort === 'name_asc'   ? { name: 'asc' } :
+    sort === 'score_desc' ? { marketData: { investmentScore: 'desc' } } :
+    { marketData: { allTimeHigh: 'desc' } }
 
-  const cacheKey = `cards:search:${JSON.stringify({ q, set, rarity, language, sort, page, limit })}`
+  const cacheKey = `cards:v2:${JSON.stringify({ q, set, rarity, sort, page, limit })}`
 
   const result = await withCache(cacheKey, 60, async () => {
     const [items, total] = await Promise.all([
@@ -43,9 +49,15 @@ export async function GET(req: NextRequest) {
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          set: { select: { id: true, name: true, symbolUrl: true } },
-          prices: { where: { source: 'cardmarket' }, orderBy: { fetchedAt: 'desc' }, take: 1 },
-          marketData: { select: { priceChange24h: true, trendDirection: true, investmentScore: true } },
+          set: { select: { id: true, externalId: true, name: true, symbolUrl: true } },
+          prices: {
+            where: { source: 'cardmarket', variant: 'NORMAL' },
+            orderBy: { fetchedAt: 'desc' },
+            take: 1,
+          },
+          marketData: {
+            select: { priceChange24h: true, priceChange7d: true, trendDirection: true, investmentScore: true, allTimeHigh: true },
+          },
         },
       }),
       prisma.card.count({ where }),

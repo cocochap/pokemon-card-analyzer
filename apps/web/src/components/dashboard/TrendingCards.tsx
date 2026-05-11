@@ -4,8 +4,12 @@ import { useQuery } from '@tanstack/react-query'
 import Image from 'next/image'
 import Link from 'next/link'
 import { api } from '@/lib/api'
+import { useLanguage, useT } from '@/lib/i18n/LanguageContext'
+import { getCardName } from '@/lib/i18n/cardLocale'
 
 export function TrendingCards() {
+  const { locale } = useLanguage()
+  const t = useT()
   const { data, isLoading } = useQuery({
     queryKey: ['trending-cards'],
     queryFn: () => api.cards.search('', { limit: '8' } as any),
@@ -16,7 +20,7 @@ export function TrendingCards() {
 
   return (
     <div className="rounded-xl border border-border bg-card p-6">
-      <h3 className="text-lg font-semibold mb-4">Latest Cards</h3>
+      <h3 className="text-lg font-semibold mb-4">{t.dashboard.sections.latestCards}</h3>
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
         {isLoading
           ? Array.from({ length: 8 }).map((_, i) => (
@@ -27,14 +31,14 @@ export function TrendingCards() {
                 {card.imageSmUrl ? (
                   <Image
                     src={card.imageSmUrl}
-                    alt={card.name}
+                    alt={getCardName(card, locale)}
                     fill
                     className="object-cover"
                     sizes="(max-width: 640px) 50vw, 12.5vw"
                   />
                 ) : (
                   <div className="w-full h-full bg-muted flex items-center justify-center text-xs text-muted-foreground p-1 text-center">
-                    {card.name}
+                    {getCardName(card, locale)}
                   </div>
                 )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">

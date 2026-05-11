@@ -1,4 +1,7 @@
 import type { Config } from 'tailwindcss'
+import { createRequire } from 'module'
+const _require = createRequire(import.meta.url)
+const tailwindAnimate = _require('tailwindcss-animate')
 
 const config: Config = {
   darkMode: ['class'],
@@ -58,6 +61,27 @@ const config: Config = {
           green: '#2E8B57',
           purple: '#7B2D8B',
         },
+        // Pokémon type energy colors
+        type: {
+          fire:     '#FF6B35',
+          water:    '#4FC3F7',
+          grass:    '#66BB6A',
+          electric: '#FFD700',
+          psychic:  '#F06292',
+          dragon:   '#7E57C2',
+          dark:     '#78909C',
+          fairy:    '#F48FB1',
+          ice:      '#80DEEA',
+          fighting: '#EF5350',
+          normal:   '#BDBDBD',
+          poison:   '#AB47BC',
+          ground:   '#A1887F',
+          rock:     '#8D6E63',
+          bug:      '#9CCC65',
+          ghost:    '#7E57C2',
+          steel:    '#90A4AE',
+          flying:   '#81D4FA',
+        },
         // Market colors
         market: {
           bull: '#22C55E',
@@ -98,9 +122,12 @@ const config: Config = {
         'scale-in': 'scaleIn 0.3s ease-out',
         'pulse-glow': 'pulseGlow 2s ease-in-out infinite',
         'ticker': 'ticker 30s linear infinite',
-        'shimmer': 'shimmer 2s linear infinite',
+        'shimmer': 'shimmer 1.6s ease-in-out infinite',
         'float': 'float 3s ease-in-out infinite',
-        'spin-slow': 'spin 3s linear infinite',
+        'spin-slow': 'spin 6s linear infinite',
+        'holo': 'holo 3s ease-in-out infinite',
+        'gradient-shift': 'gradient-shift 3s linear infinite',
+        'bounce-in': 'bounce-in 0.4s ease-out',
       },
       keyframes: {
         fadeIn: {
@@ -149,7 +176,7 @@ const config: Config = {
       },
     },
   },
-  plugins: [require('tailwindcss-animate')],
+  plugins: [tailwindAnimate],
 }
 
 export default config

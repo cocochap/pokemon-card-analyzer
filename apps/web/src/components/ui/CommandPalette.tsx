@@ -9,6 +9,8 @@ import Image from 'next/image'
 import { useDebounce } from '@/hooks/useDebounce'
 import { api } from '@/lib/api'
 import { RarityBadge } from './RarityBadge'
+import { useLanguage, useT } from '@/lib/i18n/LanguageContext'
+import { getCardName } from '@/lib/i18n/cardLocale'
 
 interface CommandPaletteProps {
   open: boolean
@@ -16,6 +18,8 @@ interface CommandPaletteProps {
 }
 
 export function CommandPalette({ open, onClose }: CommandPaletteProps) {
+  const { locale } = useLanguage()
+  const t = useT()
   const [query, setQuery] = useState('')
   const router = useRouter()
   const debouncedQuery = useDebounce(query, 250)
@@ -92,7 +96,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                 <div className="max-h-80 overflow-y-auto">
                   {data?.items?.length === 0 && !isLoading ? (
                     <div className="py-8 text-center text-muted-foreground text-sm">
-                      No cards found for "{query}"
+                      {t.common.noCardsFound} "{query}"
                     </div>
                   ) : (
                     <ul>
@@ -114,7 +118,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                               )}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium truncate">{card.name}</div>
+                              <div className="text-sm font-medium truncate">{getCardName(card, locale)}</div>
                               <div className="flex items-center gap-1.5 mt-0.5">
                                 <RarityBadge rarity={card.rarity} size="xs" />
                                 <span className="text-xs text-muted-foreground truncate">
@@ -133,7 +137,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
               {query.length < 2 && (
                 <div className="px-4 py-6 text-center text-muted-foreground text-sm">
-                  Start typing to search 250,000+ cards...
+                  {t.common.searchHint}
                 </div>
               )}
             </div>
