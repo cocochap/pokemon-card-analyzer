@@ -27,9 +27,24 @@ export const maxDuration = 300
 
 // Sets supportés avec mapping pokemontcg.io ID
 const PTCG_SET_IDS = [
+  // Scarlet & Violet — mis à jour chaque jour
   'sv1', 'sv2', 'sv3', 'sv3pt5', 'sv4', 'sv4pt5',
   'sv5', 'sv6', 'sv6pt5', 'sv7', 'sv8', 'sv8pt5',
   'sv9', 'sv10', 'rsv10pt5', 'zsv10pt5', 'svp',
+  // Sword & Shield — sets populaires avec prix actifs
+  'swsh1', 'swsh2', 'swsh3', 'swsh4', 'swsh5', 'swsh6',
+  'swsh7', 'swsh8', 'swsh9', 'swsh10', 'swsh11', 'swsh12',
+  'swsh12pt5', 'swsh35', 'swsh45', 'swsh45sv', 'swshp',
+  // Sun & Moon populaires
+  'sm1', 'sm2', 'sm3', 'sm3pt5', 'sm4', 'sm5', 'sm6',
+  'sm7', 'sm8', 'sm9', 'sm10', 'sm11', 'sm12', 'smp',
+  // XY populaires
+  'xy1', 'xy2', 'xy3', 'xy4', 'xy5', 'xy6', 'xy7',
+  'xy8', 'xy9', 'xy10', 'xy11', 'xy12', 'xyp',
+  // Vintage — sets très recherchés
+  'base1', 'base2', 'base3', 'base4', 'base5', 'base6',
+  'neo1', 'neo2', 'neo3', 'neo4',
+  'ex1', 'ex2', 'ex3', 'ex4', 'ex5', 'ex6',
 ]
 
 interface PtcgCard {
