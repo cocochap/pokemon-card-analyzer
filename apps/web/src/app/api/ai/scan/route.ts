@@ -9,7 +9,7 @@ import { prisma } from '@/lib/db/prisma'
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
-const GEMINI_MODEL = 'gemini-2.0-flash'
+const GEMINI_MODEL = 'gemini-1.5-flash'
 
 const PROMPT = `You are an expert Pokémon TCG authentication and grading specialist with 20 years of experience.
 
