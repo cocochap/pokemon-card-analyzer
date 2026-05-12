@@ -5,8 +5,12 @@
   "outputDirectory": ".next",
   "crons": [
     {
-      "path": "/api/cron/sync",
+      "path": "/api/cron/update-prices",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/update-prices-fr",
+      "schedule": "0 7 * * *"
     }
   ]
 }
