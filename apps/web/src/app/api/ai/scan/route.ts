@@ -87,7 +87,12 @@ async function runAI(b64: string, mimeType: string): Promise<AiResult | null> {
 const SEL = {
   id: true, name: true, number: true, rarity: true, imageSmUrl: true, imageLgUrl: true,
   set:        { select: { name: true, externalId: true, releaseDate: true, logoUrl: true } },
-  prices:     { orderBy: { updatedAt: 'desc' } as any, take: 1, select: { market: true, low: true, high: true, currency: true } },
+  prices:     {
+    where: { source: 'cardmarket' },  // toujours Cardmarket EUR en priorité
+    orderBy: { updatedAt: 'desc' } as any,
+    take: 1,
+    select: { market: true, low: true, high: true, currency: true, source: true },
+  },
   marketData: { select: { investmentScore: true, rarityScore: true, liquidityScore: true, trendDirection: true, priceChange7d: true, priceChange30d: true, priceChange1y: true, allTimeHigh: true, volatility30d: true } },
   aiAnalysis: { select: { investmentScore: true, predictedRoi90d: true, trendDirection: true, bullishSignals: true, bearishSignals: true, keyInsight: true, predictions: { select: { horizonDays: true, predictedPrice: true, lowerBound: true, upperBound: true }, orderBy: { horizonDays: 'asc' } as any } } },
 }
