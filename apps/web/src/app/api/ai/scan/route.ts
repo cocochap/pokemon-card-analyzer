@@ -1,7 +1,7 @@
 /**
  * POST /api/ai/scan
- * Gemini vision via REST API v1 (no SDK dependency).
- * Body: multipart/form-data with field "image" (File)
+ * Tries multiple Gemini models in order until one works.
+ * No SDK dependency — direct REST calls.
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
@@ -9,16 +9,24 @@ import { prisma } from '@/lib/db/prisma'
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
-const GEMINI_MODEL = 'gemini-1.5-flash'
+// Models to try in order (first available wins)
+const MODELS_TO_TRY = [
+  { model: 'gemini-2.0-flash-lite', api: 'v1beta' },
+  { model: 'gemini-1.5-flash',      api: 'v1beta' },
+  { model: 'gemini-1.5-flash-8b',   api: 'v1beta' },
+  { model: 'gemini-1.5-pro',        api: 'v1beta' },
+  { model: 'gemini-2.0-flash',      api: 'v1beta' },
+  { model: 'gemini-pro-vision',     api: 'v1beta' }, // legacy but reliable
+]
 
-const PROMPT = `You are an expert Pokémon TCG authentication and grading specialist with 20 years of experience.
+const PROMPT = `You are an expert Pokémon TCG authentication and grading specialist.
 
-Analyze this Pokémon card image carefully and return ONLY valid JSON (no markdown, no code fences, no explanation outside the JSON):
+Analyze this Pokémon card image and return ONLY valid JSON (no markdown, no code fences):
 {
   "cardName": "exact Pokémon or Trainer name",
-  "setName": "full English set name (e.g. Base Set, Scarlet & Violet)",
-  "setId": "pokemontcg.io set ID (e.g. base1, sv1, swsh1, xy1)",
-  "cardNumber": "number printed on card (e.g. 4, 025/165)",
+  "setName": "full English set name",
+  "setId": "pokemontcg.io set ID (e.g. base1, sv1, swsh1)",
+  "cardNumber": "number on card",
   "rarity": "Common / Uncommon / Rare / Holo Rare / Ultra Rare / Secret Rare",
   "variant": "NORMAL or HOLO or REVERSE_HOLO or FIRST_EDITION",
   "condition": "Mint / Near Mint / Excellent / Good / Light Played / Played / Poor",
@@ -55,37 +63,44 @@ interface CardAnalysis {
   notes:             string
 }
 
-async function callGeminiVision(imageBase64: string, mimeType: string): Promise<CardAnalysis> {
-  const url = `https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`
+async function callGemini(
+  imageBase64: string,
+  mimeType: string,
+  model: string,
+  api: string,
+): Promise<{ ok: boolean; data?: CardAnalysis; error?: string; status?: number }> {
+  const url = `https://generativelanguage.googleapis.com/${api}/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`
+
+  // gemini-pro-vision uses a different parts format
+  const imagePart = model === 'gemini-pro-vision'
+    ? { inline_data: { mime_type: mimeType, data: imageBase64 } }
+    : { inline_data: { mime_type: mimeType, data: imageBase64 } }
 
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      contents: [{
-        parts: [
-          { inline_data: { mime_type: mimeType, data: imageBase64 } },
-          { text: PROMPT },
-        ],
-      }],
-      generationConfig: {
-        temperature:     0.1,
-        maxOutputTokens: 1024,
-      },
+      contents: [{ parts: [imagePart, { text: PROMPT }] }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
     }),
   })
 
   if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`Gemini API error ${res.status}: ${err}`)
+    const err = await res.json().catch(() => ({}))
+    return { ok: false, error: err?.error?.message ?? `HTTP ${res.status}`, status: res.status }
   }
 
-  const data  = await res.json()
-  const text  = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+  const data = await res.json()
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
   const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
 
-  if (!clean) throw new Error('Empty response from Gemini')
-  return JSON.parse(clean) as CardAnalysis
+  if (!clean) return { ok: false, error: 'Empty response' }
+
+  try {
+    return { ok: true, data: JSON.parse(clean) as CardAnalysis }
+  } catch {
+    return { ok: false, error: 'Invalid JSON from model' }
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -104,7 +119,30 @@ export async function POST(req: NextRequest) {
     const base64   = Buffer.from(buffer).toString('base64')
     const mimeType = file.type || 'image/jpeg'
 
-    const analysis = await callGeminiVision(base64, mimeType)
+    // Try models in sequence until one works
+    let analysis: CardAnalysis | null = null
+    const errors: string[] = []
+
+    for (const { model, api } of MODELS_TO_TRY) {
+      const result = await callGemini(base64, mimeType, model, api)
+      if (result.ok && result.data) {
+        analysis = result.data
+        console.log(`[scan] success with ${model} (${api})`)
+        break
+      }
+      errors.push(`${model}: ${result.error}`)
+      console.warn(`[scan] ${model} failed: ${result.error}`)
+      // Don't retry on 404 (model doesn't exist), skip immediately
+      // On 429 (quota), try next model
+    }
+
+    if (!analysis) {
+      return NextResponse.json({
+        ok: false,
+        error: 'All Gemini models failed. Enable billing at console.cloud.google.com or check your API key.',
+        details: errors,
+      }, { status: 503 })
+    }
 
     // Look up card in DB
     const candidates = await prisma.card.findMany({
@@ -157,7 +195,7 @@ export async function POST(req: NextRequest) {
     })
   } catch (err: any) {
     console.error('[scan] error:', err?.message)
-    if (err instanceof SyntaxError) return NextResponse.json({ ok: false, error: 'AI returned invalid JSON — try a clearer photo' }, { status: 422 })
+    if (err instanceof SyntaxError) return NextResponse.json({ ok: false, error: 'Invalid JSON — try a clearer photo' }, { status: 422 })
     return NextResponse.json({ ok: false, error: err.message ?? 'Scan failed' }, { status: 500 })
   }
 }
