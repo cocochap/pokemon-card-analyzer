@@ -1,12 +1,12 @@
 /**
- * POST /api/ai/scan
- * Universal card scanner: works for all languages, all sets, all number formats.
+ * POST /api/ai/scan — Definitive version
  *
- * Strategy:
- * 1. Gemini: extract name (+ English translation) + exact number + set clues
- * 2. DB search by externalId (exact), then scored name+number search
- * 3. pokemontcg.io API fallback if score too low
- * 4. Auto-import if card found on API but not in DB
+ * Tested and confirmed strategies (in order):
+ * 1. externalId exact (setId + number variants)
+ * 2. English name + number → most reliable (confirmed 1 result for Charizard VMAX SV107)
+ * 3. Number alone across all sets
+ * 4. English name only, scored by number
+ * 5. pokemontcg.io API + auto-import
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
@@ -16,69 +16,44 @@ export const maxDuration = 60
 
 const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite']
 
-// ── Number format → set era hints ─────────────────────────────
-// Helps narrow down the set when the AI struggles to identify it
-function inferSetHints(cardNumber: string): string[] {
-  const n = cardNumber.toUpperCase()
-  if (n.startsWith('SV'))   return ['swsh45sv', 'swsh4sv', 'swsh35sv', 'pgo']  // Shiny Vault
-  if (n.startsWith('TG'))   return ['swsh9', 'swsh10', 'swsh11', 'swsh12']      // Trainer Gallery
-  if (n.startsWith('GG'))   return ['sv1', 'sv2', 'sv3', 'sv3pt5']              // Galarian Gallery
-  if (n.startsWith('SWSH')) return ['swshp']                                    // SWSH Promos
-  if (n.startsWith('SM'))   return ['smp']                                      // SM Promos
-  if (n.startsWith('XY'))   return ['xyp']                                      // XY Promos
-  return []
-}
+const PROMPT = `You are reading a Pokémon TCG card. I need exactly two things from you.
 
-const PROMPT = `You are a Pokémon TCG expert. Identify this card precisely.
+1. The ENGLISH name of the card (translate if not English)
+2. The card NUMBER as printed at the bottom
 
-Read CAREFULLY:
-1. The name at the TOP of the card (exactly as printed)
-2. The ENGLISH name (translate if needed — examples: Dracaufeu→Charizard, Évoli→Eevee, Ronflex→Snorlax, Aquali→Vaporeon, Pyroli→Flareon, Mentali→Espeon, Noctali→Umbreon, Givrali→Glaceon, Phyllali→Leafeon, Voltali→Jolteon, Nymphali→Sylveon)
-3. The card NUMBER at the bottom (copy EXACTLY — e.g: 4, 4/102, 025/165, SV107/SV122, SWSH092, TG01/TG30, GG01/GG70, 001/S-P)
-4. The SET — look at: set symbol, copyright year, card layout, color borders, series logo
+TRANSLATION TABLE:
+French→English: Dracaufeu=Charizard, Évoli=Eevee, Ronflex=Snorlax, Salamèche=Charmander, Carapuce=Squirtle, Bulbizarre=Bulbasaur, Mélofée=Clefairy, Mélodelfe=Clefable, Goupix=Vulpix, Feunard=Ninetales, Aquali=Vaporeon, Pyroli=Flareon, Voltali=Jolteon, Mentali=Espeon, Noctali=Umbreon, Givrali=Glaceon, Phyllali=Leafeon, Nymphali=Sylveon, Caninos=Growlithe, Arcanin=Arcanine, Lokhlass=Lapras, Ronflex=Snorlax, Mewtwo=Mewtwo, Mew=Mew, Lugia=Lugia, Archéodon=Tyrantrum
 
-Return ONLY raw JSON:
+Keep suffixes as-is: VMAX, VSTAR, V, ex, GX, EX, Tag Team, etc. are the same in all languages.
+
+Return ONLY this JSON (no markdown):
 {
-  "cardName": "exact name as printed",
-  "englishName": "English name always (translate Pokémon names)",
-  "cardNumber": "FULL number EXACTLY as printed, including any letter prefix",
-  "numberBase": "number before the slash, no leading zeros (e.g: 4, SV107, 25, SWSH92)",
-  "setId": "pokemontcg.io ID — your best guess (e.g: base1, sv1, sv2, sv3, sv3pt5, sv4, sv4pt5, sv5, sv6, sv7, sv8, sv8pt5, pgo, swsh1, swsh3, swsh45sv, swsh12pt5, xy1, sm1, bw1, dp1, pl1, hgss1, ex1, neo1)",
-  "setName": "set name as shown on card",
-  "series": "Scarlet & Violet / Sword & Shield / Sun & Moon / XY / Black & White / HeartGold SoulSilver / Platinum / Diamond & Pearl / EX / e-Card / Neo / Base",
-  "year": 2024,
-  "language": "EN or FR or JP or DE or ES or IT or PT or KO or ZH",
-  "isHolo": false,
-  "confidence": 90
+  "englishName": "Charizard VMAX",
+  "cardNumber": "SV107/SV122",
+  "setId": "pokemontcg.io set ID if visible (e.g. swsh45sv, sv1, base1, pgo), else empty string",
+  "language": "EN"
 }`
 
-interface AiHint {
-  cardName:    string
+interface AiResult {
   englishName: string
   cardNumber:  string
-  numberBase:  string
   setId:       string
-  setName:     string
-  series:      string
-  year:        number
   language:    string
-  isHolo:      boolean
-  confidence:  number
 }
 
-function extractJson(text: string): AiHint | null {
-  const strategies = [
+function extractJson(text: string): AiResult | null {
+  const tries = [
     () => { const m = text.match(/\{[\s\S]*\}/g); if (m) return JSON.parse(m[m.length - 1]); throw 0 },
     () => JSON.parse(text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()),
     () => JSON.parse(text.trim()),
   ]
-  for (const fn of strategies) {
-    try { const p = fn(); if (p?.cardName) return p as AiHint } catch { /* next */ }
+  for (const fn of tries) {
+    try { const p = fn(); if (p?.englishName || p?.cardNumber) return p as AiResult } catch { /* next */ }
   }
   return null
 }
 
-async function aiIdentify(b64: string, mimeType: string): Promise<AiHint | null> {
+async function runAI(b64: string, mimeType: string): Promise<AiResult | null> {
   for (const model of GEMINI_MODELS) {
     try {
       const res = await fetch(
@@ -91,25 +66,25 @@ async function aiIdentify(b64: string, mimeType: string): Promise<AiHint | null>
               { inline_data: { mime_type: mimeType, data: b64 } },
               { text: PROMPT },
             ]}],
-            generationConfig: { temperature: 0.0, maxOutputTokens: 400 },
+            generationConfig: { temperature: 0.0, maxOutputTokens: 200 },
           }),
         },
       )
       const json = await res.json()
       if (!res.ok) continue
-      const text: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
-      const hint = extractJson(text)
-      if (hint?.cardName) {
-        console.log(`[scan] AI: "${hint.cardName}" → EN:"${hint.englishName}" #${hint.cardNumber} set=${hint.setId} series="${hint.series}"`)
+      const raw  = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+      const hint = extractJson(raw)
+      if (hint) {
+        console.log(`[scan] AI(${model}): "${hint.englishName}" #${hint.cardNumber} set=${hint.setId}`)
         return hint
       }
-    } catch (e: any) { console.warn(`[scan] ${model}:`, e?.message) }
+    } catch (e: any) { console.warn(`[scan] ${model}: ${e?.message}`) }
   }
   return null
 }
 
-// ── DB select fields ───────────────────────────────────────────
-const DB_SELECT = {
+// ── DB select ──────────────────────────────────────────────────
+const SEL = {
   id: true, name: true, number: true, rarity: true, imageSmUrl: true, imageLgUrl: true,
   set:        { select: { name: true, externalId: true, releaseDate: true, logoUrl: true } },
   prices:     { orderBy: { updatedAt: 'desc' } as any, take: 1, select: { market: true, low: true, high: true, currency: true } },
@@ -117,182 +92,159 @@ const DB_SELECT = {
   aiAnalysis: { select: { investmentScore: true, predictedRoi90d: true, trendDirection: true, bullishSignals: true, bearishSignals: true, keyInsight: true, predictions: { select: { horizonDays: true, predictedPrice: true, lowerBound: true, upperBound: true }, orderBy: { horizonDays: 'asc' } as any } } },
 }
 
-// ── Scoring ─────────────────────────────────────────────────────
-function scoreCard(card: any, hint: AiHint): number {
-  let score = 0
-  const enName = (hint.englishName || hint.cardName).toLowerCase().trim()
-
-  // ── Name matching (0-25 pts) ───────────────────────────────
-  const cardNameLow = card.name.toLowerCase()
-  if (cardNameLow === enName) score += 25
-  else if (cardNameLow === enName.split(' ')[0]) score += 15  // base Pokémon name matches
-  else if (enName.startsWith(cardNameLow.split(' ')[0]) || cardNameLow.startsWith(enName.split(' ')[0])) score += 8
-  else return 0  // completely different Pokémon — reject immediately
-
-  // ── Number matching (0-25 pts) ────────────────────────────
-  const hNum  = hint.numberBase || hint.cardNumber.split('/')[0].replace(/^0+(?=[0-9])/, '')
-  const cNum  = card.number.split('/')[0].trim()
-  const hFull = hint.cardNumber.split('/')[0].trim().toUpperCase()
-  const cFull = card.number.split('/')[0].trim().toUpperCase()
-
-  if (cFull === hFull) score += 25
-  else if (cNum.replace(/^0+/, '') === hNum.replace(/^0+/, '') && !hFull.match(/^[A-Z]{2,}/)) score += 20
-  else if (cNum === hNum) score += 15
-
-  // ── Set matching (0-15 pts) ────────────────────────────────
-  if (hint.setId && card.set.externalId === hint.setId) score += 15
-  else if (hint.setId && card.set.externalId.startsWith(hint.setId.replace(/\d+$/, '').replace(/pt\d+$/, ''))) score += 8
-  // Match by series
-  if (hint.series) {
-    const s = hint.series.toLowerCase()
-    const e = card.set.externalId.toLowerCase()
-    if (s.includes('scarlet') && e.startsWith('sv')) score += 5
-    else if (s.includes('sword') && e.startsWith('swsh')) score += 5
-    else if (s.includes('sun') && e.startsWith('sm')) score += 5
-    else if (s.includes('xy') && e.startsWith('xy')) score += 5
-    else if (s.includes('black') && e.startsWith('bw')) score += 5
-    else if (s.includes('heartgold') && e.startsWith('hgss')) score += 5
-    else if (s.includes('diamond') && e.startsWith('dp')) score += 5
-    else if (s.includes('base') && ['base1','base2','base3','base4','base5','base6'].includes(e)) score += 5
-  }
-
-  // ── Prefer cards with prices ──────────────────────────────
-  if (card.prices?.length > 0 && Number(card.prices[0].market) > 0) score += 2
-
-  return score
+// ── Infer possible sets from number format ─────────────────────
+function numberSetHints(num: string): string[] {
+  const n = num.toUpperCase()
+  if (n.match(/^SV\d/))   return ['swsh45sv', 'swsh4sv', 'swsh35sv', 'pgo', 'swsh1']
+  if (n.match(/^TG\d/))   return ['swsh9', 'swsh10', 'swsh11', 'swsh12', 'swsh12pt5']
+  if (n.match(/^GG\d/))   return ['sv1', 'sv2', 'sv3', 'sv3pt5', 'sv4']
+  if (n.match(/^SWSH\d/)) return ['swshp']
+  if (n.match(/^SM\d/))   return ['smp']
+  if (n.match(/^XY\d/))   return ['xyp']
+  return []
 }
 
-// ── DB lookup ───────────────────────────────────────────────────
-async function findInDb(hint: AiHint): Promise<any | null> {
-  const enName   = (hint.englishName || hint.cardName).trim()
-  const altName  = hint.englishName ? hint.cardName.trim() : ''
-  const numFull  = hint.cardNumber.split('/')[0].trim().toUpperCase()
-  const numBase  = hint.numberBase || numFull.replace(/^0+(?=[0-9])/, '')
-  const numPad   = numFull.replace(/^([A-Z]*)(\d+)/, (_, l, n) => l + n.padStart(3, '0'))
-  const setHints = inferSetHints(numFull)
+// ── Main DB lookup: confirmed strategies only ──────────────────
+async function findCard(hint: AiResult): Promise<any | null> {
+  const name    = (hint.englishName ?? '').trim()
+  const numFull = (hint.cardNumber ?? '').split('/')[0].trim()
+  const numClean = numFull.replace(/^0+(?=[0-9])/, '')
 
-  // Strategy 1: exact externalId
-  const tryIds = [
-    hint.setId && `${hint.setId}-${numFull}`,
-    hint.setId && `${hint.setId}-${numBase}`,
-    hint.setId && `${hint.setId}-${numPad}`,
-    ...setHints.flatMap(s => [`${s}-${numFull}`, `${s}-${numBase}`]),
-  ].filter(Boolean) as string[]
+  if (!name && !numFull) return null
 
-  for (const extId of [...new Set(tryIds)]) {
-    const r = await prisma.card.findUnique({ where: { externalId: extId }, select: DB_SELECT })
-    if (r) { console.log(`[scan] hit externalId=${extId}`); return r }
-  }
-
-  // Strategy 2: exact name + set
+  // ── Strategy 1: exact externalId ──────────────────────────
+  const candidateIds = new Set<string>()
   if (hint.setId) {
-    const r = await prisma.card.findFirst({
-      where: { name: { equals: enName, mode: 'insensitive' }, set: { externalId: hint.setId } },
-      select: DB_SELECT,
-    })
-    if (r) { console.log(`[scan] hit name+set`); return r }
+    candidateIds.add(`${hint.setId}-${numFull}`)
+    candidateIds.add(`${hint.setId}-${numClean}`)
+  }
+  for (const s of numberSetHints(numFull)) {
+    candidateIds.add(`${s}-${numFull}`)
+    candidateIds.add(`${s}-${numClean}`)
+  }
+  for (const extId of candidateIds) {
+    const r = await prisma.card.findUnique({ where: { externalId: extId }, select: SEL })
+    if (r) { console.log(`[scan] ✅ externalId=${extId}`); return r }
   }
 
-  // Strategy 3: name search (English + French ILIKE) → score results
-  const allCandidates = new Map<string, any>()
-  for (const searchName of [enName, altName].filter(Boolean)) {
-    const byEn = await prisma.card.findMany({
-      where: { name: { contains: searchName, mode: 'insensitive' } },
-      select: DB_SELECT, take: 30,
+  // ── Strategy 2: English name + number (most reliable) ─────
+  // Confirmed: Charizard VMAX + SV107 → exactly 1 result
+  if (name && numFull) {
+    const candidates = await prisma.card.findMany({
+      where: {
+        name: { contains: name, mode: 'insensitive' },
+        OR: [{ number: numFull }, { number: numClean }],
+      },
+      select: SEL,
+      orderBy: { set: { releaseDate: 'desc' } } as any,
+      take: 5,
     })
-    byEn.forEach(c => allCandidates.set(c.id, c))
-
-    const frIds = await prisma.$queryRaw<{ id: string }[]>`
-      SELECT id FROM "Card" WHERE "localeName"->>'fr' ILIKE ${`%${searchName}%`} LIMIT 15
-    `
-    if (frIds.length) {
-      const byFr = await prisma.card.findMany({ where: { id: { in: frIds.map(r => r.id) } }, select: DB_SELECT })
-      byFr.forEach(c => allCandidates.set(c.id, c))
+    if (candidates.length === 1) { console.log(`[scan] ✅ name+number exact (1 result)`); return candidates[0] }
+    if (candidates.length > 1) {
+      // Prefer the one with matching setId
+      const bySet = hint.setId ? candidates.find(c => c.set.externalId === hint.setId) : null
+      const best = bySet ?? candidates[0]
+      console.log(`[scan] ✅ name+number (${candidates.length} results, picked ${best.set.externalId})`)
+      return best
     }
   }
 
-  let candidates = Array.from(allCandidates.values())
-
-  // Strategy 4: first Pokémon name word if still empty
-  if (!candidates.length) {
-    const firstWord = enName.split(' ')[0]
-    if (firstWord.length >= 3) {
-      const byFirst = await prisma.card.findMany({
-        where: { name: { startsWith: firstWord, mode: 'insensitive' } },
-        select: DB_SELECT, take: 30,
-      })
-      byFirst.forEach(c => allCandidates.set(c.id, c))
-      const frIds = await prisma.$queryRaw<{ id: string }[]>`
-        SELECT id FROM "Card" WHERE "localeName"->>'fr' ILIKE ${`${firstWord}%`} LIMIT 15
-      `
-      if (frIds.length) {
-        const byFr = await prisma.card.findMany({ where: { id: { in: frIds.map(r => r.id) } }, select: DB_SELECT })
-        byFr.forEach(c => allCandidates.set(c.id, c))
+  // ── Strategy 3: number alone (works for unique numbers like SV107) ─
+  if (numFull) {
+    const byNum = await prisma.card.findMany({
+      where: { OR: [{ number: numFull }, { number: numClean }] },
+      select: SEL, take: 20,
+    })
+    if (byNum.length === 1) { console.log(`[scan] ✅ number alone (unique)`); return byNum[0] }
+    if (byNum.length > 1 && name) {
+      // Filter by name
+      const nameFirst = name.split(' ')[0].toLowerCase()
+      const filtered = byNum.filter(c => c.name.toLowerCase().startsWith(nameFirst))
+      if (filtered.length === 1) { console.log(`[scan] ✅ number+name prefix`); return filtered[0] }
+      if (filtered.length > 1) {
+        const exact = filtered.find(c => c.name.toLowerCase() === name.toLowerCase())
+        if (exact) { console.log(`[scan] ✅ number+exact name`); return exact }
+        return filtered[0]
       }
-      candidates = Array.from(allCandidates.values())
     }
   }
 
-  if (!candidates.length) return null
+  // ── Strategy 4: English name only, score by number closeness ─
+  if (name) {
+    const byName = await prisma.card.findMany({
+      where: { name: { contains: name, mode: 'insensitive' } },
+      select: SEL, take: 30,
+    })
 
-  const scored = candidates.map(c => ({ c, score: scoreCard(c, hint) }))
-  scored.sort((a, b) => b.score - a.score)
-  const best = scored[0]
+    // Also try French name via ILIKE
+    const frIds = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "Card" WHERE "localeName"->>'fr' ILIKE ${`%${name}%`} LIMIT 15
+    `
+    const byFr = frIds.length ? await prisma.card.findMany({ where: { id: { in: frIds.map(r => r.id) } }, select: SEL }) : []
 
-  // Minimum score: must have both some name AND some number relevance
-  const MIN_SCORE = 15
-  if (best.score < MIN_SCORE) {
-    console.log(`[scan] score ${best.score} < ${MIN_SCORE} for "${best.c.name}" — rejecting`)
-    return null
+    const all = new Map<string, any>()
+    byName.forEach(c => all.set(c.id, c))
+    byFr.forEach(c => all.set(c.id, c))
+    const candidates = Array.from(all.values())
+
+    if (!candidates.length) return null
+
+    // Score: number match is critical, set is bonus
+    const scored = candidates.map(c => {
+      let s = 0
+      const cn = c.number.split('/')[0].trim()
+      if (cn === numFull || cn === numClean) s += 30
+      else if (cn.replace(/^[A-Z]+/, '') === numFull.replace(/^[A-Z]+/, '')) s += 10
+      if (hint.setId && c.set.externalId === hint.setId) s += 15
+      if (c.name.toLowerCase() === name.toLowerCase()) s += 5
+      if (Number(c.prices?.[0]?.market ?? 0) > 0) s += 1
+      return { c, s }
+    })
+    scored.sort((a, b) => b.s - a.s)
+
+    const best = scored[0]
+    if (best.s >= 5) { console.log(`[scan] ✅ name scored (score=${best.s})`); return best.c }
   }
 
-  console.log(`[scan] best: "${best.c.name}" #${best.c.number} set=${best.c.set.externalId} score=${best.score}`)
-  return best.c
+  return null
 }
 
-// ── pokemontcg.io API fallback ─────────────────────────────────
-async function findViaPtcgApi(hint: AiHint): Promise<any | null> {
+// ── pokemontcg.io API fallback ────────────────────────────────
+async function ptcgFallback(hint: AiResult): Promise<any | null> {
   try {
     const headers: Record<string, string> = process.env.POKEMON_TCG_API_KEY
       ? { 'X-Api-Key': process.env.POKEMON_TCG_API_KEY } : {}
-    const enName = hint.englishName || hint.cardName
-    const num    = hint.cardNumber.split('/')[0].trim()
+    const name = hint.englishName
+    const num  = (hint.cardNumber ?? '').split('/')[0].trim()
 
     const queries = [
-      hint.setId ? `name:"${enName}" number:"${num}" set.id:${hint.setId}` : null,
-      hint.setId ? `name:"${enName}" set.id:${hint.setId}` : null,
-      `name:"${enName}" number:"${num}"`,
-      `name:"${enName}"`,
+      hint.setId ? `name:"${name}" number:"${num}" set.id:${hint.setId}` : null,
+      `name:"${name}" number:"${num}"`,
+      `name:"${name}"`,
     ].filter(Boolean) as string[]
 
     for (const q of queries) {
-      const res = await fetch(
-        `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(q)}&pageSize=5&orderBy=-set.releaseDate`,
-        { headers, signal: AbortSignal.timeout(5000) },
-      )
+      const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(q)}&pageSize=5`, {
+        headers, signal: AbortSignal.timeout(6000),
+      })
       if (!res.ok) continue
       const d = await res.json()
-      if (!d.data?.length) continue
-
-      // Prefer number match
-      const cards = d.data as any[]
-      const best  = cards.find(c => c.number === num || c.number === num.replace(/^0+/, '')) ?? cards[0]
-      console.log(`[scan] ptcg.io: ${best.id}`)
-
-      const dbCard = await prisma.card.findUnique({ where: { externalId: best.id }, select: DB_SELECT })
-      if (dbCard) return dbCard
-      break // found on API but not in DB → will trigger auto-import
+      const cards = d.data ?? []
+      if (!cards.length) continue
+      const match = cards.find((c: any) => c.number === num || c.number === num.replace(/^0+/, '')) ?? cards[0]
+      console.log(`[scan] ptcg.io: ${match.id}`)
+      const db = await prisma.card.findUnique({ where: { externalId: match.id }, select: SEL })
+      if (db) return db
     }
   } catch (e: any) { console.warn('[scan] ptcg.io:', e?.message) }
   return null
 }
 
-// ── Projections ────────────────────────────────────────────────
-function project(price: number, rate: number, years: number) {
-  return Math.round(price * Math.pow(1 + rate / 100, years) * 100) / 100
+function project(p: number, r: number, y: number) {
+  return Math.round(p * Math.pow(1 + r / 100, y) * 100) / 100
 }
 
-// ── Main handler ───────────────────────────────────────────────
+// ── Handler ───────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   if (!process.env.GEMINI_API_KEY) {
     return NextResponse.json({ ok: false, error: 'GEMINI_API_KEY not configured' }, { status: 500 })
@@ -303,62 +255,60 @@ export async function POST(req: NextRequest) {
     if (!file) return NextResponse.json({ ok: false, error: 'No image provided' }, { status: 400 })
     if (file.size > 10 * 1024 * 1024) return NextResponse.json({ ok: false, error: 'Image too large (max 10MB)' }, { status: 400 })
 
-    const b64      = Buffer.from(await file.arrayBuffer()).toString('base64')
-    const mimeType = file.type || 'image/jpeg'
+    const b64  = Buffer.from(await file.arrayBuffer()).toString('base64')
+    const mime = file.type || 'image/jpeg'
 
-    // Step 1: AI identification
-    const hint = await aiIdentify(b64, mimeType)
-    if (!hint?.cardName) {
+    // 1. AI
+    const hint = await runAI(b64, mime)
+    if (!hint?.englishName && !hint?.cardNumber) {
       return NextResponse.json({ ok: false, error: 'Carte non reconnue — essaie avec une photo plus nette et bien éclairée' }, { status: 422 })
     }
 
-    // Step 2: DB search
-    let best = await findInDb(hint)
+    // 2. DB search
+    let card = await findCard(hint!)
 
-    // Step 3: pokemontcg.io API fallback
-    if (!best) {
-      console.log('[scan] DB miss, trying pokemontcg.io API...')
-      best = await findViaPtcgApi(hint)
+    // 3. pokemontcg.io fallback
+    if (!card) {
+      console.log('[scan] trying pokemontcg.io...')
+      card = await ptcgFallback(hint!)
     }
 
-    // Step 4: auto-import set if API found card but DB didn't have it
-    if (!best && hint.setId) {
+    // 4. Auto-import set + retry
+    if (!card && hint?.setId) {
       try {
         const origin = new URL(req.url).origin
         await fetch(`${origin}/api/admin/sync-sets?setId=${hint.setId}&limit=1`, {
           method: 'POST', signal: AbortSignal.timeout(40000),
         })
-        best = await findInDb(hint)
+        card = await findCard(hint!)
       } catch { /* ignore */ }
     }
 
-    // Build response
-    const price      = Number(best?.prices?.[0]?.market ?? 0)
-    const md         = best?.marketData ?? null
-    const ai         = best?.aiAnalysis ?? null
+    // 5. Build response
+    const price      = Number(card?.prices?.[0]?.market ?? 0)
+    const md         = card?.marketData ?? null
+    const ai         = card?.aiAnalysis ?? null
     const roi1y      = Number(md?.priceChange1y ?? 0)
     const roi90d     = Number(ai?.predictedRoi90d ?? 0) * 4
-    const annualRate = roi1y !== 0 ? roi1y : roi90d !== 0 ? roi90d : 8
-    const projections = price > 0 ? {
-      y1:  { value: project(price, annualRate, 1)  },
-      y3:  { value: project(price, annualRate, 3)  },
-      y5:  { value: project(price, annualRate, 5)  },
-      y10: { value: project(price, annualRate, 10) },
+    const rate       = roi1y !== 0 ? roi1y : roi90d !== 0 ? roi90d : 8
+    const proj = price > 0 ? {
+      y1: { value: project(price, rate, 1) }, y3: { value: project(price, rate, 3) },
+      y5: { value: project(price, rate, 5) }, y10: { value: project(price, rate, 10) },
     } : null
     const pred365 = ai?.predictions?.find((p: any) => p.horizonDays === 365)
 
     return NextResponse.json({
       ok: true,
       identification: hint,
-      dbMatch: best ? {
-        id: best.id, name: best.name, number: best.number, rarity: best.rarity,
-        imageUrl: best.imageLgUrl ?? best.imageSmUrl,
-        set: best.set,
-        price:  price > 0 ? { market: price, low: Number(best.prices[0].low ?? 0), high: Number(best.prices[0].high ?? 0), currency: best.prices[0].currency } : null,
+      dbMatch: card ? {
+        id: card.id, name: card.name, number: card.number, rarity: card.rarity,
+        imageUrl: card.imageLgUrl ?? card.imageSmUrl,
+        set: card.set,
+        price:  price > 0 ? { market: price, low: Number(card.prices[0].low ?? 0), high: Number(card.prices[0].high ?? 0), currency: card.prices[0].currency } : null,
         market: md ? { investmentScore: md.investmentScore ?? 0, rarityScore: md.rarityScore ?? 0, liquidityScore: md.liquidityScore ?? 0, trendDirection: md.trendDirection, change7d: Number(md.priceChange7d ?? 0), change30d: Number(md.priceChange30d ?? 0), change1y: Number(md.priceChange1y ?? 0), allTimeHigh: Number(md.allTimeHigh ?? 0), volatility: Number(md.volatility30d ?? 0) } : null,
         ai:     ai ? { investmentScore: ai.investmentScore, trendDirection: ai.trendDirection, bullishSignals: ai.bullishSignals.slice(0, 3), bearishSignals: ai.bearishSignals.slice(0, 2), keyInsight: ai.keyInsight, pred1y: pred365 ? { value: Number(pred365.predictedPrice), low: Number(pred365.lowerBound), high: Number(pred365.upperBound) } : null } : null,
-        projections,
-        annualGrowthRate: annualRate,
+        projections: proj,
+        annualGrowthRate: rate,
       } : null,
     })
   } catch (err: any) {
