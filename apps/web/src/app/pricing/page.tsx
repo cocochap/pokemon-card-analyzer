@@ -6,7 +6,7 @@ import { Footer } from '@/components/layout/Footer'
 
 export const metadata: Metadata = {
   title: 'Pricing',
-  description: 'Choose your PokeMarket plan and start investing smarter.',
+  description: 'Choose your Scard plan and start investing smarter.',
 }
 
 const plans = [

@@ -59,13 +59,13 @@ export function Navbar() {
               <div className="relative w-9 h-9">
                 <Image
                   src="/logo-pokescan.png"
-                  alt="PokeScan"
+                  alt="Scard"
                   fill
                   className="object-contain drop-shadow-[0_0_8px_rgba(59,130,246,0.6)]"
                 />
               </div>
               <span className="font-bold text-xl tracking-tight hidden sm:block">
-                Poke<span className="gradient-text-electric">Scan</span>
+                Scard
               </span>
             </Link>
 

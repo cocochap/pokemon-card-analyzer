@@ -35,9 +35,9 @@ export function Footer() {
           <div className="col-span-2">
             <Link href="/" className="flex items-center gap-2.5 mb-4">
               <div className="relative w-9 h-9">
-                <Image src="/logo-pokescan.png" alt="PokeScan" fill className="object-contain" />
+                <Image src="/logo-pokescan.png" alt="Scard" fill className="object-contain" />
               </div>
-              <span className="font-bold text-lg">Poke<span className="gradient-text-electric">Scan</span></span>
+              <span className="font-bold text-lg">Scard</span>
             </Link>
             <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
               {t.footer.tagline}

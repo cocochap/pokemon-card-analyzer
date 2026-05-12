@@ -12,8 +12,8 @@ import '@/styles/globals.css'
 
 export const metadata: Metadata = {
   title: {
-    default: 'PokeMarket — Pokémon TCG Intelligence Platform',
-    template: '%s | PokeMarket',
+    default: 'Scard — Pokémon TCG Intelligence Platform',
+    template: '%s | Scard',
   },
   description:
     'The most advanced Pokémon TCG market analysis platform. Track prices, discover investment opportunities, and predict market trends with AI-powered insights.',
@@ -28,20 +28,20 @@ export const metadata: Metadata = {
     'card analytics',
     'pokemon market',
   ],
-  authors: [{ name: 'PokeMarket' }],
-  creator: 'PokeMarket',
+  authors: [{ name: 'Scard' }],
+  creator: 'Scard',
   openGraph: {
     type: 'website',
     locale: 'en_US',
     url: 'https://pokemarket.io',
-    siteName: 'PokeMarket',
-    title: 'PokeMarket — Pokémon TCG Intelligence Platform',
+    siteName: 'Scard',
+    title: 'Scard — Pokémon TCG Intelligence Platform',
     description: 'Advanced market analytics for Pokémon card investors',
     images: [{ url: '/og-image.png', width: 1200, height: 630 }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'PokeMarket — Pokémon TCG Intelligence Platform',
+    title: 'Scard — Pokémon TCG Intelligence Platform',
     description: 'Advanced market analytics for Pokémon card investors',
     images: ['/og-image.png'],
   },

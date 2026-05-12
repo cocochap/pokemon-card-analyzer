@@ -51,7 +51,7 @@ export function LanguageModal() {
 
                 <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-pokemon-yellow/15 border border-pokemon-yellow/30 rounded-full mb-4">
                   <span className="text-pokemon-yellow text-lg">⚡</span>
-                  <span className="text-pokemon-yellow font-bold text-sm">PokeMarket</span>
+                  <span className="text-pokemon-yellow font-bold text-sm">Scard</span>
                 </div>
 
                 <h2 className="text-2xl font-bold text-white mb-2">{t.langModal.title}</h2>
