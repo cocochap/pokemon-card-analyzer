@@ -1,36 +1,26 @@
 /**
  * POST /api/ai/scan
- * Accepts a card image, runs Gemini Pro Vision analysis, looks up real DB prices.
+ * Accepts a card image, runs Gemini vision analysis, looks up real DB prices.
  *
  * Body: multipart/form-data with field "image" (File)
- * Requires: GEMINI_API_KEY env variable
+ * Requires: GEMINI_API_KEY env variable (from aistudio.google.com)
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { GoogleGenerativeAI, HarmBlockThreshold, HarmCategory } from '@google/generative-ai'
+import { GoogleGenAI } from '@google/genai'
 import { prisma } from '@/lib/db/prisma'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
-const SYSTEM_PROMPT = `You are an expert Pokémon TCG authentication and grading specialist with 20 years of experience. You can identify any Pokémon card from an image with very high accuracy.
+const PROMPT = `You are an expert Pokémon TCG authentication and grading specialist with 20 years of experience.
 
-When given a card image you will:
-1. Identify the exact card (Pokémon or Trainer name, set, card number, variant)
-2. Assess condition based on centering, surface, corners, edges
-3. Estimate a PSA grade (1–10) with brief rationale
-4. Flag special attributes (First Edition, Shadowless, error cards, etc.)
-
-Respond ONLY with valid JSON — no markdown, no text outside the JSON object.`
-
-const USER_PROMPT = `${SYSTEM_PROMPT}
-
-Analyze this Pokémon card image carefully and return ONLY this JSON (no markdown, no explanation):
+Analyze this Pokémon card image carefully and return ONLY valid JSON (no markdown, no code fences, no explanation):
 {
   "cardName": "exact Pokémon or Trainer name",
   "setName": "full English set name (e.g. Base Set, Scarlet & Violet)",
   "setId": "pokemontcg.io set ID (e.g. base1, sv1, swsh1, xy1) — best guess",
   "cardNumber": "number printed on card (e.g. 4, 025/165)",
-  "rarity": "exact rarity text (Common / Uncommon / Rare / Holo Rare / Ultra Rare / Secret Rare / etc.)",
+  "rarity": "Common / Uncommon / Rare / Holo Rare / Ultra Rare / Secret Rare",
   "variant": "NORMAL or HOLO or REVERSE_HOLO or FIRST_EDITION",
   "condition": "Mint / Near Mint / Excellent / Good / Light Played / Played / Poor",
   "conditionDetails": {
@@ -44,8 +34,8 @@ Analyze this Pokémon card image carefully and return ONLY this JSON (no markdow
   "confidence": 92,
   "isFirstEdition": false,
   "isShadowless": false,
-  "language": "EN or FR or JP or DE or other 2-letter code",
-  "notes": "any notable observations (holofoil pattern, error, promo stamp, etc.)"
+  "language": "EN or FR or JP or DE",
+  "notes": "any notable observations"
 }`
 
 interface CardAnalysis {
@@ -67,29 +57,26 @@ interface CardAnalysis {
 }
 
 async function analyzeWithGemini(imageBase64: string, mimeType: string): Promise<CardAnalysis> {
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-flash',
-    safetySettings: [
-      { category: HarmCategory.HARM_CATEGORY_HARASSMENT,        threshold: HarmBlockThreshold.BLOCK_NONE },
-      { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,       threshold: HarmBlockThreshold.BLOCK_NONE },
-      { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-      { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! })
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.0-flash',
+    contents: [
+      {
+        parts: [
+          {
+            inlineData: {
+              data:     imageBase64,
+              mimeType: mimeType,
+            },
+          },
+          { text: PROMPT },
+        ],
+      },
     ],
   })
 
-  const result = await model.generateContent([
-    {
-      inlineData: {
-        data:     imageBase64,
-        mimeType: mimeType as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif',
-      },
-    },
-    USER_PROMPT,
-  ])
-
-  const text  = result.response.text()
-  // Strip markdown code fences if present
+  const text  = response.text ?? ''
   const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
   return JSON.parse(clean) as CardAnalysis
 }
@@ -114,7 +101,6 @@ export async function POST(req: NextRequest) {
     const base64   = Buffer.from(buffer).toString('base64')
     const mimeType = file.type || 'image/jpeg'
 
-    // Run Gemini Pro Vision
     const analysis = await analyzeWithGemini(base64, mimeType)
 
     // Find matching card in DB
@@ -157,7 +143,6 @@ export async function POST(req: NextRequest) {
       take: 5,
     })
 
-    // Prefer exact card number match
     let best = candidates[0] ?? null
     if (analysis.cardNumber && candidates.length > 1) {
       const num   = analysis.cardNumber.replace(/^0+/, '')
