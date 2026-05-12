@@ -15,36 +15,27 @@ export const maxDuration = 60
 
 const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite']
 
-const PROMPT = `You are a Pokémon TCG expert fluent in all Pokémon card languages.
+const PROMPT = `You are a Pokémon TCG expert fluent in all languages.
 
-Read this card image very carefully and extract:
-1. The EXACT name printed at the top of the card
-2. The ENGLISH name (even if the card is in French/Japanese/German/Spanish)
-3. The card number at the bottom
+Look at this card carefully and extract:
 
 Return ONLY raw JSON (no markdown):
 {
   "cardName": "exact name as printed on the card",
-  "englishName": "English name of this Pokémon/card (e.g. Charizard VMAX, Pikachu V, Umbreon VMAX)",
-  "cardNumber": "number exactly as printed (e.g. 4, 4/102, SV107/SV122, SWSH092)",
-  "numberOnly": "just the part before the slash, strip leading zeros (e.g. 4, SV107, 25)",
-  "setId": "pokemontcg.io set ID if you recognize the set (e.g. base1, sv1, pgo, swsh45sv), else empty",
-  "setName": "set name visible on card, else empty",
+  "englishName": "English name (translate if needed — Dracaufeu→Charizard, Évoli→Eevee, Ronflex→Snorlax)",
+  "cardNumber": "FULL number as printed including prefix, e.g: 4, 4/102, SV107/SV122, SWSH092, TG01/TG30",
+  "setId": "pokemontcg.io set ID if you recognize it (e.g. base1, sv1, pgo, swsh45sv, swsh3), else empty",
+  "setName": "set name if visible, else empty",
   "language": "EN or FR or JP or DE or ES",
   "confidence": 90
 }
 
-Examples:
-- French card "Dracaufeu VMAX" → englishName: "Charizard VMAX"
-- French card "Évoli" → englishName: "Eevee"
-- Japanese card "リザードン" → englishName: "Charizard"
-- French "Pikachu V" → englishName: "Pikachu V" (same in all languages)`
+IMPORTANT for cardNumber: copy it EXACTLY as printed. If it says SV107/SV122, write SV107/SV122. Never strip letters.`
 
 interface AiHint {
   cardName:    string
   englishName: string
   cardNumber:  string
-  numberOnly:  string
   setId:       string
   setName:     string
   language:    string
@@ -105,16 +96,27 @@ type DbCard = Awaited<ReturnType<typeof prisma.card.findUnique>> & Record<string
 
 function scoreCard(card: any, hint: AiHint): number {
   let score = 0
-  const num = hint.numberOnly || hint.cardNumber.split('/')[0].replace(/^0+/, '')
 
-  // Number match (most important)
-  if (card.number === hint.cardNumber) score += 20
-  else if (card.number === num) score += 15
-  else if (card.number.split('/')[0].replace(/^0+/, '') === num) score += 12
+  // Extract number parts — keep full prefix (SV107, SWSH092, TG01, etc.)
+  const hintNumFull  = hint.cardNumber.split('/')[0].trim()           // "SV107"
+  const hintNumDigit = hintNumFull.replace(/^[A-Z]+/, '')             // "107" (digits only)
+  const hintNumClean = hintNumFull.replace(/^0+(?=[0-9])/, '')        // strip leading zeros
 
-  // English name exact match
-  if (hint.englishName && card.name.toLowerCase() === hint.englishName.toLowerCase()) score += 8
-  else if (hint.englishName && card.name.toLowerCase().includes(hint.englishName.toLowerCase())) score += 4
+  const cardNumFull  = card.number.split('/')[0].trim()
+  const cardNumDigit = cardNumFull.replace(/^[A-Z]+/, '')
+  const cardNumClean = cardNumFull.replace(/^0+(?=[0-9])/, '')
+
+  // Number match — full prefix must match if present
+  if (cardNumFull === hintNumFull) score += 20                        // SV107 === SV107
+  else if (cardNumClean === hintNumClean && hintNumFull.match(/^[A-Z]/)) score += 5  // digits only, prefix present
+  else if (cardNumClean === hintNumClean) score += 15                 // 4 === 4 (no prefix)
+  else if (cardNumDigit === hintNumDigit && hintNumDigit.length > 0) score += 3   // coincidental digit match
+
+  // English name match (required to avoid false positives)
+  const enName = (hint.englishName || hint.cardName).toLowerCase()
+  if (card.name.toLowerCase() === enName) score += 20               // exact match
+  else if (card.name.toLowerCase().startsWith(enName.split(' ')[0])) score += 8 // same Pokémon
+  else if (enName.startsWith(card.name.toLowerCase().split(' ')[0])) score += 5
 
   // Set match
   if (hint.setId && card.set.externalId === hint.setId) score += 10
@@ -133,13 +135,14 @@ async function findInDb(hint: AiHint): Promise<any | null> {
   // Use English name first (more reliable in DB), fall back to card name
   const name     = (hint.englishName || hint.cardName).trim()
   const altName  = hint.englishName ? hint.cardName.trim() : ''
-  const numClean = hint.numberOnly || hint.cardNumber.split('/')[0].replace(/^0+/, '')
+  const numFull  = hint.cardNumber.split('/')[0].trim()   // "SV107" — keep prefix
+  const numClean = numFull.replace(/^0+(?=[0-9])/, '')    // strip leading zeros only
 
   // Strategy 1: exact externalId (setId-number)
-  if (hint.setId && numClean) {
+  if (hint.setId && numFull) {
     for (const extId of [
+      `${hint.setId}-${numFull}`,
       `${hint.setId}-${numClean}`,
-      `${hint.setId}-${hint.cardNumber}`,
       `${hint.setId}-0${numClean}`,
     ]) {
       const r = await prisma.card.findUnique({ where: { externalId: extId }, select: DB_SELECT })
@@ -216,6 +219,11 @@ async function findInDb(hint: AiHint): Promise<any | null> {
   scored.sort((a, b) => b.score - a.score)
 
   const best = scored[0]
+  // Reject if score too low — prevents returning completely wrong cards
+  if (best.score < 8) {
+    console.log(`[scan] best score too low (${best.score}) for "${best.c.name}" — rejecting`)
+    return null
+  }
   console.log(`[scan] DB scored match: "${best.c.name}" #${best.c.number} set=${best.c.set.externalId} score=${best.score}`)
   return best.c
 }
@@ -226,10 +234,11 @@ async function findViaPtcgApi(hint: AiHint): Promise<any | null> {
     const headers: Record<string, string> = process.env.POKEMON_TCG_API_KEY
       ? { 'X-Api-Key': process.env.POKEMON_TCG_API_KEY } : {}
 
+    const num = hint.cardNumber.split('/')[0].trim()
     const queries = [
-      hint.setId ? `name:"${hint.cardName}" number:"${hint.numberOnly}" set.id:${hint.setId}` : null,
+      hint.setId ? `name:"${hint.cardName}" number:"${num}" set.id:${hint.setId}` : null,
       hint.setId ? `name:"${hint.cardName}" set.id:${hint.setId}` : null,
-      `name:"${hint.cardName}" number:"${hint.numberOnly}"`,
+      `name:"${hint.cardName}" number:"${num}"`,
       `name:"${hint.cardName}"`,
     ].filter(Boolean) as string[]
 
