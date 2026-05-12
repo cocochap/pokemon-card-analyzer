@@ -1,8 +1,10 @@
 /**
  * POST /api/ai/scan
- * Step 1: Gemini identifies the card (name, set, number)
- * Step 2: Multi-strategy DB lookup (number > name+set > name > API fallback)
- * Step 3: Return price + investment projections
+ *
+ * Flow:
+ * 1. Gemini extracts card name + number from image
+ * 2. pokemontcg.io API finds the exact card (authoritative IDs)
+ * 3. Our DB lookup by externalId → price + investment data
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
@@ -10,58 +12,49 @@ import { prisma } from '@/lib/db/prisma'
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
-const MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite']
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite']
 
-// Prompt focused on extracting precise identifiers
-const PROMPT = `You are a Pokémon TCG card identification expert. Study this card image carefully.
+// ── Step 1: AI reads name + number off the card ───────────────
+const PROMPT = `You are a Pokémon TCG expert. Look very carefully at this card image.
 
-Extract the EXACT information printed on the card. The card number (bottom right/left) and set symbol are the most important.
+Read these values EXACTLY as printed on the card:
+- The name at the TOP of the card
+- The number at the BOTTOM (format varies: "4", "4/102", "025/165", "TG01/TG30", "SWSH092")
+- The set name if visible
 
-Return ONLY a raw JSON object (no markdown, no code fences):
+Return ONLY raw JSON (no markdown):
 {
-  "cardName": "exact name printed at top of card",
-  "setName": "full English set name",
-  "setId": "pokemontcg.io set ID (e.g. base1, sv1, sv8pt5, swsh1, xy1, sm1, bw1, dp1, pl1, hgss1, ex1, neo1, base2)",
-  "cardNumber": "number at bottom of card, exactly as printed (e.g. 4, 4/102, 025/165, SWSH092, TG01/TG30)",
-  "rarity": "rarity symbol description: Common=circle, Uncommon=diamond, Rare=star, Holo Rare=star+holo, Ultra Rare, Secret Rare, Special Illustration Rare, Hyper Rare, Crown Rare",
-  "hp": 120,
-  "types": ["Fire"],
-  "isFirstEdition": false,
-  "isShadowless": false,
-  "language": "EN",
-  "confidence": 95,
-  "alternativeNames": ["other possible spellings or French name if visible"]
+  "cardName": "name exactly as printed (e.g. Charizard, Pikachu V, Umbreon VMAX, Gardevoir ex)",
+  "cardNumber": "number exactly as printed at bottom",
+  "setName": "set name if visible, else empty string",
+  "setId": "pokemontcg.io set ID if you know it (e.g. base1, sv1, sv3pt5, swsh12pt5), else empty string",
+  "language": "EN or FR or JP or DE or ES",
+  "confidence": 90
 }`
 
-interface CardId {
-  cardName:         string
-  setName:          string
-  setId:            string
-  cardNumber:       string
-  rarity:           string
-  hp:               number | null
-  types:            string[]
-  isFirstEdition:   boolean
-  isShadowless:     boolean
-  language:         string
-  confidence:       number
-  alternativeNames: string[]
+interface AiHint {
+  cardName:   string
+  cardNumber: string
+  setName:    string
+  setId:      string
+  language:   string
+  confidence: number
 }
 
-function extractJson(text: string): CardId | null {
+function extractJson(text: string): AiHint | null {
   const strategies = [
-    () => { const m = text.match(/\{[\s\S]*\}/g); if (m) return JSON.parse(m[m.length - 1]); throw new Error('no match') },
+    () => { const m = text.match(/\{[\s\S]*\}/g); if (m) return JSON.parse(m[m.length - 1]); throw 0 },
     () => JSON.parse(text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()),
     () => JSON.parse(text.trim()),
   ]
   for (const fn of strategies) {
-    try { const p = fn(); if (p && typeof p === 'object') return p as CardId } catch { /* next */ }
+    try { const p = fn(); if (p?.cardName) return p as AiHint } catch { /* next */ }
   }
   return null
 }
 
-async function identifyWithGemini(b64: string, mimeType: string): Promise<CardId | null> {
-  for (const model of MODELS) {
+async function aiIdentify(b64: string, mimeType: string): Promise<AiHint | null> {
+  for (const model of GEMINI_MODELS) {
     try {
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
@@ -73,137 +66,117 @@ async function identifyWithGemini(b64: string, mimeType: string): Promise<CardId
               { inline_data: { mime_type: mimeType, data: b64 } },
               { text: PROMPT },
             ]}],
-            generationConfig: { temperature: 0.05, maxOutputTokens: 512 },
+            generationConfig: { temperature: 0.0, maxOutputTokens: 300 },
           }),
         },
       )
       const json = await res.json()
       if (!res.ok) continue
       const text: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
-      const data = extractJson(text)
-      if (data?.cardName) { console.log(`[scan] ${model}: "${data.cardName}" #${data.cardNumber} set=${data.setId}`); return data }
+      const hint = extractJson(text)
+      if (hint?.cardName) {
+        console.log(`[scan] AI (${model}): name="${hint.cardName}" number="${hint.cardNumber}" setId="${hint.setId}"`)
+        return hint
+      }
     } catch (e: any) { console.warn(`[scan] ${model}:`, e?.message) }
   }
   return null
 }
 
-// ── pokemontcg.io API fallback ─────────────────────────────────
-async function searchPokemonTcgApi(id: CardId): Promise<{ externalId: string; name: string; number: string; setId: string } | null> {
-  try {
-    // Try exact externalId format first: "setId-number"
-    const numClean = id.cardNumber.split('/')[0].replace(/^0+/, '')
-    const candidates = [`${id.setId}-${numClean}`, `${id.setId}-${id.cardNumber}`]
+// ── Step 2: pokemontcg.io finds the exact card ────────────────
+interface PtcgCard { id: string; name: string; number: string; set: { id: string; name: string } }
 
-    for (const extId of candidates) {
-      const res = await fetch(`https://api.pokemontcg.io/v2/cards/${extId}`, {
-        headers: process.env.POKEMON_TCG_API_KEY ? { 'X-Api-Key': process.env.POKEMON_TCG_API_KEY } : {},
-        signal: AbortSignal.timeout(5000),
-      })
-      if (res.ok) {
-        const d = await res.json()
-        if (d.data) return { externalId: d.data.id, name: d.data.name, number: d.data.number, setId: d.data.set.id }
+async function findOnPtcgIo(hint: AiHint): Promise<PtcgCard | null> {
+  const headers: Record<string, string> = process.env.POKEMON_TCG_API_KEY
+    ? { 'X-Api-Key': process.env.POKEMON_TCG_API_KEY }
+    : {}
+  const timeout = AbortSignal.timeout(6000)
+
+  const numClean = hint.cardNumber.split('/')[0].replace(/^0+/, '').trim()
+
+  // Queries to try in order of specificity
+  const queries: string[] = []
+
+  // 1. name + number + set (most specific)
+  if (hint.setId)      queries.push(`name:"${hint.cardName}" number:"${hint.cardNumber}" set.id:${hint.setId}`)
+  if (hint.setId)      queries.push(`name:"${hint.cardName}" number:"${numClean}" set.id:${hint.setId}`)
+  // 2. name + number (across all sets)
+  if (hint.cardNumber) queries.push(`name:"${hint.cardName}" number:"${hint.cardNumber}"`)
+  if (numClean)        queries.push(`name:"${hint.cardName}" number:"${numClean}"`)
+  // 3. name + set
+  if (hint.setId)      queries.push(`name:"${hint.cardName}" set.id:${hint.setId}`)
+  // 4. name only
+                       queries.push(`name:"${hint.cardName}"`)
+
+  for (const q of queries) {
+    try {
+      const url = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(q)}&pageSize=10&orderBy=-set.releaseDate`
+      const res = await fetch(url, { headers, signal: timeout })
+      if (!res.ok) continue
+      const data = await res.json()
+      if (!data.data?.length) continue
+
+      // Prefer matching number if we have multiple results
+      const cards: PtcgCard[] = data.data
+      if (hint.cardNumber) {
+        const exact = cards.find(c =>
+          c.number === hint.cardNumber ||
+          c.number === numClean ||
+          c.number === hint.cardNumber.split('/')[0]
+        )
+        if (exact) { console.log(`[scan] ptcg.io: ${exact.id} (${exact.name})`); return exact }
       }
-    }
 
-    // Search by name + set
-    const q = encodeURIComponent(`name:"${id.cardName}" set.id:${id.setId}`)
-    const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${q}&pageSize=5`, {
-      headers: process.env.POKEMON_TCG_API_KEY ? { 'X-Api-Key': process.env.POKEMON_TCG_API_KEY } : {},
-      signal: AbortSignal.timeout(5000),
-    })
-    if (res.ok) {
-      const d = await res.json()
-      if (d.data?.length > 0) {
-        const card = d.data[0]
-        return { externalId: card.id, name: card.name, number: card.number, setId: card.set.id }
-      }
-    }
+      console.log(`[scan] ptcg.io: ${cards[0].id} (${cards[0].name})`)
+      return cards[0]
+    } catch { /* next query */ }
+  }
 
-    // Search by name only
-    const q2 = encodeURIComponent(`name:"${id.cardName}"`)
-    const res2 = await fetch(`https://api.pokemontcg.io/v2/cards?q=${q2}&pageSize=3`, {
-      headers: process.env.POKEMON_TCG_API_KEY ? { 'X-Api-Key': process.env.POKEMON_TCG_API_KEY } : {},
-      signal: AbortSignal.timeout(5000),
-    })
-    if (res2.ok) {
-      const d = await res2.json()
-      if (d.data?.length > 0) return { externalId: d.data[0].id, name: d.data[0].name, number: d.data[0].number, setId: d.data[0].set.id }
-    }
-  } catch (e: any) { console.warn('[scan] pokemontcg.io fallback:', e?.message) }
   return null
 }
 
-// ── DB lookup — cascade of 5 strategies ───────────────────────
-async function findInDb(id: CardId) {
-  const numClean = id.cardNumber.split('/')[0].replace(/^0+/, '')
-  const allNames = [id.cardName, ...(id.alternativeNames ?? [])].filter(Boolean)
+// ── Step 3: find in our DB ────────────────────────────────────
+const DB_SELECT = {
+  id: true, name: true, number: true, rarity: true, imageSmUrl: true, imageLgUrl: true,
+  set:        { select: { name: true, externalId: true, releaseDate: true, logoUrl: true } },
+  prices:     { orderBy: { updatedAt: 'desc' } as any, take: 1, select: { market: true, low: true, high: true, currency: true } },
+  marketData: { select: { investmentScore: true, rarityScore: true, liquidityScore: true, trendDirection: true, priceChange7d: true, priceChange30d: true, priceChange1y: true, allTimeHigh: true, volatility30d: true } },
+  aiAnalysis: { select: { investmentScore: true, predictedRoi90d: true, trendDirection: true, bullishSignals: true, bearishSignals: true, keyInsight: true, predictions: { select: { horizonDays: true, predictedPrice: true, lowerBound: true, upperBound: true }, orderBy: { horizonDays: 'asc' } as any } } },
+}
 
-  const selectFields = {
-    id: true, name: true, number: true, rarity: true, imageSmUrl: true, imageLgUrl: true,
-    set:        { select: { name: true, externalId: true, releaseDate: true, logoUrl: true } },
-    prices:     { orderBy: { updatedAt: 'desc' } as any, take: 1, select: { market: true, low: true, high: true, currency: true } },
-    marketData: { select: { investmentScore: true, rarityScore: true, liquidityScore: true, trendDirection: true, priceChange7d: true, priceChange30d: true, priceChange1y: true, allTimeHigh: true, volatility30d: true } },
-    aiAnalysis: { select: { investmentScore: true, predictedRoi30d: true, predictedRoi90d: true, trendDirection: true, bullishSignals: true, bearishSignals: true, keyInsight: true, predictions: { select: { horizonDays: true, predictedPrice: true, lowerBound: true, upperBound: true }, orderBy: { horizonDays: 'asc' } as any } } },
+async function findInDb(ptcgCard: PtcgCard | null, hint: AiHint) {
+  // Primary: exact externalId from pokemontcg.io
+  if (ptcgCard) {
+    const r = await prisma.card.findUnique({ where: { externalId: ptcgCard.id }, select: DB_SELECT })
+    if (r) return r
   }
 
-  // Strategy 1: exact externalId (setId-number)
-  for (const extId of [`${id.setId}-${numClean}`, `${id.setId}-${id.cardNumber}`]) {
-    const r = await prisma.card.findUnique({ where: { externalId: extId }, select: selectFields })
-    if (r) { console.log(`[scan] DB match: externalId=${extId}`); return r }
-  }
+  // Fallback: search by name in DB
+  const numClean = hint.cardNumber.split('/')[0].replace(/^0+/, '')
+  const results = await prisma.card.findMany({
+    where: { name: { contains: hint.cardName, mode: 'insensitive' } },
+    select: DB_SELECT,
+    take: 20,
+  })
+  if (!results.length) return null
 
-  // Strategy 2: number + set
-  if (id.setId) {
-    const r = await prisma.card.findFirst({
-      where: { OR: [{ number: numClean }, { number: id.cardNumber }], set: { externalId: id.setId } },
-      select: selectFields,
-    })
-    if (r) { console.log(`[scan] DB match: number+set`); return r }
-  }
-
-  // Strategy 3: name + set (all name variants)
-  if (id.setId) {
-    for (const name of allNames) {
-      const r = await prisma.card.findFirst({
-        where: { name: { contains: name, mode: 'insensitive' }, set: { externalId: { contains: id.setId.replace(/\d+$/, ''), mode: 'insensitive' } } },
-        select: selectFields,
-      })
-      if (r) { console.log(`[scan] DB match: name+set for "${name}"`); return r }
-    }
-  }
-
-  // Strategy 4: name only (all variants) — prefer exact number match
-  for (const name of allNames) {
-    const results = await prisma.card.findMany({
-      where: { name: { contains: name, mode: 'insensitive' } },
-      select: selectFields,
-      take: 10,
-    })
-    if (results.length > 0) {
-      const exact = results.find(c => c.number === numClean || c.number === id.cardNumber)
-      const best  = exact ?? results[0]
-      console.log(`[scan] DB match: name only for "${name}"`)
-      return best
-    }
-  }
-
-  // Strategy 5: pokemontcg.io API → find by externalId in our DB
-  console.log('[scan] trying pokemontcg.io API fallback...')
-  const apiCard = await searchPokemonTcgApi(id)
-  if (apiCard) {
-    const r = await prisma.card.findUnique({ where: { externalId: apiCard.externalId }, select: selectFields })
-    if (r) { console.log(`[scan] DB match via API: ${apiCard.externalId}`); return r }
-    // Card exists in API but not in our DB — still useful
-    console.log(`[scan] API found "${apiCard.name}" (${apiCard.externalId}) but not in our DB`)
-  }
-
-  return null
+  // Score each result
+  const scored = results.map(r => {
+    let score = 0
+    if (r.number === hint.cardNumber || r.number === numClean) score += 10
+    if (ptcgCard && r.set.externalId === ptcgCard.set.id) score += 5
+    if (hint.setId && r.set.externalId.startsWith(hint.setId.replace(/\d+$/, ''))) score += 3
+    return { r, score }
+  })
+  scored.sort((a, b) => b.score - a.score)
+  return scored[0].r
 }
 
 function project(price: number, rate: number, years: number) {
   return Math.round(price * Math.pow(1 + rate / 100, years) * 100) / 100
 }
 
+// ── Main handler ──────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   if (!process.env.GEMINI_API_KEY) {
     return NextResponse.json({ ok: false, error: 'GEMINI_API_KEY not configured' }, { status: 500 })
@@ -218,27 +191,31 @@ export async function POST(req: NextRequest) {
     const b64      = Buffer.from(await file.arrayBuffer()).toString('base64')
     const mimeType = file.type || 'image/jpeg'
 
-    // Step 1: AI identification
-    const identified = await identifyWithGemini(b64, mimeType)
-    if (!identified?.cardName) {
+    // Step 1: AI
+    const hint = await aiIdentify(b64, mimeType)
+    if (!hint?.cardName) {
       return NextResponse.json({ ok: false, error: 'Card not recognized — try a clearer photo with better lighting' }, { status: 422 })
     }
 
-    // Step 2: find in DB (5-strategy cascade)
-    const best = await findInDb(identified)
+    // Steps 2 + 3: run in parallel
+    const [ptcgCard, _] = await Promise.all([
+      findOnPtcgIo(hint),
+      Promise.resolve(),
+    ])
+    const best = await findInDb(ptcgCard, hint)
 
-    // Step 3: projections
-    const price   = Number(best?.prices?.[0]?.market ?? 0)
-    const md      = best?.marketData ?? null
-    const ai      = best?.aiAnalysis ?? null
-    const roi1y   = Number(md?.priceChange1y ?? 0)
-    const roi90d  = Number(ai?.predictedRoi90d ?? 0) * 4
+    // Projections
+    const price      = Number(best?.prices?.[0]?.market ?? 0)
+    const md         = best?.marketData ?? null
+    const ai         = best?.aiAnalysis ?? null
+    const roi1y      = Number(md?.priceChange1y ?? 0)
+    const roi90d     = Number(ai?.predictedRoi90d ?? 0) * 4
     const annualRate = roi1y !== 0 ? roi1y : roi90d !== 0 ? roi90d : 8
 
     const projections = price > 0 ? {
-      y1:  { value: project(price, annualRate, 1) },
-      y3:  { value: project(price, annualRate, 3) },
-      y5:  { value: project(price, annualRate, 5) },
+      y1:  { value: project(price, annualRate, 1)  },
+      y3:  { value: project(price, annualRate, 3)  },
+      y5:  { value: project(price, annualRate, 5)  },
       y10: { value: project(price, annualRate, 10) },
     } : null
 
@@ -246,7 +223,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      identification: identified,
+      identification: { ...hint, resolvedName: ptcgCard?.name ?? hint.cardName, resolvedId: ptcgCard?.id },
       dbMatch: best ? {
         id: best.id, name: best.name, number: best.number, rarity: best.rarity,
         imageUrl: best.imageLgUrl ?? best.imageSmUrl,
