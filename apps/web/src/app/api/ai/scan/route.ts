@@ -16,26 +16,28 @@ export const maxDuration = 60
 
 const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite']
 
-const PROMPT = `You are reading a Pokémon TCG card. I need exactly two things from you.
+// La DB contient maintenant les noms FRANÇAIS en priorité (via TCGdex FR).
+// Le prompt demande le nom tel qu'il est imprimé sur la carte + son équivalent anglais.
+const PROMPT = `You are reading a Pokémon TCG card. Return three things:
 
-1. The ENGLISH name of the card (translate if not English)
-2. The card NUMBER as printed at the bottom
+1. The card name EXACTLY AS PRINTED on the card (keep the original language — French, English, Japanese, etc.)
+2. The English equivalent of that name (for reference)
+3. The card NUMBER as printed at the bottom (e.g. "001/165", "SV107/SV122", "042")
 
-TRANSLATION TABLE:
-French→English: Dracaufeu=Charizard, Évoli=Eevee, Ronflex=Snorlax, Salamèche=Charmander, Carapuce=Squirtle, Bulbizarre=Bulbasaur, Mélofée=Clefairy, Mélodelfe=Clefable, Goupix=Vulpix, Feunard=Ninetales, Aquali=Vaporeon, Pyroli=Flareon, Voltali=Jolteon, Mentali=Espeon, Noctali=Umbreon, Givrali=Glaceon, Phyllali=Leafeon, Nymphali=Sylveon, Caninos=Growlithe, Arcanin=Arcanine, Lokhlass=Lapras, Ronflex=Snorlax, Mewtwo=Mewtwo, Mew=Mew, Lugia=Lugia, Archéodon=Tyrantrum
+SUFFIX RULES: Keep suffixes as-is in any language — VMAX, VSTAR, V, ex, GX, EX, Tag Team, etc.
 
-Keep suffixes as-is: VMAX, VSTAR, V, ex, GX, EX, Tag Team, etc. are the same in all languages.
-
-Return ONLY this JSON (no markdown):
+Return ONLY this JSON (no markdown, no explanation):
 {
+  "cardName": "Dracaufeu VMAX",
   "englishName": "Charizard VMAX",
   "cardNumber": "SV107/SV122",
-  "setId": "pokemontcg.io set ID if visible (e.g. swsh45sv, sv1, base1, pgo), else empty string",
-  "language": "EN"
+  "setId": "TCGdex/pokemontcg.io set ID if visible (e.g. sv1, swsh45sv, base1, A1), else empty string",
+  "language": "FR"
 }`
 
 interface AiResult {
-  englishName: string
+  cardName:    string   // nom tel qu'imprimé sur la carte (FR si carte FR)
+  englishName: string   // équivalent anglais (pour fallback)
   cardNumber:  string
   setId:       string
   language:    string
@@ -48,7 +50,15 @@ function extractJson(text: string): AiResult | null {
     () => JSON.parse(text.trim()),
   ]
   for (const fn of tries) {
-    try { const p = fn(); if (p?.englishName || p?.cardNumber) return p as AiResult } catch { /* next */ }
+    try {
+      const p = fn()
+      if (p?.cardName || p?.englishName || p?.cardNumber) {
+        // Normalise : si cardName absent, utilise englishName
+        if (!p.cardName && p.englishName) p.cardName = p.englishName
+        if (!p.englishName && p.cardName) p.englishName = p.cardName
+        return p as AiResult
+      }
+    } catch { /* next */ }
   }
   return null
 }
@@ -109,19 +119,26 @@ function numberSetHints(num: string): string[] {
   return []
 }
 
-// ── Main DB lookup: confirmed strategies only ──────────────────
+// ── Main DB lookup ─────────────────────────────────────────────
+// La DB est maintenant en français (noms FR en `name`).
+// Priorité : externalId → nom FR + numéro → nom EN + numéro → numéro seul → nom seul
 async function findCard(hint: AiResult): Promise<any | null> {
-  const name    = (hint.englishName ?? '').trim()
-  const numFull = (hint.cardNumber ?? '').split('/')[0].trim()
+  const frName   = (hint.cardName    ?? '').trim()   // nom tel qu'imprimé (FR si carte FR)
+  const enName   = (hint.englishName ?? '').trim()   // équivalent EN (fallback)
+  const numFull  = (hint.cardNumber  ?? '').split('/')[0].trim()
   const numClean = numFull.replace(/^0+(?=[0-9])/, '')
 
-  if (!name && !numFull) return null
+  if (!frName && !enName && !numFull) return null
 
-  // ── Strategy 1: exact externalId ──────────────────────────
+  // ── Strategy 1: externalId exact ─────────────────────────────
   const candidateIds = new Set<string>()
   if (hint.setId) {
     candidateIds.add(`${hint.setId}-${numFull}`)
     candidateIds.add(`${hint.setId}-${numClean}`)
+    // TCGdex: parfois le numéro est zéro-padded (001 au lieu de 1)
+    if (numClean && numClean !== numFull) {
+      candidateIds.add(`${hint.setId}-${numClean.padStart(3, '0')}`)
+    }
   }
   for (const s of numberSetHints(numFull)) {
     candidateIds.add(`${s}-${numFull}`)
@@ -132,9 +149,9 @@ async function findCard(hint: AiResult): Promise<any | null> {
     if (r) { console.log(`[scan] ✅ externalId=${extId}`); return r }
   }
 
-  // ── Strategy 2: English name + number (most reliable) ─────
-  // Confirmed: Charizard VMAX + SV107 → exactly 1 result
-  if (name && numFull) {
+  // ── Strategy 2: nom FR + numéro (nom tel qu'imprimé) ─────────
+  for (const name of [frName, enName].filter(Boolean)) {
+    if (!name || !numFull) continue
     const candidates = await prisma.card.findMany({
       where: {
         name: { contains: name, mode: 'insensitive' },
@@ -144,69 +161,57 @@ async function findCard(hint: AiResult): Promise<any | null> {
       orderBy: { set: { releaseDate: 'desc' } } as any,
       take: 5,
     })
-    if (candidates.length === 1) { console.log(`[scan] ✅ name+number exact (1 result)`); return candidates[0] }
+    if (candidates.length === 1) { console.log(`[scan] ✅ name(${name})+number`); return candidates[0] }
     if (candidates.length > 1) {
-      // Prefer the one with matching setId
       const bySet = hint.setId ? candidates.find(c => c.set.externalId === hint.setId) : null
       const best = bySet ?? candidates[0]
-      console.log(`[scan] ✅ name+number (${candidates.length} results, picked ${best.set.externalId})`)
+      console.log(`[scan] ✅ name+number (${candidates.length} → ${best.set.externalId})`)
       return best
     }
   }
 
-  // ── Strategy 3: number alone (works for unique numbers like SV107) ─
+  // ── Strategy 3: numéro seul ───────────────────────────────────
   if (numFull) {
     const byNum = await prisma.card.findMany({
       where: { OR: [{ number: numFull }, { number: numClean }] },
       select: SEL, take: 20,
     })
     if (byNum.length === 1) { console.log(`[scan] ✅ number alone (unique)`); return byNum[0] }
-    if (byNum.length > 1 && name) {
-      // Filter by name
-      const nameFirst = name.split(' ')[0].toLowerCase()
-      const filtered = byNum.filter(c => c.name.toLowerCase().startsWith(nameFirst))
-      if (filtered.length === 1) { console.log(`[scan] ✅ number+name prefix`); return filtered[0] }
-      if (filtered.length > 1) {
-        const exact = filtered.find(c => c.name.toLowerCase() === name.toLowerCase())
-        if (exact) { console.log(`[scan] ✅ number+exact name`); return exact }
-        return filtered[0]
+    if (byNum.length > 1) {
+      // Filtrer par nom (FR puis EN)
+      for (const name of [frName, enName].filter(Boolean)) {
+        const first = name.split(' ')[0].toLowerCase()
+        const filtered = byNum.filter(c => c.name.toLowerCase().startsWith(first))
+        if (filtered.length >= 1) {
+          const exact = filtered.find(c => c.name.toLowerCase() === name.toLowerCase())
+          const best = exact ?? filtered[0]
+          console.log(`[scan] ✅ number+name prefix`)
+          return best
+        }
       }
     }
   }
 
-  // ── Strategy 4: English name only, score by number closeness ─
-  if (name) {
+  // ── Strategy 4: nom seul, scoré ──────────────────────────────
+  const searchName = frName || enName
+  if (searchName) {
     const byName = await prisma.card.findMany({
-      where: { name: { contains: name, mode: 'insensitive' } },
+      where: { name: { contains: searchName, mode: 'insensitive' } },
       select: SEL, take: 30,
     })
+    if (!byName.length) return null
 
-    // Also try French name via ILIKE
-    const frIds = await prisma.$queryRaw<{ id: string }[]>`
-      SELECT id FROM "Card" WHERE "localeName"->>'fr' ILIKE ${`%${name}%`} LIMIT 15
-    `
-    const byFr = frIds.length ? await prisma.card.findMany({ where: { id: { in: frIds.map(r => r.id) } }, select: SEL }) : []
-
-    const all = new Map<string, any>()
-    byName.forEach(c => all.set(c.id, c))
-    byFr.forEach(c => all.set(c.id, c))
-    const candidates = Array.from(all.values())
-
-    if (!candidates.length) return null
-
-    // Score: number match is critical, set is bonus
-    const scored = candidates.map(c => {
+    const scored = byName.map(c => {
       let s = 0
       const cn = c.number.split('/')[0].trim()
       if (cn === numFull || cn === numClean) s += 30
       else if (cn.replace(/^[A-Z]+/, '') === numFull.replace(/^[A-Z]+/, '')) s += 10
       if (hint.setId && c.set.externalId === hint.setId) s += 15
-      if (c.name.toLowerCase() === name.toLowerCase()) s += 5
+      if (c.name.toLowerCase() === searchName.toLowerCase()) s += 5
       if (Number(c.prices?.[0]?.market ?? 0) > 0) s += 1
       return { c, s }
     })
     scored.sort((a, b) => b.s - a.s)
-
     const best = scored[0]
     if (best.s >= 5) { console.log(`[scan] ✅ name scored (score=${best.s})`); return best.c }
   }
@@ -265,7 +270,7 @@ export async function POST(req: NextRequest) {
 
     // 1. AI
     const hint = await runAI(b64, mime)
-    if (!hint?.englishName && !hint?.cardNumber) {
+    if (!hint?.cardName && !hint?.englishName && !hint?.cardNumber) {
       return NextResponse.json({ ok: false, error: 'Carte non reconnue — essaie avec une photo plus nette et bien éclairée' }, { status: 422 })
     }
 
