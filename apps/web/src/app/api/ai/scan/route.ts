@@ -1,17 +1,16 @@
 /**
  * POST /api/ai/scan
- * Accepts a card image, runs Claude vision analysis, looks up real DB prices.
+ * Accepts a card image, runs Gemini Pro Vision analysis, looks up real DB prices.
  *
  * Body: multipart/form-data with field "image" (File)
+ * Requires: GEMINI_API_KEY env variable
  */
 import { NextRequest, NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { GoogleGenerativeAI, HarmBlockThreshold, HarmCategory } from '@google/generative-ai'
 import { prisma } from '@/lib/db/prisma'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
-
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 const SYSTEM_PROMPT = `You are an expert Pokémon TCG authentication and grading specialist with 20 years of experience. You can identify any Pokémon card from an image with very high accuracy.
 
@@ -23,7 +22,9 @@ When given a card image you will:
 
 Respond ONLY with valid JSON — no markdown, no text outside the JSON object.`
 
-const USER_PROMPT = `Analyze this Pokémon card image carefully and return ONLY this JSON:
+const USER_PROMPT = `${SYSTEM_PROMPT}
+
+Analyze this Pokémon card image carefully and return ONLY this JSON (no markdown, no explanation):
 {
   "cardName": "exact Pokémon or Trainer name",
   "setName": "full English set name (e.g. Base Set, Scarlet & Violet)",
@@ -47,7 +48,7 @@ const USER_PROMPT = `Analyze this Pokémon card image carefully and return ONLY 
   "notes": "any notable observations (holofoil pattern, error, promo stamp, etc.)"
 }`
 
-interface ClaudeAnalysis {
+interface CardAnalysis {
   cardName:          string
   setName:           string
   setId:             string
@@ -65,37 +66,37 @@ interface ClaudeAnalysis {
   notes:             string
 }
 
-async function analyzeWithClaude(imageBase64: string, mediaType: string): Promise<ClaudeAnalysis> {
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    system: SYSTEM_PROMPT,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: {
-              type:       'base64',
-              media_type: mediaType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
-              data:       imageBase64,
-            },
-          },
-          { type: 'text', text: USER_PROMPT },
-        ],
-      },
+async function analyzeWithGemini(imageBase64: string, mimeType: string): Promise<CardAnalysis> {
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-1.5-pro',
+    safetySettings: [
+      { category: HarmCategory.HARM_CATEGORY_HARASSMENT,        threshold: HarmBlockThreshold.BLOCK_NONE },
+      { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,       threshold: HarmBlockThreshold.BLOCK_NONE },
+      { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+      { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
     ],
   })
 
-  const text  = response.content[0].type === 'text' ? response.content[0].text : ''
+  const result = await model.generateContent([
+    {
+      inlineData: {
+        data:     imageBase64,
+        mimeType: mimeType as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif',
+      },
+    },
+    USER_PROMPT,
+  ])
+
+  const text  = result.response.text()
+  // Strip markdown code fences if present
   const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-  return JSON.parse(clean) as ClaudeAnalysis
+  return JSON.parse(clean) as CardAnalysis
 }
 
 export async function POST(req: NextRequest) {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return NextResponse.json({ ok: false, error: 'ANTHROPIC_API_KEY not configured' }, { status: 500 })
+  if (!process.env.GEMINI_API_KEY) {
+    return NextResponse.json({ ok: false, error: 'GEMINI_API_KEY not configured' }, { status: 500 })
   }
 
   try {
@@ -109,15 +110,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Image too large (max 10MB)' }, { status: 400 })
     }
 
-    // Convert to base64
-    const buffer    = await file.arrayBuffer()
-    const base64    = Buffer.from(buffer).toString('base64')
-    const mediaType = file.type || 'image/jpeg'
+    const buffer   = await file.arrayBuffer()
+    const base64   = Buffer.from(buffer).toString('base64')
+    const mimeType = file.type || 'image/jpeg'
 
-    // Claude vision analysis
-    const analysis = await analyzeWithClaude(base64, mediaType)
+    // Run Gemini Pro Vision
+    const analysis = await analyzeWithGemini(base64, mimeType)
 
-    // Find best matching card in DB
+    // Find matching card in DB
     const candidates = await prisma.card.findMany({
       where: {
         OR: [
@@ -136,12 +136,7 @@ export async function POST(req: NextRequest) {
         imageSmUrl: true,
         imageLgUrl: true,
         set: {
-          select: {
-            name:        true,
-            externalId:  true,
-            releaseDate: true,
-            logoUrl:     true,
-          },
+          select: { name: true, externalId: true, releaseDate: true, logoUrl: true },
         },
         prices: {
           orderBy: { updatedAt: 'desc' },
@@ -162,45 +157,43 @@ export async function POST(req: NextRequest) {
       take: 5,
     })
 
-    // Prefer exact number match
+    // Prefer exact card number match
     let best = candidates[0] ?? null
     if (analysis.cardNumber && candidates.length > 1) {
-      const num = analysis.cardNumber.replace(/^0+/, '')
+      const num   = analysis.cardNumber.replace(/^0+/, '')
       const exact = candidates.find(c => c.number === analysis.cardNumber || c.number === num)
       if (exact) best = exact
     }
 
-    const p  = best?.prices?.[0]   ?? null
-    const md = best?.marketData     ?? null
+    const p  = best?.prices?.[0] ?? null
+    const md = best?.marketData   ?? null
 
     return NextResponse.json({
       ok: true,
       analysis,
-      dbMatch: best
-        ? {
-            id:       best.id,
-            name:     best.name,
-            number:   best.number,
-            rarity:   best.rarity,
-            imageUrl: best.imageLgUrl ?? best.imageSmUrl,
-            set:      best.set,
-            price: p ? {
-              market:   Number(p.market ?? 0),
-              low:      Number(p.low    ?? 0),
-              high:     Number(p.high   ?? 0),
-              currency: p.currency,
-              source:   p.source,
-            } : null,
-            market: md ? {
-              investmentScore: md.investmentScore ?? 0,
-              rarityScore:     md.rarityScore     ?? 0,
-              trendDirection:  md.trendDirection,
-              priceChange7d:   Number(md.priceChange7d  ?? 0),
-              priceChange30d:  Number(md.priceChange30d ?? 0),
-              allTimeHigh:     Number(md.allTimeHigh    ?? 0),
-            } : null,
-          }
-        : null,
+      dbMatch: best ? {
+        id:       best.id,
+        name:     best.name,
+        number:   best.number,
+        rarity:   best.rarity,
+        imageUrl: best.imageLgUrl ?? best.imageSmUrl,
+        set:      best.set,
+        price: p ? {
+          market:   Number(p.market ?? 0),
+          low:      Number(p.low    ?? 0),
+          high:     Number(p.high   ?? 0),
+          currency: p.currency,
+          source:   p.source,
+        } : null,
+        market: md ? {
+          investmentScore: md.investmentScore ?? 0,
+          rarityScore:     md.rarityScore     ?? 0,
+          trendDirection:  md.trendDirection,
+          priceChange7d:   Number(md.priceChange7d  ?? 0),
+          priceChange30d:  Number(md.priceChange30d ?? 0),
+          allTimeHigh:     Number(md.allTimeHigh    ?? 0),
+        } : null,
+      } : null,
     })
   } catch (err: any) {
     console.error('[scan] error:', err)
