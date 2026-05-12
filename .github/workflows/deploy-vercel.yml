@@ -14,25 +14,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
+          cache: npm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
       - name: Generate Prisma client
         working-directory: apps/web
-        run: pnpm db:generate
+        run: npm run db:generate
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Type check
         working-directory: apps/web
-        run: pnpm type-check
+        run: npm run type-check
 
       - name: Deploy to Vercel
         uses: amondnet/vercel-action@v25
