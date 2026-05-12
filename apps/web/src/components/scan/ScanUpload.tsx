@@ -11,21 +11,49 @@ import { useT } from '@/lib/i18n/LanguageContext'
 
 type ScanState = 'idle' | 'preview' | 'scanning' | 'result' | 'error'
 
-interface ScanResult {
-  identification: {
-    cardName: string; setName: string; setId: string
-    cardNumber: string; rarity: string; variant: string
-    language: string; isFirstEdition: boolean; confidence: number
-  }
-  dbMatch: {
-    id: string; name: string; number: string; rarity: string; imageUrl: string | null
-    set: { name: string; externalId: string; releaseDate: string | null }
-    price:  { market: number; low: number; high: number; currency: string } | null
-    market: { investmentScore: number; rarityScore: number; liquidityScore: number; trendDirection: string; change7d: number; change30d: number; change1y: number; allTimeHigh: number } | null
-    ai:     { investmentScore: number; trendDirection: string; bullishSignals: string[]; bearishSignals: string[]; keyInsight: string | null; pred1y: { value: number; low: number; high: number } | null } | null
-    projections: { y1: { value: number; rate: number }; y3: { value: number; rate: number }; y5: { value: number; rate: number }; y10: { value: number; rate: number } } | null
-    annualGrowthRate: number
+/* Types matching the actual API response */
+interface Identification {
+  cardName:       string
+  cardNumber:     string
+  setName:        string
+  setId:          string
+  language:       string
+  confidence:     number
+  isFirstEdition?: boolean
+  resolvedName?:  string
+  resolvedId?:    string
+}
+
+interface DbMatch {
+  id:       string
+  name:     string
+  number:   string
+  rarity:   string
+  imageUrl: string | null
+  set: { name: string; externalId: string; releaseDate: string | null }
+  price: { market: number; low: number; high: number; currency: string } | null
+  market: {
+    investmentScore: number; rarityScore: number; liquidityScore: number
+    trendDirection: string
+    change7d: number; change30d: number; change1y: number
+    allTimeHigh: number; volatility: number
   } | null
+  ai: {
+    investmentScore: number; trendDirection: string
+    bullishSignals: string[]; bearishSignals: string[]
+    keyInsight: string | null
+    pred1y: { value: number; low: number; high: number } | null
+  } | null
+  projections: {
+    y1: { value: number }; y3: { value: number }
+    y5: { value: number }; y10: { value: number }
+  } | null
+  annualGrowthRate: number
+}
+
+interface ScanResult {
+  identification: Identification
+  dbMatch: DbMatch | null
 }
 
 /* ── Scan beam ─────────────────────────────────────────────── */
@@ -57,20 +85,18 @@ function ScanBeamOverlay() {
   )
 }
 
-/* ── Investment score ring ──────────────────────────────────── */
+/* ── Score ring ─────────────────────────────────────────────── */
 function ScoreRing({ score }: { score: number }) {
-  const r    = 22
-  const circ = 2 * Math.PI * r
+  const r = 22; const circ = 2 * Math.PI * r
   const color = score >= 70 ? '#22C55E' : score >= 45 ? '#F59E0B' : '#EF4444'
   return (
-    <div className="relative flex items-center justify-center w-16 h-16">
+    <div className="relative flex items-center justify-center w-16 h-16 flex-shrink-0">
       <svg width="64" height="64" className="-rotate-90">
         <circle cx="32" cy="32" r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="4" />
         <motion.circle cx="32" cy="32" r={r} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"
-          strokeDasharray={circ}
-          initial={{ strokeDashoffset: circ }}
+          strokeDasharray={circ} initial={{ strokeDashoffset: circ }}
           animate={{ strokeDashoffset: circ - (score / 100) * circ }}
-          transition={{ delay: 0.3, duration: 1, ease: 'easeOut' }} />
+          transition={{ delay: 0.4, duration: 1, ease: 'easeOut' }} />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="text-base font-bold" style={{ color }}>{score}</span>
@@ -80,93 +106,126 @@ function ScoreRing({ score }: { score: number }) {
   )
 }
 
-/* ── Projection bar ─────────────────────────────────────────── */
-function ProjectionRow({ label, value, currency, isHighest }: { label: string; value: number; currency: string; isHighest: boolean }) {
-  const sym = currency === 'EUR' ? '€' : '$'
+/* ── Change badge ───────────────────────────────────────────── */
+function ChangeBadge({ value, label }: { value: number; label: string }) {
+  const up = value >= 0
   return (
-    <div className={`flex justify-between items-center py-2 px-3 rounded-xl transition-all ${isHighest ? 'bg-electric-500/10 border border-electric-500/20' : ''}`}>
-      <span className="text-sm text-muted-foreground font-medium">{label}</span>
-      <span className={`text-sm font-bold ${isHighest ? 'text-electric-300' : 'text-white'}`}>
-        {sym}{value.toFixed(2)}
-      </span>
+    <div className="glass-card p-3 text-center">
+      <div className="text-xs text-muted-foreground mb-1">{label}</div>
+      <div className={`flex items-center justify-center gap-1 text-sm font-bold ${up ? 'text-green-400' : 'text-red-400'}`}>
+        {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+        {up ? '+' : ''}{value.toFixed(1)}%
+      </div>
     </div>
   )
 }
 
 /* ── Result panel ───────────────────────────────────────────── */
 function ResultPanel({ result, preview, onReset, s }: { result: ScanResult; preview: string; onReset: () => void; s: any }) {
-  const { identification: id, dbMatch } = result
-  const price    = dbMatch?.price?.market ?? 0
-  const currency = dbMatch?.price?.currency ?? 'EUR'
-  const sym      = currency === 'EUR' ? '€' : '$'
-  const change30 = dbMatch?.market?.change30d ?? 0
-  const trendUp  = change30 >= 0
-  const score    = dbMatch?.ai?.investmentScore ?? dbMatch?.market?.investmentScore ?? 0
-  const proj     = dbMatch?.projections
-  const rate     = dbMatch?.annualGrowthRate ?? 0
-  const ratePos  = rate >= 0
+  const { identification: id, dbMatch: db } = result
+
+  const displayName = db?.name ?? id.resolvedName ?? id.cardName
+  const displaySet  = db?.set.name ?? id.setName
+  const displayNum  = db?.number ?? id.cardNumber
+  const displayRar  = db?.rarity ?? ''
+  const imageUrl    = db?.imageUrl
+
+  const price     = db?.price?.market ?? 0
+  const currency  = db?.price?.currency ?? 'EUR'
+  const sym       = currency === 'EUR' ? '€' : '$'
+  const score     = db?.ai?.investmentScore ?? db?.market?.investmentScore ?? 0
+  const proj      = db?.projections
+  const rate      = db?.annualGrowthRate ?? 0
+  const ratePos   = rate >= 0
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="space-y-3">
 
-      {/* Header */}
+      {/* Identified header */}
       <div className="flex items-center gap-2 text-sm font-semibold text-green-400">
         <CheckCircle2 className="w-4 h-4" />
         {s.identified} {id.confidence}%
         {id.isFirstEdition && (
-          <span className="text-[10px] px-2 py-0.5 rounded-full font-bold ml-1"
+          <span className="text-[10px] px-2 py-0.5 rounded-full font-bold"
             style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.35)', color: '#FBBF24' }}>
             {s.firstEdition}
           </span>
         )}
       </div>
 
-      {/* Card info + score */}
-      <div className="glass-card p-4 flex gap-4 items-center">
-        <div className="w-20 h-28 rounded-xl overflow-hidden flex-shrink-0 border border-white/[0.08]">
-          {dbMatch?.imageUrl
+      {/* Card hero card */}
+      <div className="glass-card p-4 flex gap-4 items-start">
+        {/* Image */}
+        <div className="w-24 h-32 rounded-xl overflow-hidden flex-shrink-0 border border-white/[0.08]">
+          {imageUrl
             /* eslint-disable-next-line @next/next/no-img-element */
-            ? <img src={dbMatch.imageUrl} alt={dbMatch.name} className="w-full h-full object-cover" />
+            ? <img src={imageUrl} alt={displayName} className="w-full h-full object-cover" />
             /* eslint-disable-next-line @next/next/no-img-element */
-            : <img src={preview} alt="preview" className="w-full h-full object-cover" />}
+            : <img src={preview} alt="preview" className="w-full h-full object-cover" />
+          }
         </div>
+
+        {/* Info */}
         <div className="flex-1 min-w-0">
-          <h3 className="text-base font-bold text-white truncate">{dbMatch?.name ?? id.cardName}</h3>
-          <p className="text-xs text-muted-foreground mb-1 truncate">
-            {dbMatch?.set.name ?? id.setName}
-            {dbMatch?.number && ` · #${dbMatch.number}`}
-          </p>
-          <p className="text-xs text-muted-foreground mb-2">{id.rarity} · {id.language}</p>
-          {dbMatch?.ai?.keyInsight && (
-            <p className="text-xs text-electric-300 leading-relaxed line-clamp-2">{dbMatch.ai.keyInsight}</p>
+          <h3 className="text-lg font-bold text-white leading-tight mb-1">{displayName}</h3>
+          <p className="text-xs text-muted-foreground mb-0.5">{displaySet}</p>
+          {displayNum && <p className="text-xs text-muted-foreground mb-1">#{displayNum}</p>}
+          {displayRar && (
+            <span className="inline-block text-[11px] px-2 py-0.5 rounded-full mb-2"
+              style={{ background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.25)', color: '#93C5FD' }}>
+              {displayRar}
+            </span>
+          )}
+          {db?.ai?.keyInsight && (
+            <p className="text-xs text-electric-300 leading-relaxed line-clamp-2 mt-1">{db.ai.keyInsight}</p>
           )}
         </div>
+
+        {/* Score */}
         {score > 0 && <ScoreRing score={score} />}
       </div>
 
-      {/* Current price */}
-      {price > 0 && (
+      {/* Price + changes */}
+      {db ? (
+        price > 0 ? (
+          <div className="grid grid-cols-3 gap-2">
+            <div className="glass-card p-3 text-center col-span-1">
+              <div className="text-xs text-muted-foreground mb-1">{s.currentPrice}</div>
+              <div className="text-xl font-bold text-white">{sym}{price.toFixed(2)}</div>
+              {db.price!.high > 0 && (
+                <div className="text-[10px] text-muted-foreground mt-0.5">
+                  {sym}{db.price!.low.toFixed(2)} – {sym}{db.price!.high.toFixed(2)}
+                </div>
+              )}
+            </div>
+            <ChangeBadge value={db.market?.change7d ?? 0}  label={s.change7d} />
+            <ChangeBadge value={db.market?.change1y ?? 0}  label={s.change1y} />
+          </div>
+        ) : (
+          <div className="glass-card px-4 py-3 flex items-center gap-2 text-sm text-muted-foreground">
+            <span>💰</span>
+            <span>Prix Cardmarket non disponible pour cette carte</span>
+          </div>
+        )
+      ) : (
+        <div className="glass-card px-4 py-3 text-sm text-muted-foreground">
+          Cette carte n&apos;est pas encore dans notre base — mais l&apos;IA l&apos;a bien identifiée.
+        </div>
+      )}
+
+      {/* Market stats */}
+      {db?.market && (
         <div className="grid grid-cols-3 gap-2">
-          <div className="glass-card p-3 text-center col-span-1">
-            <div className="text-xs text-muted-foreground mb-1">{s.currentPrice}</div>
-            <div className="text-xl font-bold text-white">{sym}{price.toFixed(2)}</div>
-            <div className={`flex items-center justify-center gap-1 text-xs mt-1 font-semibold ${trendUp ? 'text-green-400' : 'text-red-400'}`}>
-              {trendUp ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-              {trendUp ? '+' : ''}{change30.toFixed(1)}% (30j)
+          {[
+            { label: 'Score invest.', value: `${db.market.investmentScore}/100`, color: db.market.investmentScore > 70 ? '#22C55E' : db.market.investmentScore > 40 ? '#F59E0B' : '#EF4444' },
+            { label: 'Score rareté',  value: `${db.market.rarityScore}/100`,    color: '#93C5FD' },
+            { label: 'Liquidité',     value: `${db.market.liquidityScore}/100`, color: '#A78BFA' },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="glass-card p-3 text-center">
+              <div className="text-xs text-muted-foreground mb-1">{label}</div>
+              <div className="text-sm font-bold" style={{ color }}>{value}</div>
             </div>
-          </div>
-          <div className="glass-card p-3 text-center">
-            <div className="text-xs text-muted-foreground mb-1">{s.change7d}</div>
-            <div className={`text-lg font-bold ${(dbMatch?.market?.change7d ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {(dbMatch?.market?.change7d ?? 0) >= 0 ? '+' : ''}{(dbMatch?.market?.change7d ?? 0).toFixed(1)}%
-            </div>
-          </div>
-          <div className="glass-card p-3 text-center">
-            <div className="text-xs text-muted-foreground mb-1">{s.change1y}</div>
-            <div className={`text-lg font-bold ${(dbMatch?.market?.change1y ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {(dbMatch?.market?.change1y ?? 0) >= 0 ? '+' : ''}{(dbMatch?.market?.change1y ?? 0).toFixed(1)}%
-            </div>
-          </div>
+          ))}
         </div>
       )}
 
@@ -175,32 +234,41 @@ function ResultPanel({ result, preview, onReset, s }: { result: ScanResult; prev
         <div className="glass-card p-4">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-semibold text-white">{s.projectionTitle}</p>
-            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${ratePos ? 'text-green-400 bg-green-400/10' : 'text-red-400 bg-red-400/10'}`}>
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${ratePos ? 'bg-green-400/10 text-green-400' : 'bg-red-400/10 text-red-400'}`}>
               {ratePos ? '+' : ''}{rate.toFixed(1)}%/an
             </span>
           </div>
           <div className="space-y-1">
-            <ProjectionRow label={s.today}    value={price}        currency={currency} isHighest={false} />
-            <ProjectionRow label={s.in1year}  value={proj.y1.value} currency={currency} isHighest={false} />
-            <ProjectionRow label={s.in3years} value={proj.y3.value} currency={currency} isHighest={false} />
-            <ProjectionRow label={s.in5years} value={proj.y5.value} currency={currency} isHighest={false} />
-            <ProjectionRow label={s.in10years} value={proj.y10.value} currency={currency} isHighest={true} />
+            {[
+              { label: s.today,     value: price },
+              { label: s.in1year,  value: proj.y1.value },
+              { label: s.in3years, value: proj.y3.value },
+              { label: s.in5years, value: proj.y5.value },
+              { label: s.in10years,value: proj.y10.value, highlight: true },
+            ].map(({ label, value, highlight }) => (
+              <div key={label} className={`flex justify-between items-center py-1.5 px-3 rounded-xl ${highlight ? 'bg-electric-500/10 border border-electric-500/20' : ''}`}>
+                <span className="text-sm text-muted-foreground">{label}</span>
+                <span className={`text-sm font-bold ${highlight ? 'text-electric-300' : 'text-white'}`}>
+                  {sym}{value.toFixed(2)}
+                </span>
+              </div>
+            ))}
           </div>
-          <p className="text-[10px] text-muted-foreground/60 mt-2 text-center">{s.projectionDisclaimer}</p>
+          <p className="text-[10px] text-muted-foreground/50 mt-2 text-center">{s.projectionDisclaimer}</p>
         </div>
       )}
 
-      {/* Signals */}
-      {dbMatch?.ai && (dbMatch.ai.bullishSignals.length > 0 || dbMatch.ai.bearishSignals.length > 0) && (
-        <div className="glass-card p-4 space-y-2">
-          {dbMatch.ai.bullishSignals.map((sig, i) => (
+      {/* Bullish/bearish signals */}
+      {db?.ai && (db.ai.bullishSignals.length > 0 || db.ai.bearishSignals.length > 0) && (
+        <div className="glass-card p-4 space-y-1.5">
+          {db.ai.bullishSignals.map((sig, i) => (
             <div key={i} className="flex items-start gap-2 text-xs text-green-300">
-              <span className="text-green-500 mt-0.5">↑</span>{sig}
+              <span className="text-green-500 font-bold mt-0.5">↑</span>{sig}
             </div>
           ))}
-          {dbMatch.ai.bearishSignals.map((sig, i) => (
+          {db.ai.bearishSignals.map((sig, i) => (
             <div key={i} className="flex items-start gap-2 text-xs text-red-300">
-              <span className="text-red-500 mt-0.5">↓</span>{sig}
+              <span className="text-red-500 font-bold mt-0.5">↓</span>{sig}
             </div>
           ))}
         </div>
@@ -208,16 +276,14 @@ function ResultPanel({ result, preview, onReset, s }: { result: ScanResult; prev
 
       {/* Actions */}
       <div className="flex gap-3">
-        {dbMatch && (
-          <Link href={`/cards/${dbMatch.id}`} className="btn-primary flex-1 justify-center py-3 rounded-xl text-sm">
-            <Zap className="w-4 h-4" />
-            {s.fullAnalysis}
-            <ExternalLink className="w-3 h-3 opacity-60" />
+        {db && (
+          <Link href={`/cards/${db.id}`} className="btn-primary flex-1 justify-center py-3 rounded-xl text-sm">
+            <Zap className="w-4 h-4" />{s.fullAnalysis}<ExternalLink className="w-3 h-3 opacity-60" />
           </Link>
         )}
         <button className="btn-ghost px-4 py-3 rounded-xl" onClick={onReset}>
           <RotateCcw className="w-4 h-4" />
-          {!dbMatch && <span className="ml-1 text-sm">{s.scanAgain}</span>}
+          {!db && <span className="ml-1 text-sm">{s.scanAgain}</span>}
         </button>
       </div>
     </motion.div>
@@ -229,12 +295,12 @@ export function ScanUpload() {
   const t = useT()
   const s = t.scan
 
-  const [state, setState]         = useState<ScanState>('idle')
-  const [preview, setPreview]     = useState<string | null>(null)
-  const [fileObj, setFileObj]     = useState<File | null>(null)
+  const [state, setState]           = useState<ScanState>('idle')
+  const [preview, setPreview]       = useState<string | null>(null)
+  const [fileObj, setFileObj]       = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
-  const [result, setResult]       = useState<ScanResult | null>(null)
-  const [errorMsg, setErrorMsg]   = useState('')
+  const [result, setResult]         = useState<ScanResult | null>(null)
+  const [errorMsg, setErrorMsg]     = useState('')
 
   const fileRef   = useRef<HTMLInputElement>(null)
   const cameraRef = useRef<HTMLInputElement>(null)
@@ -246,13 +312,17 @@ export function ScanUpload() {
     setState('preview')
   }, [])
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (f) processFile(f) }
-  const handleDrop = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files[0]; if (f) processFile(f) }, [processFile])
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]; if (f) processFile(f)
+  }
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); setIsDragging(false)
+    const f = e.dataTransfer.files[0]; if (f) processFile(f)
+  }, [processFile])
 
   const startScan = async () => {
     if (!fileObj) return
-    setState('scanning')
-    setErrorMsg('')
+    setState('scanning'); setErrorMsg('')
     try {
       const form = new FormData()
       form.append('image', fileObj)
@@ -268,7 +338,8 @@ export function ScanUpload() {
   }
 
   const reset = () => {
-    setState('idle'); setPreview(null); setFileObj(null); setResult(null); setErrorMsg('')
+    setState('idle'); setPreview(null); setFileObj(null)
+    setResult(null); setErrorMsg('')
     if (fileRef.current)   fileRef.current.value   = ''
     if (cameraRef.current) cameraRef.current.value = ''
   }
@@ -285,7 +356,9 @@ export function ScanUpload() {
           <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <div
               className={`scan-zone relative flex flex-col items-center justify-center min-h-64 p-8 cursor-pointer ${isDragging ? 'drag-over' : ''}`}
-              onDrop={handleDrop} onDragOver={e => { e.preventDefault(); setIsDragging(true) }} onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
+              onDragLeave={() => setIsDragging(false)}
               onClick={() => fileRef.current?.click()}
             >
               {['top-3 left-3 border-t-2 border-l-2','top-3 right-3 border-t-2 border-r-2','bottom-3 left-3 border-b-2 border-l-2','bottom-3 right-3 border-b-2 border-r-2'].map((cls, i) => (
