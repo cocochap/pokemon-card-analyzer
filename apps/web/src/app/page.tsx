@@ -9,6 +9,7 @@ import { MarketIndexChart } from '@/components/charts/MarketIndexChart'
 import { OpportunitySection } from '@/components/dashboard/OpportunitySection'
 import { AiInsightsPanel } from '@/components/dashboard/AiInsightsPanel'
 import { RecentSales } from '@/components/market/RecentSales'
+import { SocialProof } from '@/components/dashboard/SocialProof'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
 import { DashboardSkeleton } from '@/components/ui/Skeletons'
@@ -17,8 +18,6 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-
-      {/* Live Market Ticker */}
       <MarketTicker />
 
       <main className="container mx-auto px-4 py-8 max-w-[1600px]">
@@ -27,21 +26,18 @@ export default function HomePage() {
 
         {/* Market Overview KPIs */}
         <Suspense fallback={<DashboardSkeleton />}>
-          <section className="mt-10">
+          <section className="mt-12">
             <MarketOverview />
           </section>
         </Suspense>
 
         {/* Main Grid */}
         <div className="mt-10 grid grid-cols-1 xl:grid-cols-3 gap-6">
-          {/* Left — Market Index Chart */}
           <div className="xl:col-span-2">
             <Suspense fallback={<div className="skeleton h-80 w-full" />}>
               <MarketIndexChart />
             </Suspense>
           </div>
-
-          {/* Right — Featured Card of the Week */}
           <Suspense fallback={<div className="skeleton h-80 w-full" />}>
             <FeaturedCard />
           </Suspense>
@@ -82,6 +78,9 @@ export default function HomePage() {
             <OpportunitySection />
           </Suspense>
         </section>
+
+        {/* Social Proof */}
+        <SocialProof />
       </main>
 
       <Footer />

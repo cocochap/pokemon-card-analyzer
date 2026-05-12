@@ -4,37 +4,39 @@
 
 @layer base {
   :root {
-    --background: 228 45% 4%;
-    --foreground: 210 40% 98%;
-    --card: 228 42% 6%;
-    --card-foreground: 210 40% 98%;
-    --popover: 228 42% 6%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 47 100% 51%;
-    --primary-foreground: 228 45% 4%;
-    --secondary: 220 35% 13%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 220 35% 12%;
-    --muted-foreground: 215 20% 48%;
-    --accent: 220 35% 13%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 220 35% 12%;
-    --input: 220 35% 12%;
-    --ring: 47 100% 51%;
-    --radius: 0.75rem;
-    /* Pokémon type energy colors */
-    --poke-fire: 25 100% 55%;
-    --poke-water: 210 90% 65%;
-    --poke-grass: 130 60% 50%;
-    --poke-electric: 47 100% 60%;
-    --poke-psychic: 330 80% 65%;
-    --poke-dragon: 260 65% 60%;
-    --poke-dark: 240 20% 30%;
-    --poke-fairy: 340 75% 70%;
-    --poke-ice: 195 70% 70%;
-    --poke-fighting: 10 85% 50%;
+    /* ── PokeScan color system ─────────────────────────────────── */
+    --background:           222 50% 3%;
+    --foreground:           210 30% 97%;
+    --card:                 222 48% 5%;
+    --card-foreground:      210 30% 97%;
+    --popover:              222 48% 5%;
+    --popover-foreground:   210 30% 97%;
+    --primary:              213 90% 58%;   /* electric blue */
+    --primary-foreground:   222 50% 3%;
+    --secondary:            222 40% 11%;
+    --secondary-foreground:  210 30% 90%;
+    --muted:                222 40% 10%;
+    --muted-foreground:      215 20% 50%;
+    --accent:               222 40% 11%;
+    --accent-foreground:     210 30% 90%;
+    --destructive:           0 72% 51%;
+    --destructive-foreground:210 30% 97%;
+    --border:               222 40% 10%;
+    --input:                222 40% 10%;
+    --ring:                 213 90% 58%;   /* electric blue ring */
+    --radius:               0.75rem;
+
+    /* ── Pokémon type energy colors ──────────────────────────── */
+    --poke-fire:      25 100% 55%;
+    --poke-water:    210  90% 65%;
+    --poke-grass:    130  60% 50%;
+    --poke-electric:  47 100% 60%;
+    --poke-psychic:  330  80% 65%;
+    --poke-dragon:   260  65% 60%;
+    --poke-dark:     240  20% 30%;
+    --poke-fairy:    340  75% 70%;
+    --poke-ice:      195  70% 70%;
+    --poke-fighting:  10  85% 50%;
   }
 }
 
@@ -52,54 +54,144 @@
     @apply bg-background text-foreground;
     overflow-x: hidden;
     background-image:
-      /* Pokéball halo — top right */
-      radial-gradient(circle at 92% 4%, rgba(204,0,0,0.18) 0%, rgba(204,0,0,0.06) 18%, transparent 32%),
-      /* Pokéball white half shimmer */
-      radial-gradient(circle at 92% 4%, rgba(255,255,255,0.04) 13%, transparent 15%),
-      /* Lightning / Electric yellow — center */
-      radial-gradient(ellipse at 50% 100%, rgba(255,203,5,0.08) 0%, transparent 45%),
-      /* Water energy — bottom left */
-      radial-gradient(ellipse at 4% 90%, rgba(61,125,202,0.14) 0%, transparent 38%),
-      /* Psychic / Mewtwo — top left */
-      radial-gradient(ellipse at 6% 8%, rgba(168,85,247,0.10) 0%, transparent 28%);
+      /* Electric blue hero glow — top right */
+      radial-gradient(ellipse at 80% 0%, rgba(59,130,246,0.12) 0%, transparent 40%),
+      /* Gold accent — bottom left */
+      radial-gradient(ellipse at 10% 100%, rgba(245,158,11,0.08) 0%, transparent 35%),
+      /* Psychic / depth — top left */
+      radial-gradient(ellipse at 0% 20%, rgba(124,58,237,0.08) 0%, transparent 30%),
+      /* Subtle center warmth */
+      radial-gradient(ellipse at 50% 70%, rgba(59,130,246,0.05) 0%, transparent 50%);
     min-height: 100vh;
   }
 
-  ::selection { @apply bg-pokemon-yellow/25 text-white; }
+  ::selection { background: rgba(59,130,246,0.35); color: #fff; }
 
   ::-webkit-scrollbar { width: 5px; height: 5px; }
-  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb {
-    background: rgba(255, 203, 5, 0.25);
+    background: rgba(59,130,246,0.3);
     border-radius: 9999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 203, 5, 0.45);
+    background: rgba(59,130,246,0.55);
   }
 }
 
 @layer components {
-  /* ── Glass card ───────────────────────────────────────────── */
+  /* ── Premium glass card ───────────────────────────────────── */
   .glass-card {
-    @apply backdrop-blur-md border border-white/10 rounded-2xl shadow-glass;
+    @apply backdrop-blur-md border rounded-2xl;
     background: linear-gradient(
       135deg,
-      rgba(20, 26, 58, 0.80) 0%,
-      rgba(12, 16, 36, 0.85) 100%
+      rgba(15, 25, 55, 0.80) 0%,
+      rgba(8, 14, 32, 0.88) 100%
     );
-    border-color: rgba(255, 255, 255, 0.10);
+    border-color: rgba(255,255,255,0.07);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04);
   }
   .glass-card-hover {
-    @apply glass-card transition-all duration-300;
+    @apply glass-card transition-all duration-300 cursor-pointer;
   }
   .glass-card-hover:hover {
     background: linear-gradient(
       135deg,
-      rgba(28, 36, 72, 0.88) 0%,
-      rgba(16, 22, 46, 0.90) 100%
+      rgba(20, 36, 78, 0.88) 0%,
+      rgba(12, 22, 48, 0.92) 100%
     );
-    border-color: rgba(255, 203, 5, 0.25);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,203,5,0.12), 0 0 24px rgba(255,203,5,0.08);
+    border-color: rgba(59,130,246,0.25);
+    box-shadow:
+      0 8px 32px rgba(0,0,0,0.4),
+      0 0 0 1px rgba(59,130,246,0.12),
+      0 0 30px rgba(59,130,246,0.08);
+    transform: translateY(-2px);
+  }
+
+  /* ── Electric blue primary button ────────────────────────── */
+  .btn-primary {
+    @apply inline-flex items-center gap-2 font-semibold text-sm rounded-xl transition-all duration-200;
+    background: linear-gradient(135deg, #2563EB 0%, #3B82F6 50%, #60A5FA 100%);
+    color: #fff;
+    padding: 0.625rem 1.25rem;
+    box-shadow: 0 0 0 0 rgba(59,130,246,0);
+  }
+  .btn-primary:hover {
+    transform: translateY(-1px) scale(1.02);
+    box-shadow: 0 0 28px rgba(59,130,246,0.5), 0 6px 20px rgba(59,130,246,0.25);
+  }
+  .btn-primary:active { transform: scale(0.98); }
+
+  /* ── Gold accent button ───────────────────────────────────── */
+  .btn-gold {
+    @apply inline-flex items-center gap-2 font-semibold text-sm rounded-xl transition-all duration-200;
+    background: linear-gradient(135deg, #D97706 0%, #F59E0B 50%, #FBBF24 100%);
+    color: #020817;
+    padding: 0.625rem 1.25rem;
+  }
+  .btn-gold:hover {
+    transform: translateY(-1px) scale(1.02);
+    box-shadow: 0 0 28px rgba(245,158,11,0.5), 0 6px 20px rgba(245,158,11,0.25);
+  }
+
+  /* ── Ghost button ─────────────────────────────────────────── */
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 font-semibold text-sm rounded-xl transition-all duration-200;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.10);
+    color: rgba(255,255,255,0.80);
+    padding: 0.625rem 1.25rem;
+  }
+  .btn-ghost:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.18);
+    color: #fff;
+  }
+
+  /* ── Scan drop zone ───────────────────────────────────────── */
+  .scan-zone {
+    @apply relative rounded-2xl border-2 border-dashed transition-all duration-300;
+    border-color: rgba(59,130,246,0.3);
+    background: rgba(59,130,246,0.03);
+  }
+  .scan-zone:hover, .scan-zone.drag-over {
+    border-color: rgba(59,130,246,0.7);
+    background: rgba(59,130,246,0.07);
+    box-shadow: 0 0 0 4px rgba(59,130,246,0.1), 0 0 40px rgba(59,130,246,0.15);
+  }
+  .scan-zone.scanning {
+    border-color: rgba(59,130,246,0.9);
+    animation: borderGlow 1.5s ease-in-out infinite;
+  }
+
+  /* ── Scan beam overlay ────────────────────────────────────── */
+  .scan-beam {
+    @apply absolute left-0 right-0 h-1 pointer-events-none;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(59,130,246,0.8) 30%,
+      rgba(147,197,253,1) 50%,
+      rgba(59,130,246,0.8) 70%,
+      transparent 100%
+    );
+    box-shadow: 0 0 20px rgba(59,130,246,0.8), 0 0 40px rgba(59,130,246,0.4);
+    animation: scanBeam 2s ease-in-out infinite;
+  }
+
+  /* ── Premium stat badge ───────────────────────────────────── */
+  .stat-badge {
+    @apply flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium;
+    background: rgba(59,130,246,0.08);
+    border: 1px solid rgba(59,130,246,0.2);
+    color: rgba(147,197,253,1);
+  }
+
+  /* ── Card grade badge ─────────────────────────────────────── */
+  .grade-badge {
+    @apply flex items-center justify-center w-10 h-10 rounded-xl font-bold text-lg;
+    background: linear-gradient(135deg, #D97706, #F59E0B);
+    color: #020817;
+    box-shadow: 0 0 16px rgba(245,158,11,0.4);
   }
 
   /* ── Pokémon type pills ───────────────────────────────────── */
@@ -123,23 +215,41 @@
   .type-flying  { @apply bg-sky-400/20 text-sky-300 border border-sky-400/30; }
 
   /* ── Gradient text ────────────────────────────────────────── */
-  .gradient-text {
-    @apply bg-gradient-to-r from-pokemon-yellow via-orange-300 to-pokemon-yellow bg-clip-text text-transparent;
+  .gradient-text-electric {
+    background: linear-gradient(135deg, #60A5FA 0%, #93C5FD 40%, #3B82F6 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-size: 200% auto;
+    animation: gradient-shift 4s linear infinite;
+  }
+  .gradient-text-gold {
+    background: linear-gradient(135deg, #F59E0B 0%, #FBBF24 40%, #F59E0B 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
     background-size: 200% auto;
     animation: gradient-shift 3s linear infinite;
   }
+  .gradient-text {
+    @apply gradient-text-electric;
+  }
 
   /* ── Rarity glows ─────────────────────────────────────────── */
-  .rarity-crown   { box-shadow: 0 0 28px rgba(255,215,0,0.65), 0 0 56px rgba(255,215,0,0.22); border-color: rgba(255,215,0,0.55); }
-  .rarity-hyper   { box-shadow: 0 0 22px rgba(232,121,249,0.55), 0 0 44px rgba(232,121,249,0.18); border-color: rgba(232,121,249,0.44); }
-  .rarity-special { box-shadow: 0 0 18px rgba(99,102,241,0.45), 0 0 36px rgba(99,102,241,0.18); border-color: rgba(99,102,241,0.44); }
-  .rarity-ultra   { box-shadow: 0 0 14px rgba(251,146,60,0.45), 0 0 28px rgba(251,146,60,0.18); border-color: rgba(251,146,60,0.38); }
-  .rarity-holo    { box-shadow: 0 0 12px rgba(56,189,248,0.35), 0 0 24px rgba(56,189,248,0.12); border-color: rgba(56,189,248,0.33); }
+  .rarity-crown   { box-shadow: 0 0 32px rgba(255,215,0,0.7), 0 0 64px rgba(255,215,0,0.25); border-color: rgba(255,215,0,0.6); }
+  .rarity-hyper   { box-shadow: 0 0 24px rgba(232,121,249,0.6), 0 0 48px rgba(232,121,249,0.2); border-color: rgba(232,121,249,0.5); }
+  .rarity-special { box-shadow: 0 0 20px rgba(99,102,241,0.5), 0 0 40px rgba(99,102,241,0.2); border-color: rgba(99,102,241,0.5); }
+  .rarity-ultra   { box-shadow: 0 0 16px rgba(251,146,60,0.5), 0 0 32px rgba(251,146,60,0.2); border-color: rgba(251,146,60,0.4); }
+  .rarity-holo    { box-shadow: 0 0 14px rgba(56,189,248,0.4), 0 0 28px rgba(56,189,248,0.15); border-color: rgba(56,189,248,0.35); }
 
   /* ── Skeleton ─────────────────────────────────────────────── */
   .skeleton {
     @apply rounded-xl;
-    background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.09) 50%, rgba(255,255,255,0.05) 75%);
+    background: linear-gradient(90deg,
+      rgba(255,255,255,0.04) 25%,
+      rgba(255,255,255,0.08) 50%,
+      rgba(255,255,255,0.04) 75%
+    );
     background-size: 200% 100%;
     animation: shimmer 1.6s ease-in-out infinite;
   }
@@ -148,69 +258,28 @@
   .market-bull { @apply text-market-bull; }
   .market-bear { @apply text-market-bear; }
 
-  /* ── Pokéball badge ───────────────────────────────────────── */
-  .pokeball {
-    @apply relative rounded-full border-2 border-white/20 overflow-hidden;
-  }
-  .pokeball::before {
-    content: '';
-    @apply absolute inset-0;
-    background: linear-gradient(to bottom, #CC0000 50%, #fff 50%);
-  }
-  .pokeball::after {
-    content: '';
-    @apply absolute inset-0 flex items-center;
-    height: 2px;
-    top: 50%;
-    background: black;
-  }
-
-  /* ── Pokémon button ───────────────────────────────────────── */
-  .btn-pokemon {
-    @apply px-5 py-2.5 font-bold text-sm rounded-xl transition-all duration-200;
-    background: linear-gradient(135deg, #FFCB05 0%, #FFB800 100%);
-    color: #0a0e1a;
-    box-shadow: 0 0 0 0 rgba(255,203,5,0);
-  }
-  .btn-pokemon:hover {
-    transform: scale(1.03);
-    box-shadow: 0 0 20px rgba(255,203,5,0.45), 0 4px 16px rgba(255,203,5,0.25);
-  }
-
   /* ── Mobile bottom navigation ─────────────────────────────── */
   .mobile-bottom-nav {
     @apply fixed bottom-0 left-0 right-0 z-50 md:hidden;
     background: linear-gradient(
       180deg,
-      rgba(10, 14, 28, 0.92) 0%,
-      rgba(8, 11, 22, 0.97) 100%
+      rgba(4, 9, 22, 0.95) 0%,
+      rgba(2, 8, 23, 0.98) 100%
     );
-    border-top: 1px solid rgba(255, 203, 5, 0.15);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(59,130,246,0.12);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
-}
 
-@layer utilities {
-  .glow-yellow  { box-shadow: 0 0 20px rgba(255,203,5,0.5),  0 0 40px rgba(255,203,5,0.2); }
-  .glow-green   { box-shadow: 0 0 20px rgba(34,197,94,0.4),  0 0 40px rgba(34,197,94,0.15); }
-  .glow-red     { box-shadow: 0 0 20px rgba(239,68,68,0.4),  0 0 40px rgba(239,68,68,0.15); }
-  .glow-blue    { box-shadow: 0 0 20px rgba(61,125,202,0.4), 0 0 40px rgba(61,125,202,0.15); }
-  .glow-purple  { box-shadow: 0 0 20px rgba(168,85,247,0.4), 0 0 40px rgba(168,85,247,0.15); }
-
-  .text-balance { text-wrap: balance; }
-
-  /* Bottom padding for pages when mobile nav is visible */
-  .pb-mobile-nav { padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px)); }
-
+  /* ── Holographic shimmer (cards) ──────────────────────────── */
   .holo-shimmer {
     background: linear-gradient(
       115deg,
       transparent 30%,
-      rgba(255,220,100,0.3) 40%,
-      rgba(100,200,255,0.3) 50%,
-      rgba(200,100,255,0.3) 55%,
+      rgba(255,220,100,0.25) 40%,
+      rgba(100,200,255,0.25) 50%,
+      rgba(200,100,255,0.25) 55%,
       transparent 65%
     );
     background-size: 300% 300%;
@@ -218,46 +287,46 @@
   }
 }
 
+@layer utilities {
+  .glow-electric { box-shadow: 0 0 24px rgba(59,130,246,0.5),  0 0 48px rgba(59,130,246,0.2); }
+  .glow-gold     { box-shadow: 0 0 24px rgba(245,158,11,0.5),  0 0 48px rgba(245,158,11,0.2); }
+  .glow-yellow   { box-shadow: 0 0 20px rgba(255,203,5,0.5),   0 0 40px rgba(255,203,5,0.2); }
+  .glow-green    { box-shadow: 0 0 20px rgba(34,197,94,0.4),   0 0 40px rgba(34,197,94,0.15); }
+  .glow-red      { box-shadow: 0 0 20px rgba(239,68,68,0.4),   0 0 40px rgba(239,68,68,0.15); }
+  .glow-blue     { box-shadow: 0 0 20px rgba(61,125,202,0.4),  0 0 40px rgba(61,125,202,0.15); }
+  .glow-purple   { box-shadow: 0 0 20px rgba(168,85,247,0.4),  0 0 40px rgba(168,85,247,0.15); }
+
+  .text-balance { text-wrap: balance; }
+
+  .pb-mobile-nav { padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px)); }
+
+  .perspective { perspective: 1000px; }
+  .preserve-3d { transform-style: preserve-3d; }
+}
+
 /* ── Keyframes ────────────────────────────────────────────────── */
-@keyframes ticker {
-  0%   { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
+@keyframes ticker        { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+@keyframes shimmer       { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@keyframes float         { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-10px); } }
+@keyframes pulse-glow    { 0%, 100% { box-shadow: 0 0 16px rgba(255,203,5,0.3); } 50% { box-shadow: 0 0 32px rgba(255,203,5,0.7); } }
+@keyframes gradient-shift { 0% { background-position: 0% center; } 50% { background-position: 100% center; } 100% { background-position: 0% center; } }
+@keyframes holo          { 0% { background-position: 0% 0%; } 50% { background-position: 100% 100%; } 100% { background-position: 0% 0%; } }
+@keyframes spin-slow     { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes bounce-in     { 0% { transform: scale(0.85); opacity: 0; } 60% { transform: scale(1.05); } 100% { transform: scale(1); opacity: 1; } }
+
+@keyframes scanBeam {
+  0%   { top: -2%; opacity: 0; }
+  5%   { opacity: 1; }
+  95%  { opacity: 1; }
+  100% { top: 102%; opacity: 0; }
 }
 
-@keyframes shimmer {
-  0%   { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+@keyframes borderGlow {
+  0%, 100% { border-color: rgba(59,130,246,0.5); box-shadow: 0 0 20px rgba(59,130,246,0.2); }
+  50%       { border-color: rgba(59,130,246,0.95); box-shadow: 0 0 40px rgba(59,130,246,0.5); }
 }
 
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50%       { transform: translateY(-8px); }
-}
-
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 16px rgba(255,203,5,0.3); }
-  50%       { box-shadow: 0 0 32px rgba(255,203,5,0.7); }
-}
-
-@keyframes gradient-shift {
-  0%   { background-position: 0% center; }
-  50%  { background-position: 100% center; }
-  100% { background-position: 0% center; }
-}
-
-@keyframes holo {
-  0%   { background-position: 0% 0%; }
-  50%  { background-position: 100% 100%; }
-  100% { background-position: 0% 0%; }
-}
-
-@keyframes spin-slow {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-
-@keyframes bounce-in {
-  0%   { transform: scale(0.85); opacity: 0; }
-  60%  { transform: scale(1.05); }
-  100% { transform: scale(1); opacity: 1; }
+@keyframes pulseElectric {
+  0%, 100% { box-shadow: 0 0 20px rgba(59,130,246,0.3), 0 0 40px rgba(59,130,246,0.1); }
+  50%       { box-shadow: 0 0 40px rgba(59,130,246,0.7), 0 0 80px rgba(59,130,246,0.25); }
 }

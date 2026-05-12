@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
 import { useT } from '@/lib/i18n/LanguageContext'
 
@@ -8,45 +9,40 @@ export function Footer() {
 
   const links = {
     [t.footer.product]: [
-      { label: t.footer.links.market, href: '/' },
-      { label: t.footer.links.cards, href: '/cards' },
-      { label: t.footer.links.sets, href: '/sets' },
-      { label: t.footer.links.ai, href: '/ai' },
-      { label: t.footer.links.pricing, href: '/pricing' },
+      { label: 'Scan a Card',              href: '/scan' },
+      { label: t.footer.links.market,      href: '/' },
+      { label: t.footer.links.cards,       href: '/cards' },
+      { label: t.footer.links.sets,        href: '/sets' },
+      { label: t.footer.links.ai,          href: '/ai' },
     ],
     [t.footer.platform]: [
-      { label: t.footer.links.portfolio, href: '/portfolio' },
-      { label: t.footer.links.alerts, href: '/alerts' },
+      { label: t.footer.links.portfolio,   href: '/portfolio' },
+      { label: t.footer.links.alerts,      href: '/alerts' },
       { label: t.footer.links.marketIndex, href: '/market' },
     ],
     [t.footer.legal]: [
-      { label: t.footer.links.privacy, href: '/privacy' },
-      { label: t.footer.links.terms, href: '/terms' },
-      { label: t.footer.links.disclaimer, href: '/disclaimer' },
+      { label: t.footer.links.privacy,     href: '/privacy' },
+      { label: t.footer.links.terms,       href: '/terms' },
+      { label: t.footer.links.disclaimer,  href: '/disclaimer' },
     ],
   }
 
   return (
-    <footer className="border-t border-white/10 mt-20">
+    <footer className="border-t mt-20" style={{ borderColor: 'rgba(59,130,246,0.08)' }}>
       <div className="container mx-auto px-4 py-12 max-w-[1600px]">
         <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
           {/* Brand */}
           <div className="col-span-2">
             <Link href="/" className="flex items-center gap-2.5 mb-4">
-              <div className="relative w-8 h-8 rounded-full border-2 border-white/20 overflow-hidden shadow-md">
-                <div className="absolute top-0 left-0 right-0 h-1/2 bg-pokemon-red" />
-                <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-white" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-0 absolute left-0 right-0 h-[2px] bg-black" style={{ top: '50%' }} />
-                  <div className="w-3 h-3 rounded-full bg-white border-2 border-black z-10 relative" />
-                </div>
+              <div className="relative w-9 h-9">
+                <Image src="/logo-pokescan.png" alt="PokeScan" fill className="object-contain" />
               </div>
-              <span className="font-bold text-lg">Poke<span className="text-pokemon-yellow">Market</span></span>
+              <span className="font-bold text-lg">Poke<span className="gradient-text-electric">Scan</span></span>
             </Link>
             <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
               {t.footer.tagline}
             </p>
-            <p className="text-xs text-muted-foreground/50 mt-4">
+            <p className="text-xs text-muted-foreground/40 mt-4">
               {t.footer.disclaimer}
             </p>
           </div>
@@ -58,7 +54,7 @@ export function Footer() {
               <ul className="space-y-2">
                 {items.map(({ label, href }) => (
                   <li key={label}>
-                    <Link href={href} className="text-sm text-muted-foreground hover:text-pokemon-yellow transition-colors">
+                    <Link href={href} className="text-sm text-muted-foreground hover:text-electric-400 transition-colors">
                       {label}
                     </Link>
                   </li>
