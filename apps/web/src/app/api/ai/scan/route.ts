@@ -15,32 +15,40 @@ export const maxDuration = 60
 
 const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite']
 
-const PROMPT = `You are a Pokémon TCG expert. Read this card image very carefully.
+const PROMPT = `You are a Pokémon TCG expert fluent in all Pokémon card languages.
 
-Extract EXACTLY what is printed on the card:
-- Name at the top
-- Number at the bottom right (e.g. "4", "4/102", "025/165", "TG30/TG30", "SWSH092")
-- Set symbol/name if visible
+Read this card image very carefully and extract:
+1. The EXACT name printed at the top of the card
+2. The ENGLISH name (even if the card is in French/Japanese/German/Spanish)
+3. The card number at the bottom
 
 Return ONLY raw JSON (no markdown):
 {
-  "cardName": "exact name as printed",
-  "cardNumber": "number exactly as printed",
-  "numberOnly": "just the digits before the slash, no zeros (e.g. 4, 25, 92)",
-  "setId": "pokemontcg.io ID if known (e.g. base1, sv1, sv3pt5, swsh12pt5), else empty",
-  "setName": "set name if visible, else empty",
-  "language": "EN or FR or JP or DE",
+  "cardName": "exact name as printed on the card",
+  "englishName": "English name of this Pokémon/card (e.g. Charizard VMAX, Pikachu V, Umbreon VMAX)",
+  "cardNumber": "number exactly as printed (e.g. 4, 4/102, SV107/SV122, SWSH092)",
+  "numberOnly": "just the part before the slash, strip leading zeros (e.g. 4, SV107, 25)",
+  "setId": "pokemontcg.io set ID if you recognize the set (e.g. base1, sv1, pgo, swsh45sv), else empty",
+  "setName": "set name visible on card, else empty",
+  "language": "EN or FR or JP or DE or ES",
   "confidence": 90
-}`
+}
+
+Examples:
+- French card "Dracaufeu VMAX" → englishName: "Charizard VMAX"
+- French card "Évoli" → englishName: "Eevee"
+- Japanese card "リザードン" → englishName: "Charizard"
+- French "Pikachu V" → englishName: "Pikachu V" (same in all languages)`
 
 interface AiHint {
-  cardName:   string
-  cardNumber: string
-  numberOnly: string
-  setId:      string
-  setName:    string
-  language:   string
-  confidence: number
+  cardName:    string
+  englishName: string
+  cardNumber:  string
+  numberOnly:  string
+  setId:       string
+  setName:     string
+  language:    string
+  confidence:  number
 }
 
 function extractJson(text: string): AiHint | null {
@@ -104,6 +112,10 @@ function scoreCard(card: any, hint: AiHint): number {
   else if (card.number === num) score += 15
   else if (card.number.split('/')[0].replace(/^0+/, '') === num) score += 12
 
+  // English name exact match
+  if (hint.englishName && card.name.toLowerCase() === hint.englishName.toLowerCase()) score += 8
+  else if (hint.englishName && card.name.toLowerCase().includes(hint.englishName.toLowerCase())) score += 4
+
   // Set match
   if (hint.setId && card.set.externalId === hint.setId) score += 10
   else if (hint.setId && card.set.externalId.startsWith(hint.setId.replace(/\d+$/, ''))) score += 5
@@ -118,7 +130,9 @@ function scoreCard(card: any, hint: AiHint): number {
 }
 
 async function findInDb(hint: AiHint): Promise<any | null> {
-  const name     = hint.cardName.trim()
+  // Use English name first (more reliable in DB), fall back to card name
+  const name     = (hint.englishName || hint.cardName).trim()
+  const altName  = hint.englishName ? hint.cardName.trim() : ''
   const numClean = hint.numberOnly || hint.cardNumber.split('/')[0].replace(/^0+/, '')
 
   // Strategy 1: exact externalId (setId-number)
@@ -145,45 +159,54 @@ async function findInDb(hint: AiHint): Promise<any | null> {
     if (r) { console.log(`[scan] DB hit: exact name+set`); return r }
   }
 
-  // Strategy 3: search by name — English + French (ILIKE for accents)
-  const byEnName = await prisma.card.findMany({
-    where: { name: { contains: name, mode: 'insensitive' } },
-    select: DB_SELECT,
-    take: 20,
-  })
+  // Strategy 3: search by English name (primary) + French name via ILIKE
+  const searchNames = [name, altName].filter(Boolean)
+  const allCandidates: Map<string, any> = new Map()
 
-  // Strategy 3b: French name via raw SQL ILIKE (case + accent insensitive)
-  const frIds = await prisma.$queryRaw<{ id: string }[]>`
-    SELECT id FROM "Card"
-    WHERE "localeName"->>'fr' ILIKE ${`%${name}%`}
-    LIMIT 15
-  `
-  const byFrName = frIds.length > 0
-    ? await prisma.card.findMany({ where: { id: { in: frIds.map(r => r.id) } }, select: DB_SELECT })
-    : []
+  for (const searchName of searchNames) {
+    // English DB name search
+    const byEn = await prisma.card.findMany({
+      where: { name: { contains: searchName, mode: 'insensitive' } },
+      select: DB_SELECT,
+      take: 20,
+    })
+    byEn.forEach(c => allCandidates.set(c.id, c))
 
-  const candidates = [...byEnName, ...byFrName.filter(c => !byEnName.some(e => e.id === c.id))]
+    // French name via raw SQL ILIKE (accent + case insensitive)
+    const frIds = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "Card" WHERE "localeName"->>'fr' ILIKE ${`%${searchName}%`} LIMIT 15
+    `
+    if (frIds.length > 0) {
+      const byFr = await prisma.card.findMany({
+        where: { id: { in: frIds.map(r => r.id) } }, select: DB_SELECT,
+      })
+      byFr.forEach(c => allCandidates.set(c.id, c))
+    }
+  }
+
+  const candidates = Array.from(allCandidates.values())
 
   if (candidates.length === 0) {
-    // Strategy 4: first word only (e.g. "Charizard" from "Charizard VMAX", "Salamèche" from "Salamèche Premier Partenaire")
-    const firstName = name.split(' ')[0]
-    if (firstName.length >= 3) {
+    // Strategy 4: first word of each name (Charizard from "Charizard VMAX", Dracaufeu from "Dracaufeu VMAX")
+    const firstWords = [...new Set(searchNames.map(n => n.split(' ')[0]).filter(w => w.length >= 3))]
+    for (const word of firstWords) {
       const byFirst = await prisma.card.findMany({
-        where: { name: { startsWith: firstName, mode: 'insensitive' } },
-        select: DB_SELECT,
-        take: 20,
+        where: { name: { startsWith: word, mode: 'insensitive' } },
+        select: DB_SELECT, take: 20,
       })
-      // Also try first word in French names
+      byFirst.forEach(c => allCandidates.set(c.id, c))
+
       const frFirstIds = await prisma.$queryRaw<{ id: string }[]>`
-        SELECT id FROM "Card"
-        WHERE "localeName"->>'fr' ILIKE ${`${firstName}%`}
-        LIMIT 15
+        SELECT id FROM "Card" WHERE "localeName"->>'fr' ILIKE ${`${word}%`} LIMIT 15
       `
-      const byFrFirst = frFirstIds.length > 0
-        ? await prisma.card.findMany({ where: { id: { in: frFirstIds.map(r => r.id) } }, select: DB_SELECT })
-        : []
-      candidates.push(...byFirst, ...byFrFirst.filter(c => !byFirst.some(e => e.id === c.id)))
+      if (frFirstIds.length > 0) {
+        const byFrFirst = await prisma.card.findMany({
+          where: { id: { in: frFirstIds.map(r => r.id) } }, select: DB_SELECT,
+        })
+        byFrFirst.forEach(c => allCandidates.set(c.id, c))
+      }
     }
+    candidates.push(...Array.from(allCandidates.values()))
   }
 
   if (candidates.length === 0) return null
