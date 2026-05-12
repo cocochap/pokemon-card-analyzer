@@ -145,29 +145,44 @@ async function findInDb(hint: AiHint): Promise<any | null> {
     if (r) { console.log(`[scan] DB hit: exact name+set`); return r }
   }
 
-  // Strategy 3: search by name (all sets), score and rank results
-  const candidates = await prisma.card.findMany({
-    where: {
-      OR: [
-        { name: { equals: name, mode: 'insensitive' } },
-        { name: { contains: name, mode: 'insensitive' } },
-        { localeName: { path: ['fr'], string_contains: name } },
-      ],
-    },
+  // Strategy 3: search by name — English + French (ILIKE for accents)
+  const byEnName = await prisma.card.findMany({
+    where: { name: { contains: name, mode: 'insensitive' } },
     select: DB_SELECT,
-    take: 30,
+    take: 20,
   })
 
+  // Strategy 3b: French name via raw SQL ILIKE (case + accent insensitive)
+  const frIds = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "Card"
+    WHERE "localeName"->>'fr' ILIKE ${`%${name}%`}
+    LIMIT 15
+  `
+  const byFrName = frIds.length > 0
+    ? await prisma.card.findMany({ where: { id: { in: frIds.map(r => r.id) } }, select: DB_SELECT })
+    : []
+
+  const candidates = [...byEnName, ...byFrName.filter(c => !byEnName.some(e => e.id === c.id))]
+
   if (candidates.length === 0) {
-    // Strategy 4: first word only (e.g. "Charizard" from "Charizard VMAX")
+    // Strategy 4: first word only (e.g. "Charizard" from "Charizard VMAX", "Salamèche" from "Salamèche Premier Partenaire")
     const firstName = name.split(' ')[0]
     if (firstName.length >= 3) {
-      const broader = await prisma.card.findMany({
+      const byFirst = await prisma.card.findMany({
         where: { name: { startsWith: firstName, mode: 'insensitive' } },
         select: DB_SELECT,
-        take: 30,
+        take: 20,
       })
-      candidates.push(...broader)
+      // Also try first word in French names
+      const frFirstIds = await prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "Card"
+        WHERE "localeName"->>'fr' ILIKE ${`${firstName}%`}
+        LIMIT 15
+      `
+      const byFrFirst = frFirstIds.length > 0
+        ? await prisma.card.findMany({ where: { id: { in: frFirstIds.map(r => r.id) } }, select: DB_SELECT })
+        : []
+      candidates.push(...byFirst, ...byFrFirst.filter(c => !byFirst.some(e => e.id === c.id)))
     }
   }
 
