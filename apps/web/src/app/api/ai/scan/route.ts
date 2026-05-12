@@ -135,6 +135,20 @@ async function findOnPtcgIo(hint: AiHint): Promise<PtcgCard | null> {
   return null
 }
 
+// ── Auto-import: sync a set that's missing from our DB ────────
+async function autoImportSet(setId: string, reqUrl: string): Promise<void> {
+  try {
+    const origin = new URL(reqUrl).origin
+    await fetch(`${origin}/api/admin/sync-sets?setId=${setId}&limit=1`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(45000),
+    })
+    console.log(`[scan] auto-imported set: ${setId}`)
+  } catch (e: any) {
+    console.warn(`[scan] auto-import failed for ${setId}:`, e?.message)
+  }
+}
+
 // ── Step 3: find in our DB ────────────────────────────────────
 const DB_SELECT = {
   id: true, name: true, number: true, rarity: true, imageSmUrl: true, imageLgUrl: true,
@@ -197,12 +211,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Card not recognized — try a clearer photo with better lighting' }, { status: 422 })
     }
 
-    // Steps 2 + 3: run in parallel
-    const [ptcgCard, _] = await Promise.all([
-      findOnPtcgIo(hint),
-      Promise.resolve(),
-    ])
-    const best = await findInDb(ptcgCard, hint)
+    // Step 2: pokemontcg.io authoritative lookup
+    const ptcgCard = await findOnPtcgIo(hint)
+
+    // Step 3: find in our DB
+    let best = await findInDb(ptcgCard, hint)
+
+    // Step 4: auto-import if card not in DB but found on pokemontcg.io
+    if (!best && ptcgCard) {
+      console.log(`[scan] card ${ptcgCard.id} not in DB — auto-importing set ${ptcgCard.set.id}`)
+      await autoImportSet(ptcgCard.set.id, req.url)
+      // Retry lookup after import
+      best = await findInDb(ptcgCard, hint)
+    }
 
     // Projections
     const price      = Number(best?.prices?.[0]?.market ?? 0)
