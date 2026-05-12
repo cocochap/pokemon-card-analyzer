@@ -1,24 +1,23 @@
 /**
  * POST /api/ai/scan
- * Accepts a card image, runs Gemini vision analysis, looks up real DB prices.
- *
+ * Gemini vision via REST API v1 (no SDK dependency).
  * Body: multipart/form-data with field "image" (File)
- * Requires: GEMINI_API_KEY env variable (from aistudio.google.com)
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { GoogleGenAI } from '@google/genai'
 import { prisma } from '@/lib/db/prisma'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
+const GEMINI_MODEL = 'gemini-2.0-flash'
+
 const PROMPT = `You are an expert Pokémon TCG authentication and grading specialist with 20 years of experience.
 
-Analyze this Pokémon card image carefully and return ONLY valid JSON (no markdown, no code fences, no explanation):
+Analyze this Pokémon card image carefully and return ONLY valid JSON (no markdown, no code fences, no explanation outside the JSON):
 {
   "cardName": "exact Pokémon or Trainer name",
   "setName": "full English set name (e.g. Base Set, Scarlet & Violet)",
-  "setId": "pokemontcg.io set ID (e.g. base1, sv1, swsh1, xy1) — best guess",
+  "setId": "pokemontcg.io set ID (e.g. base1, sv1, swsh1, xy1)",
   "cardNumber": "number printed on card (e.g. 4, 025/165)",
   "rarity": "Common / Uncommon / Rare / Holo Rare / Ultra Rare / Secret Rare",
   "variant": "NORMAL or HOLO or REVERSE_HOLO or FIRST_EDITION",
@@ -56,28 +55,36 @@ interface CardAnalysis {
   notes:             string
 }
 
-async function analyzeWithGemini(imageBase64: string, mimeType: string): Promise<CardAnalysis> {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! })
+async function callGeminiVision(imageBase64: string, mimeType: string): Promise<CardAnalysis> {
+  const url = `https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.0-flash',
-    contents: [
-      {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{
         parts: [
-          {
-            inlineData: {
-              data:     imageBase64,
-              mimeType: mimeType,
-            },
-          },
+          { inline_data: { mime_type: mimeType, data: imageBase64 } },
           { text: PROMPT },
         ],
+      }],
+      generationConfig: {
+        temperature:     0.1,
+        maxOutputTokens: 1024,
       },
-    ],
+    }),
   })
 
-  const text  = response.text ?? ''
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`Gemini API error ${res.status}: ${err}`)
+  }
+
+  const data  = await res.json()
+  const text  = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
   const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+
+  if (!clean) throw new Error('Empty response from Gemini')
   return JSON.parse(clean) as CardAnalysis
 }
 
@@ -90,20 +97,16 @@ export async function POST(req: NextRequest) {
     const form = await req.formData()
     const file = form.get('image') as File | null
 
-    if (!file) {
-      return NextResponse.json({ ok: false, error: 'No image provided' }, { status: 400 })
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      return NextResponse.json({ ok: false, error: 'Image too large (max 10MB)' }, { status: 400 })
-    }
+    if (!file) return NextResponse.json({ ok: false, error: 'No image provided' }, { status: 400 })
+    if (file.size > 10 * 1024 * 1024) return NextResponse.json({ ok: false, error: 'Image too large (max 10MB)' }, { status: 400 })
 
     const buffer   = await file.arrayBuffer()
     const base64   = Buffer.from(buffer).toString('base64')
     const mimeType = file.type || 'image/jpeg'
 
-    const analysis = await analyzeWithGemini(base64, mimeType)
+    const analysis = await callGeminiVision(base64, mimeType)
 
-    // Find matching card in DB
+    // Look up card in DB
     const candidates = await prisma.card.findMany({
       where: {
         OR: [
@@ -121,24 +124,9 @@ export async function POST(req: NextRequest) {
         rarity:     true,
         imageSmUrl: true,
         imageLgUrl: true,
-        set: {
-          select: { name: true, externalId: true, releaseDate: true, logoUrl: true },
-        },
-        prices: {
-          orderBy: { updatedAt: 'desc' },
-          take:    1,
-          select:  { market: true, low: true, high: true, currency: true, source: true },
-        },
-        marketData: {
-          select: {
-            investmentScore: true,
-            rarityScore:     true,
-            trendDirection:  true,
-            priceChange7d:   true,
-            priceChange30d:  true,
-            allTimeHigh:     true,
-          },
-        },
+        set:        { select: { name: true, externalId: true, releaseDate: true, logoUrl: true } },
+        prices:     { orderBy: { updatedAt: 'desc' }, take: 1, select: { market: true, low: true, high: true, currency: true, source: true } },
+        marketData: { select: { investmentScore: true, rarityScore: true, trendDirection: true, priceChange7d: true, priceChange30d: true, allTimeHigh: true } },
       },
       take: 5,
     })
@@ -163,28 +151,13 @@ export async function POST(req: NextRequest) {
         rarity:   best.rarity,
         imageUrl: best.imageLgUrl ?? best.imageSmUrl,
         set:      best.set,
-        price: p ? {
-          market:   Number(p.market ?? 0),
-          low:      Number(p.low    ?? 0),
-          high:     Number(p.high   ?? 0),
-          currency: p.currency,
-          source:   p.source,
-        } : null,
-        market: md ? {
-          investmentScore: md.investmentScore ?? 0,
-          rarityScore:     md.rarityScore     ?? 0,
-          trendDirection:  md.trendDirection,
-          priceChange7d:   Number(md.priceChange7d  ?? 0),
-          priceChange30d:  Number(md.priceChange30d ?? 0),
-          allTimeHigh:     Number(md.allTimeHigh    ?? 0),
-        } : null,
+        price:    p  ? { market: Number(p.market ?? 0), low: Number(p.low ?? 0), high: Number(p.high ?? 0), currency: p.currency, source: p.source } : null,
+        market:   md ? { investmentScore: md.investmentScore ?? 0, rarityScore: md.rarityScore ?? 0, trendDirection: md.trendDirection, priceChange7d: Number(md.priceChange7d ?? 0), priceChange30d: Number(md.priceChange30d ?? 0), allTimeHigh: Number(md.allTimeHigh ?? 0) } : null,
       } : null,
     })
   } catch (err: any) {
-    console.error('[scan] error:', err)
-    if (err instanceof SyntaxError) {
-      return NextResponse.json({ ok: false, error: 'AI returned invalid JSON — try a clearer photo' }, { status: 422 })
-    }
+    console.error('[scan] error:', err?.message)
+    if (err instanceof SyntaxError) return NextResponse.json({ ok: false, error: 'AI returned invalid JSON — try a clearer photo' }, { status: 422 })
     return NextResponse.json({ ok: false, error: err.message ?? 'Scan failed' }, { status: 500 })
   }
 }
