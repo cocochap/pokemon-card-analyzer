@@ -11,12 +11,9 @@ export const maxDuration = 60
 
 // Models to try in order (first available wins)
 const MODELS_TO_TRY = [
-  { model: 'gemini-2.0-flash-lite', api: 'v1beta' },
-  { model: 'gemini-1.5-flash',      api: 'v1beta' },
-  { model: 'gemini-1.5-flash-8b',   api: 'v1beta' },
-  { model: 'gemini-1.5-pro',        api: 'v1beta' },
-  { model: 'gemini-2.0-flash',      api: 'v1beta' },
-  { model: 'gemini-pro-vision',     api: 'v1beta' }, // legacy but reliable
+  { model: 'gemini-2.5-flash',      api: 'v1beta' }, // ✅ free tier confirmed
+  { model: 'gemini-flash-latest',   api: 'v1beta' }, // ✅ free tier fallback
+  { model: 'gemini-2.5-flash-lite', api: 'v1beta' }, // ✅ free tier fallback
 ]
 
 const PROMPT = `You are an expert Pokémon TCG authentication and grading specialist.
