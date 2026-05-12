@@ -73,12 +73,12 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
             transition={{ type: 'spring', stiffness: 350, damping: 30 }}
             className="fixed top-[15vh] left-1/2 -translate-x-1/2 z-50 w-full max-w-xl"
           >
-            <div className="glass-card shadow-glass-lg overflow-hidden border-white/20">
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.12)] overflow-hidden">
               {/* Input */}
-              <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10">
+              <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
                 {isLoading
-                  ? <Loader2 className="w-5 h-5 text-muted-foreground animate-spin shrink-0" />
-                  : <Search className="w-5 h-5 text-muted-foreground shrink-0" />
+                  ? <Loader2 className="w-5 h-5 text-gray-400 animate-spin shrink-0" />
+                  : <Search className="w-5 h-5 text-gray-400 shrink-0" />
                 }
                 <input
                   autoFocus
@@ -86,16 +86,16 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search cards, sets, Pokémon..."
-                  className="flex-1 bg-transparent text-foreground placeholder:text-muted-foreground outline-none text-sm"
+                  className="flex-1 bg-transparent text-gray-900 placeholder:text-gray-400 outline-none text-sm"
                 />
-                <kbd className="text-xs bg-white/10 px-1.5 py-0.5 rounded text-muted-foreground">ESC</kbd>
+                <kbd className="text-xs bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded text-gray-500">ESC</kbd>
               </div>
 
               {/* Results */}
               {query.length >= 2 && (
                 <div className="max-h-80 overflow-y-auto">
                   {data?.items?.length === 0 && !isLoading ? (
-                    <div className="py-8 text-center text-muted-foreground text-sm">
+                    <div className="py-8 text-center text-gray-400 text-sm">
                       {t.common.noCardsFound} "{query}"
                     </div>
                   ) : (
@@ -104,9 +104,9 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                         <li key={card.id}>
                           <button
                             onClick={() => handleSelect(card.id)}
-                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left"
+                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
                           >
-                            <div className="w-8 h-11 rounded overflow-hidden bg-white/5 shrink-0">
+                            <div className="w-8 h-11 rounded overflow-hidden bg-gray-100 shrink-0">
                               {card.imageSmUrl && (
                                 <Image
                                   src={card.imageSmUrl}
@@ -136,7 +136,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
               )}
 
               {query.length < 2 && (
-                <div className="px-4 py-6 text-center text-muted-foreground text-sm">
+                <div className="px-4 py-6 text-center text-gray-400 text-sm">
                   {t.common.searchHint}
                 </div>
               )}

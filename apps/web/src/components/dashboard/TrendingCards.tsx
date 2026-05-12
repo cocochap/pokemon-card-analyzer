@@ -27,7 +27,7 @@ export function TrendingCards() {
               <div key={i} className="aspect-[2/3] bg-muted rounded-lg animate-pulse" />
             ))
           : cards.map((card: any) => (
-              <Link key={card.id} href={`/cards/${card.id}`} className="group relative aspect-[2/3] rounded-lg overflow-hidden border border-white/10 hover:border-pokemon-yellow/40 transition-all duration-300 hover:scale-105">
+              <Link key={card.id} href={`/cards/${card.id}`} className="group relative aspect-[2/3] rounded-lg overflow-hidden border border-gray-200 hover:border-amber-300 transition-all duration-300 hover:scale-105 shadow-sm">
                 {card.imageSmUrl ? (
                   <Image
                     src={card.imageSmUrl}

@@ -22,10 +22,10 @@ export function MarketTicker() {
   const doubled = [...items, ...items]
 
   return (
-    <div className="w-full bg-background/60 backdrop-blur-md border-b border-white/10 overflow-hidden py-2">
+    <div className="w-full bg-white/80 backdrop-blur-md border-b border-gray-200 overflow-hidden py-2">
       <div className="flex items-center">
         {/* Live badge */}
-        <div className="flex items-center gap-1.5 px-4 text-xs font-medium text-market-bull border-r border-white/10 shrink-0">
+        <div className="flex items-center gap-1.5 px-4 text-xs font-medium text-green-600 border-r border-gray-200 shrink-0">
           <Wifi className="w-3 h-3" />
           <span className="hidden sm:inline">LIVE</span>
         </div>
