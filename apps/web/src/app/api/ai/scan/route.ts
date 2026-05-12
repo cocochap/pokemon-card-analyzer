@@ -2,9 +2,10 @@
  * POST /api/ai/scan
  *
  * Flow:
- * 1. Gemini extracts card name + number from image
- * 2. pokemontcg.io API finds the exact card (authoritative IDs)
- * 3. Our DB lookup by externalId → price + investment data
+ * 1. Gemini reads card name + number from image
+ * 2. Multi-strategy DB search (we have all pokemontcg.io sets)
+ * 3. pokemontcg.io API as fallback if DB search fails
+ * 4. Return price + investment projections
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
@@ -14,29 +15,30 @@ export const maxDuration = 60
 
 const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite']
 
-// ── Step 1: AI reads name + number off the card ───────────────
-const PROMPT = `You are a Pokémon TCG expert. Look very carefully at this card image.
+const PROMPT = `You are a Pokémon TCG expert. Read this card image very carefully.
 
-Read these values EXACTLY as printed on the card:
-- The name at the TOP of the card
-- The number at the BOTTOM (format varies: "4", "4/102", "025/165", "TG01/TG30", "SWSH092")
-- The set name if visible
+Extract EXACTLY what is printed on the card:
+- Name at the top
+- Number at the bottom right (e.g. "4", "4/102", "025/165", "TG30/TG30", "SWSH092")
+- Set symbol/name if visible
 
 Return ONLY raw JSON (no markdown):
 {
-  "cardName": "name exactly as printed (e.g. Charizard, Pikachu V, Umbreon VMAX, Gardevoir ex)",
-  "cardNumber": "number exactly as printed at bottom",
-  "setName": "set name if visible, else empty string",
-  "setId": "pokemontcg.io set ID if you know it (e.g. base1, sv1, sv3pt5, swsh12pt5), else empty string",
-  "language": "EN or FR or JP or DE or ES",
+  "cardName": "exact name as printed",
+  "cardNumber": "number exactly as printed",
+  "numberOnly": "just the digits before the slash, no zeros (e.g. 4, 25, 92)",
+  "setId": "pokemontcg.io ID if known (e.g. base1, sv1, sv3pt5, swsh12pt5), else empty",
+  "setName": "set name if visible, else empty",
+  "language": "EN or FR or JP or DE",
   "confidence": 90
 }`
 
 interface AiHint {
   cardName:   string
   cardNumber: string
-  setName:    string
+  numberOnly: string
   setId:      string
+  setName:    string
   language:   string
   confidence: number
 }
@@ -66,7 +68,7 @@ async function aiIdentify(b64: string, mimeType: string): Promise<AiHint | null>
               { inline_data: { mime_type: mimeType, data: b64 } },
               { text: PROMPT },
             ]}],
-            generationConfig: { temperature: 0.0, maxOutputTokens: 300 },
+            generationConfig: { temperature: 0.0, maxOutputTokens: 256 },
           }),
         },
       )
@@ -75,7 +77,7 @@ async function aiIdentify(b64: string, mimeType: string): Promise<AiHint | null>
       const text: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
       const hint = extractJson(text)
       if (hint?.cardName) {
-        console.log(`[scan] AI (${model}): name="${hint.cardName}" number="${hint.cardNumber}" setId="${hint.setId}"`)
+        console.log(`[scan] AI: "${hint.cardName}" #${hint.cardNumber} set=${hint.setId}`)
         return hint
       }
     } catch (e: any) { console.warn(`[scan] ${model}:`, e?.message) }
@@ -83,73 +85,6 @@ async function aiIdentify(b64: string, mimeType: string): Promise<AiHint | null>
   return null
 }
 
-// ── Step 2: pokemontcg.io finds the exact card ────────────────
-interface PtcgCard { id: string; name: string; number: string; set: { id: string; name: string } }
-
-async function findOnPtcgIo(hint: AiHint): Promise<PtcgCard | null> {
-  const headers: Record<string, string> = process.env.POKEMON_TCG_API_KEY
-    ? { 'X-Api-Key': process.env.POKEMON_TCG_API_KEY }
-    : {}
-  const timeout = AbortSignal.timeout(6000)
-
-  const numClean = hint.cardNumber.split('/')[0].replace(/^0+/, '').trim()
-
-  // Queries to try in order of specificity
-  const queries: string[] = []
-
-  // 1. name + number + set (most specific)
-  if (hint.setId)      queries.push(`name:"${hint.cardName}" number:"${hint.cardNumber}" set.id:${hint.setId}`)
-  if (hint.setId)      queries.push(`name:"${hint.cardName}" number:"${numClean}" set.id:${hint.setId}`)
-  // 2. name + number (across all sets)
-  if (hint.cardNumber) queries.push(`name:"${hint.cardName}" number:"${hint.cardNumber}"`)
-  if (numClean)        queries.push(`name:"${hint.cardName}" number:"${numClean}"`)
-  // 3. name + set
-  if (hint.setId)      queries.push(`name:"${hint.cardName}" set.id:${hint.setId}`)
-  // 4. name only
-                       queries.push(`name:"${hint.cardName}"`)
-
-  for (const q of queries) {
-    try {
-      const url = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(q)}&pageSize=10&orderBy=-set.releaseDate`
-      const res = await fetch(url, { headers, signal: timeout })
-      if (!res.ok) continue
-      const data = await res.json()
-      if (!data.data?.length) continue
-
-      // Prefer matching number if we have multiple results
-      const cards: PtcgCard[] = data.data
-      if (hint.cardNumber) {
-        const exact = cards.find(c =>
-          c.number === hint.cardNumber ||
-          c.number === numClean ||
-          c.number === hint.cardNumber.split('/')[0]
-        )
-        if (exact) { console.log(`[scan] ptcg.io: ${exact.id} (${exact.name})`); return exact }
-      }
-
-      console.log(`[scan] ptcg.io: ${cards[0].id} (${cards[0].name})`)
-      return cards[0]
-    } catch { /* next query */ }
-  }
-
-  return null
-}
-
-// ── Auto-import: sync a set that's missing from our DB ────────
-async function autoImportSet(setId: string, reqUrl: string): Promise<void> {
-  try {
-    const origin = new URL(reqUrl).origin
-    await fetch(`${origin}/api/admin/sync-sets?setId=${setId}&limit=1`, {
-      method: 'POST',
-      signal: AbortSignal.timeout(45000),
-    })
-    console.log(`[scan] auto-imported set: ${setId}`)
-  } catch (e: any) {
-    console.warn(`[scan] auto-import failed for ${setId}:`, e?.message)
-  }
-}
-
-// ── Step 3: find in our DB ────────────────────────────────────
 const DB_SELECT = {
   id: true, name: true, number: true, rarity: true, imageSmUrl: true, imageLgUrl: true,
   set:        { select: { name: true, externalId: true, releaseDate: true, logoUrl: true } },
@@ -158,39 +93,136 @@ const DB_SELECT = {
   aiAnalysis: { select: { investmentScore: true, predictedRoi90d: true, trendDirection: true, bullishSignals: true, bearishSignals: true, keyInsight: true, predictions: { select: { horizonDays: true, predictedPrice: true, lowerBound: true, upperBound: true }, orderBy: { horizonDays: 'asc' } as any } } },
 }
 
-async function findInDb(ptcgCard: PtcgCard | null, hint: AiHint) {
-  // Primary: exact externalId from pokemontcg.io
-  if (ptcgCard) {
-    const r = await prisma.card.findUnique({ where: { externalId: ptcgCard.id }, select: DB_SELECT })
-    if (r) return r
+type DbCard = Awaited<ReturnType<typeof prisma.card.findUnique>> & Record<string, any>
+
+function scoreCard(card: any, hint: AiHint): number {
+  let score = 0
+  const num = hint.numberOnly || hint.cardNumber.split('/')[0].replace(/^0+/, '')
+
+  // Number match (most important)
+  if (card.number === hint.cardNumber) score += 20
+  else if (card.number === num) score += 15
+  else if (card.number.split('/')[0].replace(/^0+/, '') === num) score += 12
+
+  // Set match
+  if (hint.setId && card.set.externalId === hint.setId) score += 10
+  else if (hint.setId && card.set.externalId.startsWith(hint.setId.replace(/\d+$/, ''))) score += 5
+
+  // Set name match
+  if (hint.setName && card.set.name.toLowerCase().includes(hint.setName.toLowerCase().slice(0, 10))) score += 3
+
+  // Prefer cards with prices
+  if (card.prices?.length > 0 && Number(card.prices[0].market) > 0) score += 2
+
+  return score
+}
+
+async function findInDb(hint: AiHint): Promise<any | null> {
+  const name     = hint.cardName.trim()
+  const numClean = hint.numberOnly || hint.cardNumber.split('/')[0].replace(/^0+/, '')
+
+  // Strategy 1: exact externalId (setId-number)
+  if (hint.setId && numClean) {
+    for (const extId of [
+      `${hint.setId}-${numClean}`,
+      `${hint.setId}-${hint.cardNumber}`,
+      `${hint.setId}-0${numClean}`,
+    ]) {
+      const r = await prisma.card.findUnique({ where: { externalId: extId }, select: DB_SELECT })
+      if (r) { console.log(`[scan] DB hit: externalId=${extId}`); return r }
+    }
   }
 
-  // Fallback: search by name in DB
-  const numClean = hint.cardNumber.split('/')[0].replace(/^0+/, '')
-  const results = await prisma.card.findMany({
-    where: { name: { contains: hint.cardName, mode: 'insensitive' } },
-    select: DB_SELECT,
-    take: 20,
-  })
-  if (!results.length) return null
+  // Strategy 2: exact name + number + set
+  if (hint.setId) {
+    const r = await prisma.card.findFirst({
+      where: {
+        name: { equals: name, mode: 'insensitive' },
+        set:  { externalId: hint.setId },
+      },
+      select: DB_SELECT,
+    })
+    if (r) { console.log(`[scan] DB hit: exact name+set`); return r }
+  }
 
-  // Score each result
-  const scored = results.map(r => {
-    let score = 0
-    if (r.number === hint.cardNumber || r.number === numClean) score += 10
-    if (ptcgCard && r.set.externalId === ptcgCard.set.id) score += 5
-    if (hint.setId && r.set.externalId.startsWith(hint.setId.replace(/\d+$/, ''))) score += 3
-    return { r, score }
+  // Strategy 3: search by name (all sets), score and rank results
+  const candidates = await prisma.card.findMany({
+    where: {
+      OR: [
+        { name: { equals: name, mode: 'insensitive' } },
+        { name: { contains: name, mode: 'insensitive' } },
+        { localeName: { path: ['fr'], string_contains: name } },
+      ],
+    },
+    select: DB_SELECT,
+    take: 30,
   })
+
+  if (candidates.length === 0) {
+    // Strategy 4: first word only (e.g. "Charizard" from "Charizard VMAX")
+    const firstName = name.split(' ')[0]
+    if (firstName.length >= 3) {
+      const broader = await prisma.card.findMany({
+        where: { name: { startsWith: firstName, mode: 'insensitive' } },
+        select: DB_SELECT,
+        take: 30,
+      })
+      candidates.push(...broader)
+    }
+  }
+
+  if (candidates.length === 0) return null
+
+  // Score and pick best
+  const scored = candidates.map(c => ({ c, score: scoreCard(c, hint) }))
   scored.sort((a, b) => b.score - a.score)
-  return scored[0].r
+
+  const best = scored[0]
+  console.log(`[scan] DB scored match: "${best.c.name}" #${best.c.number} set=${best.c.set.externalId} score=${best.score}`)
+  return best.c
+}
+
+// pokemontcg.io API as last resort
+async function findViaPtcgApi(hint: AiHint): Promise<any | null> {
+  try {
+    const headers: Record<string, string> = process.env.POKEMON_TCG_API_KEY
+      ? { 'X-Api-Key': process.env.POKEMON_TCG_API_KEY } : {}
+
+    const queries = [
+      hint.setId ? `name:"${hint.cardName}" number:"${hint.numberOnly}" set.id:${hint.setId}` : null,
+      hint.setId ? `name:"${hint.cardName}" set.id:${hint.setId}` : null,
+      `name:"${hint.cardName}" number:"${hint.numberOnly}"`,
+      `name:"${hint.cardName}"`,
+    ].filter(Boolean) as string[]
+
+    for (const q of queries) {
+      const res = await fetch(
+        `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(q)}&pageSize=5`,
+        { headers, signal: AbortSignal.timeout(5000) },
+      )
+      if (!res.ok) continue
+      const d = await res.json()
+      if (!d.data?.length) continue
+
+      const ptcgCard = d.data[0]
+      console.log(`[scan] ptcg.io found: ${ptcgCard.id}`)
+
+      // Look up in our DB by externalId
+      const dbCard = await prisma.card.findUnique({ where: { externalId: ptcgCard.id }, select: DB_SELECT })
+      if (dbCard) return dbCard
+
+      // Try to auto-import the set
+      console.log(`[scan] ${ptcgCard.id} not in DB, triggering set import...`)
+      break
+    }
+  } catch (e: any) { console.warn('[scan] ptcg.io API:', e?.message) }
+  return null
 }
 
 function project(price: number, rate: number, years: number) {
   return Math.round(price * Math.pow(1 + rate / 100, years) * 100) / 100
 }
 
-// ── Main handler ──────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   if (!process.env.GEMINI_API_KEY) {
     return NextResponse.json({ ok: false, error: 'GEMINI_API_KEY not configured' }, { status: 500 })
@@ -205,24 +237,30 @@ export async function POST(req: NextRequest) {
     const b64      = Buffer.from(await file.arrayBuffer()).toString('base64')
     const mimeType = file.type || 'image/jpeg'
 
-    // Step 1: AI
+    // Step 1: AI identification
     const hint = await aiIdentify(b64, mimeType)
     if (!hint?.cardName) {
-      return NextResponse.json({ ok: false, error: 'Card not recognized — try a clearer photo with better lighting' }, { status: 422 })
+      return NextResponse.json({ ok: false, error: 'Carte non reconnue — essaie avec une photo plus nette' }, { status: 422 })
     }
 
-    // Step 2: pokemontcg.io authoritative lookup
-    const ptcgCard = await findOnPtcgIo(hint)
+    // Step 2: DB search (primary — we have all sets)
+    let best = await findInDb(hint)
 
-    // Step 3: find in our DB
-    let best = await findInDb(ptcgCard, hint)
+    // Step 3: pokemontcg.io API fallback (if DB search fails)
+    if (!best) {
+      console.log('[scan] DB search failed, trying pokemontcg.io API...')
+      best = await findViaPtcgApi(hint)
+    }
 
-    // Step 4: auto-import if card not in DB but found on pokemontcg.io
-    if (!best && ptcgCard) {
-      console.log(`[scan] card ${ptcgCard.id} not in DB — auto-importing set ${ptcgCard.set.id}`)
-      await autoImportSet(ptcgCard.set.id, req.url)
-      // Retry lookup after import
-      best = await findInDb(ptcgCard, hint)
+    // Step 4: if still not found, auto-import the set and retry
+    if (!best && hint.setId) {
+      try {
+        const origin = new URL(req.url).origin
+        await fetch(`${origin}/api/admin/sync-sets?setId=${hint.setId}&limit=1`, {
+          method: 'POST', signal: AbortSignal.timeout(40000),
+        })
+        best = await findInDb(hint)
+      } catch { /* ignore */ }
     }
 
     // Projections
@@ -244,7 +282,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      identification: { ...hint, resolvedName: ptcgCard?.name ?? hint.cardName, resolvedId: ptcgCard?.id },
+      identification: hint,
       dbMatch: best ? {
         id: best.id, name: best.name, number: best.number, rarity: best.rarity,
         imageUrl: best.imageLgUrl ?? best.imageSmUrl,
