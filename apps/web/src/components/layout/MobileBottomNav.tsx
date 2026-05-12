@@ -85,7 +85,7 @@ export function MobileBottomNav() {
             )}
           </Link>
           <span className={clsx('text-[10px] font-semibold mt-0.5', isScanActive ? 'text-electric-400' : 'text-electric-300')}>
-            Scan
+            {t.nav.scan}
           </span>
         </div>
 

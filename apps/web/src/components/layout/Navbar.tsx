@@ -118,7 +118,7 @@ export function Navbar() {
                 }}
               >
                 <Camera className="w-4 h-4" />
-                Scan
+                {t.nav.scan}
               </Link>
 
               {/* Search button */}

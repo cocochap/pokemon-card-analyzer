@@ -7,6 +7,7 @@ import {
   ImageUp, RotateCcw, Sparkles, TrendingDown, TrendingUp, Upload, Zap,
 } from 'lucide-react'
 import Link from 'next/link'
+import { useT } from '@/lib/i18n/LanguageContext'
 
 type ScanState = 'idle' | 'preview' | 'scanning' | 'result' | 'error'
 
@@ -112,7 +113,7 @@ function GradeRing({ grade }: { grade: number }) {
 }
 
 /* ── Condition dot ──────────────────────────────────────────── */
-function ConditionBadge({ condition }: { condition: string }) {
+function ConditionBadge({ condition, labels }: { condition: string; labels: Record<string, string> }) {
   const colors: Record<string, string> = {
     'Mint':         '#22C55E',
     'Near Mint':    '#4ADE80',
@@ -123,17 +124,18 @@ function ConditionBadge({ condition }: { condition: string }) {
     'Poor':         '#EF4444',
   }
   const color = colors[condition] ?? '#94A3B8'
+  const label = labels[condition] ?? condition
   return (
     <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full"
       style={{ background: `${color}18`, border: `1px solid ${color}40`, color }}>
       <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
-      {condition}
+      {label}
     </span>
   )
 }
 
 /* ── Result panel ───────────────────────────────────────────── */
-function ResultPanel({ result, preview, onReset }: { result: ScanResult; preview: string; onReset: () => void }) {
+function ResultPanel({ result, preview, onReset, s }: { result: ScanResult; preview: string; onReset: () => void; s: Record<string, any> }) {
   const { analysis, dbMatch } = result
   const price = dbMatch?.price?.market ?? 0
   const trend = dbMatch?.market?.priceChange30d ?? 0
@@ -149,7 +151,7 @@ function ResultPanel({ result, preview, onReset }: { result: ScanResult; preview
       {/* Success */}
       <div className="flex items-center gap-2 text-sm font-semibold text-green-400">
         <CheckCircle2 className="w-4 h-4" />
-        Card identified — confidence {analysis.confidence}%
+        {s.identified} {analysis.confidence}%
       </div>
 
       {/* Card preview + grade */}
@@ -170,19 +172,19 @@ function ResultPanel({ result, preview, onReset }: { result: ScanResult; preview
             {dbMatch?.set.name ?? analysis.setName}
             {dbMatch?.number && ` · #${dbMatch.number}`}
           </p>
-          <ConditionBadge condition={analysis.condition} />
+          <ConditionBadge condition={analysis.condition} labels={s.conditionLabels} />
           {(analysis.isFirstEdition || analysis.isShadowless) && (
             <div className="flex gap-1.5 mt-1.5">
               {analysis.isFirstEdition && (
                 <span className="text-[10px] px-2 py-0.5 rounded-full font-bold"
                   style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.35)', color: '#FBBF24' }}>
-                  1st Edition
+                  {s.firstEdition}
                 </span>
               )}
               {analysis.isShadowless && (
                 <span className="text-[10px] px-2 py-0.5 rounded-full font-bold"
                   style={{ background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.35)', color: '#C4B5FD' }}>
-                  Shadowless
+                  {s.shadowless}
                 </span>
               )}
             </div>
@@ -194,7 +196,7 @@ function ResultPanel({ result, preview, onReset }: { result: ScanResult; preview
 
       {/* Grade rationale */}
       <div className="glass-card px-4 py-3 text-xs text-muted-foreground leading-relaxed">
-        <span className="font-semibold text-white mr-1">Grade rationale:</span>
+        <span className="font-semibold text-white mr-1">{s.gradeRationale}</span>
         {analysis.psaGradeRationale}
       </div>
 
@@ -202,7 +204,7 @@ function ResultPanel({ result, preview, onReset }: { result: ScanResult; preview
       {price > 0 && (
         <div className="grid grid-cols-2 gap-3">
           <div className="glass-card p-4 text-center">
-            <div className="text-xs text-muted-foreground mb-1">Market Value</div>
+            <div className="text-xs text-muted-foreground mb-1">{s.marketValue}</div>
             <div className="text-2xl font-bold text-white">
               {dbMatch?.price?.currency === 'EUR' ? '€' : '$'}{price.toFixed(2)}
             </div>
@@ -213,7 +215,7 @@ function ResultPanel({ result, preview, onReset }: { result: ScanResult; preview
           </div>
 
           <div className="glass-card p-4 text-center">
-            <div className="text-xs text-muted-foreground mb-1">Investment Score</div>
+            <div className="text-xs text-muted-foreground mb-1">{s.investScore}</div>
             <div className="text-2xl font-bold"
               style={{ color: (dbMatch?.market?.investmentScore ?? 0) > 70 ? '#22C55E' : (dbMatch?.market?.investmentScore ?? 0) > 40 ? '#F59E0B' : '#EF4444' }}>
               {dbMatch?.market?.investmentScore ?? '—'}/100
@@ -228,7 +230,7 @@ function ResultPanel({ result, preview, onReset }: { result: ScanResult; preview
       {/* Condition detail */}
       {analysis.conditionDetails && (
         <div className="glass-card p-4">
-          <p className="text-xs font-semibold text-white mb-3">Condition breakdown</p>
+          <p className="text-xs font-semibold text-white mb-3">{s.conditionBreakdown}</p>
           <div className="grid grid-cols-2 gap-2 text-xs">
             {Object.entries(analysis.conditionDetails).map(([k, v]) => (
               <div key={k} className="flex justify-between">
@@ -243,7 +245,7 @@ function ResultPanel({ result, preview, onReset }: { result: ScanResult; preview
       {/* AI notes */}
       {analysis.notes && (
         <div className="glass-card px-4 py-3 text-xs text-muted-foreground leading-relaxed">
-          <span className="font-semibold text-white mr-1">Notes:</span>{analysis.notes}
+          <span className="font-semibold text-white mr-1">{s.notes}</span>{analysis.notes}
         </div>
       )}
 
@@ -252,13 +254,13 @@ function ResultPanel({ result, preview, onReset }: { result: ScanResult; preview
         {dbMatch && (
           <Link href={`/cards/${dbMatch.id}`} className="btn-primary flex-1 justify-center py-3 rounded-xl text-sm">
             <Sparkles className="w-4 h-4" />
-            Full Analysis
+            {s.fullAnalysis}
             <ExternalLink className="w-3 h-3 opacity-60" />
           </Link>
         )}
         <button className="btn-ghost px-4 py-3 rounded-xl" onClick={onReset}>
           <RotateCcw className="w-4 h-4" />
-          {!dbMatch && <span className="ml-1 text-sm">Scan Again</span>}
+          {!dbMatch && <span className="ml-1 text-sm">{s.scanAgain}</span>}
         </button>
       </div>
     </motion.div>
@@ -267,6 +269,9 @@ function ResultPanel({ result, preview, onReset }: { result: ScanResult; preview
 
 /* ── Main upload component ─────────────────────────────────── */
 export function ScanUpload() {
+  const t = useT()
+  const s = t.scan
+
   const [state, setState] = useState<ScanState>('idle')
   const [preview, setPreview]     = useState<string | null>(null)
   const [fileObj, setFileObj]     = useState<File | null>(null)
@@ -363,8 +368,8 @@ export function ScanUpload() {
                 </div>
               </motion.div>
 
-              <p className="text-base font-semibold text-white mb-1">Drop your card here</p>
-              <p className="text-sm text-muted-foreground text-center mb-5">or tap to browse files</p>
+              <p className="text-base font-semibold text-white mb-1">{s.dropTitle}</p>
+              <p className="text-sm text-muted-foreground text-center mb-5">{s.dropSubtitle}</p>
 
               <div className="flex gap-2">
                 <button
@@ -372,17 +377,17 @@ export function ScanUpload() {
                   onClick={e => { e.stopPropagation(); fileRef.current?.click() }}
                 >
                   <Upload className="w-4 h-4" />
-                  Upload
+                  {s.upload}
                 </button>
                 <button
                   className="btn-ghost px-4 py-2 text-sm rounded-xl"
                   onClick={e => { e.stopPropagation(); cameraRef.current?.click() }}
                 >
                   <Camera className="w-4 h-4" />
-                  Camera
+                  {s.camera}
                 </button>
               </div>
-              <p className="text-xs text-muted-foreground mt-4">JPG, PNG, WEBP · Max 10MB</p>
+              <p className="text-xs text-muted-foreground mt-4">{s.fileTypes}</p>
             </div>
           </motion.div>
         )}
@@ -403,7 +408,7 @@ export function ScanUpload() {
               <div className="flex gap-3 mt-4">
                 <button className="btn-primary flex-1 justify-center py-3 text-base rounded-xl font-bold" onClick={startScan}>
                   <Zap className="w-5 h-5" />
-                  Analyze with AI
+                  {s.analyze}
                 </button>
                 <button className="btn-ghost px-4 py-3 rounded-xl" onClick={reset}>
                   <RotateCcw className="w-4 h-4" />
@@ -419,8 +424,8 @@ export function ScanUpload() {
                   className="w-5 h-5 rounded-full border-2 border-electric-500 border-t-transparent flex-shrink-0"
                 />
                 <div>
-                  <p className="text-sm font-semibold text-white">AI is analyzing your card…</p>
-                  <p className="text-xs text-muted-foreground">Checking 22,000+ cards in database</p>
+                  <p className="text-sm font-semibold text-white">{s.analyzing}</p>
+                  <p className="text-xs text-muted-foreground">{s.analyzingDetail}</p>
                 </div>
               </div>
             )}
@@ -430,7 +435,7 @@ export function ScanUpload() {
         {/* ── RESULT ────────────────────────────────────────── */}
         {state === 'result' && result && preview && (
           <motion.div key="result" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <ResultPanel result={result} preview={preview} onReset={reset} />
+            <ResultPanel result={result} preview={preview} onReset={reset} s={s} />
           </motion.div>
         )}
 
@@ -440,12 +445,12 @@ export function ScanUpload() {
             <div className="glass-card p-6 text-center space-y-4">
               <AlertCircle className="w-10 h-10 text-red-400 mx-auto" />
               <div>
-                <p className="font-semibold text-white mb-1">Scan failed</p>
-                <p className="text-sm text-muted-foreground">{errorMsg || 'Try a clearer photo with good lighting.'}</p>
+                <p className="font-semibold text-white mb-1">{s.scanFailed}</p>
+                <p className="text-sm text-muted-foreground">{errorMsg || s.scanFailedDesc}</p>
               </div>
               <button className="btn-primary w-full justify-center py-3 rounded-xl" onClick={reset}>
                 <RotateCcw className="w-4 h-4" />
-                Try Again
+                {s.tryAgain}
               </button>
             </div>
           </motion.div>
