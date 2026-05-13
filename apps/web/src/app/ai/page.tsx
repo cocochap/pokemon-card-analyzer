@@ -30,6 +30,7 @@ export default function AiPage() {
   })
 
   const picks = data?.picks ?? []
+  const isElite = data?.isElite ?? false
 
   const featured = picks.find((p: any) => p.pickType === 'monthly_featured')
   const recentHype = picks.filter((p: any) => p.pickType === 'recent_hype').slice(0, 5)
@@ -38,6 +39,8 @@ export default function AiPage() {
   const longTerm = picks.filter((p: any) => p.pickType === 'long_term').slice(0, 5)
 
   const isLocked = !isSignedIn || (error as any)?.requiresAuth || (error as any)?.requiresPremium
+  // PRO users see partial picks; undervalued + long_term are ELITE only
+  const eliteLocked = isSignedIn && !isLocked && !isElite
 
   const monthLabel = new Date(period + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
 
@@ -147,37 +150,47 @@ export default function AiPage() {
               </section>
             )}
 
-            {/* Undervalued */}
-            {undervalued.length > 0 && (
+            {/* Undervalued — ELITE only */}
+            {(undervalued.length > 0 || eliteLocked) && (
               <section>
                 <SectionHeader
                   icon={<Gem className="w-5 h-5 text-blue-400" />}
                   title="Gemmes sous-évaluées"
                   subtitle="Cartes rares en dessous de leur valeur historique — fort potentiel de revalorisation"
-                  badge={`${undervalued.length} picks`}
+                  badge="Elite"
+                  badgePurple
                 />
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                  {undervalued.map((pick: any) => (
-                    <InvestmentPickCard key={pick.id} pick={pick} accent="blue" />
-                  ))}
-                </div>
+                {eliteLocked ? (
+                  <EliteTeaser label="Gemmes sous-évaluées" />
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                    {undervalued.map((pick: any) => (
+                      <InvestmentPickCard key={pick.id} pick={pick} accent="blue" />
+                    ))}
+                  </div>
+                )}
               </section>
             )}
 
-            {/* Long term */}
-            {longTerm.length > 0 && (
+            {/* Long term — ELITE only */}
+            {(longTerm.length > 0 || eliteLocked) && (
               <section>
                 <SectionHeader
                   icon={<Sparkles className="w-5 h-5 text-purple-400" />}
                   title="Long terme"
                   subtitle="Cartes aux fondamentaux solides — horizon 6 à 18 mois"
-                  badge={`${longTerm.length} picks`}
+                  badge="Elite"
+                  badgePurple
                 />
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                  {longTerm.map((pick: any) => (
-                    <InvestmentPickCard key={pick.id} pick={pick} accent="purple" />
-                  ))}
-                </div>
+                {eliteLocked ? (
+                  <EliteTeaser label="Long terme" />
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                    {longTerm.map((pick: any) => (
+                      <InvestmentPickCard key={pick.id} pick={pick} accent="purple" />
+                    ))}
+                  </div>
+                )}
               </section>
             )}
 
@@ -195,12 +208,13 @@ export default function AiPage() {
 }
 
 function SectionHeader({
-  icon, title, subtitle, badge
+  icon, title, subtitle, badge, badgePurple
 }: {
   icon: React.ReactNode
   title: string
   subtitle: string
   badge?: string
+  badgePurple?: boolean
 }) {
   return (
     <div className="flex items-start justify-between mb-5 gap-4 flex-wrap">
@@ -210,12 +224,48 @@ function SectionHeader({
           <h2 className="text-xl font-bold">{title}</h2>
           {badge && (
             <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
-              style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)' }}>
+              style={badgePurple
+                ? { background: 'rgba(167,139,250,0.15)', color: '#A78BFA', border: '1px solid rgba(167,139,250,0.3)' }
+                : { background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)' }}>
               {badge}
             </span>
           )}
         </div>
         <p className="text-sm text-muted-foreground">{subtitle}</p>
+      </div>
+    </div>
+  )
+}
+
+function EliteTeaser({ label }: { label: string }) {
+  return (
+    <div className="relative rounded-2xl overflow-hidden">
+      {/* Blurred fake cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 blur-sm opacity-40 pointer-events-none select-none">
+        {Array(5).fill(0).map((_, i) => (
+          <div key={i} className="rounded-xl overflow-hidden aspect-[3/4]"
+            style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)' }}>
+            <div className="w-full h-3/4 bg-white/5 flex items-center justify-center text-3xl">🃏</div>
+            <div className="p-2 space-y-1">
+              <div className="h-3 bg-white/10 rounded w-3/4" />
+              <div className="h-2 bg-white/8 rounded w-1/2" />
+            </div>
+          </div>
+        ))}
+      </div>
+      {/* Lock overlay */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="text-center px-6 py-5 rounded-2xl"
+          style={{ background: 'rgba(6,9,24,0.90)', border: '1px solid rgba(167,139,250,0.3)', backdropFilter: 'blur(12px)' }}>
+          <div className="text-2xl mb-2">👑</div>
+          <p className="font-bold text-white mb-1">Réservé Elite</p>
+          <p className="text-sm text-white/50 mb-3">Les picks "{label}" nécessitent l'abonnement Elite</p>
+          <a href="/pricing"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:brightness-110"
+            style={{ background: 'linear-gradient(135deg,#7C3AED,#A78BFA)', color: '#fff' }}>
+            Passer Elite — 15€/mois
+          </a>
+        </div>
       </div>
     </div>
   )

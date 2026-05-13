@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { stripe } from '@/lib/stripe'
+import { stripe, STRIPE_PRICE_ID_ELITE } from '@/lib/stripe'
 import { prisma } from '@/lib/db/prisma'
 import type Stripe from 'stripe'
 
@@ -32,7 +32,10 @@ export async function POST(req: NextRequest) {
       if (!clerkId) break
 
       const isActive = subscription.status === 'active' || subscription.status === 'trialing'
-      const tier = isActive ? 'PRO' : 'FREE'
+      // Detect ELITE plan by price ID
+      const priceId = subscription.items?.data?.[0]?.price?.id
+      const isElite = priceId === STRIPE_PRICE_ID_ELITE || subscription.metadata?.plan === 'elite'
+      const tier = isActive ? (isElite ? 'ELITE' : 'PRO') : 'FREE'
 
       await prisma.user.update({ where: { clerkId }, data: { tier } })
 

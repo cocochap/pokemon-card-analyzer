@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { prisma } from '@/lib/db/prisma'
-import { getUserTier, isPremiumTier } from '@/lib/subscription'
+import { getUserTier, isPremiumTier, isEliteTier } from '@/lib/subscription'
+
+// PRO sees: monthly_featured, recent_hype, momentum
+// ELITE sees everything including: undervalued, long_term
+const PRO_PICK_TYPES = ['monthly_featured', 'recent_hype', 'momentum']
+const ELITE_PICK_TYPES = ['monthly_featured', 'recent_hype', 'momentum', 'undervalued', 'long_term']
 
 export async function GET(req: Request) {
   const { userId: clerkId } = await auth()
@@ -17,8 +22,10 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const period = searchParams.get('period') ?? new Date().toISOString().slice(0, 7)
 
+  const allowedTypes = isEliteTier(tier) ? ELITE_PICK_TYPES : PRO_PICK_TYPES
+
   const picks = await prisma.investmentPick.findMany({
-    where: { period },
+    where: { period, pickType: { in: allowedTypes } },
     include: {
       card: {
         include: {
@@ -40,5 +47,5 @@ export async function GET(req: Request) {
     orderBy: [{ pickType: 'asc' }, { rank: 'asc' }],
   })
 
-  return NextResponse.json({ picks, period })
+  return NextResponse.json({ picks, period, tier, isElite: isEliteTier(tier) })
 }

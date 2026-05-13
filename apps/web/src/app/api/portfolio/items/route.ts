@@ -41,13 +41,14 @@ export async function POST(req: NextRequest) {
     include: { _count: { select: { items: true } } },
   })
 
-  // Enforce portfolio limit for free users
-  const { isPremiumTier, LIMITS } = await import('@/lib/subscription')
-  if (!isPremiumTier(user.tier as any)) {
+  // Enforce portfolio limit per tier
+  const { getLimits } = await import('@/lib/subscription')
+  const limits = getLimits(user.tier as any)
+  if (limits.portfolioCards !== Infinity) {
     const itemCount = user.portfolio?._count?.items ?? 0
-    if (itemCount >= LIMITS.FREE.portfolioCards) {
+    if (itemCount >= limits.portfolioCards) {
       return NextResponse.json({
-        error: `Limite de ${LIMITS.FREE.portfolioCards} cartes atteinte pour le plan gratuit.`,
+        error: `Limite de ${limits.portfolioCards} cartes atteinte. Passez à Premium pour un portfolio illimité.`,
         limitReached: true,
         upgradeUrl: '/pricing',
       }, { status: 403 })

@@ -4,21 +4,51 @@ export type Tier = 'FREE' | 'STARTER' | 'PRO' | 'ELITE'
 
 export const LIMITS = {
   FREE: {
-    chartRanges: ['7d', '30d', '90d'] as string[],
-    portfolioCards: 50,
-    alerts: 3,
-    scansPerMonth: 5,
+    chartRanges: ['7d', '30d'] as string[],
+    portfolioCards: 10,
+    alerts: 0,
+    scansPerMonth: 3,
+    aiInsights: false,
+    cardAnalysis: false,
+    csvExport: false,
+    monthlyReport: false,
   },
   PRO: {
     chartRanges: ['7d', '30d', '90d', '1y'] as string[],
     portfolioCards: Infinity,
+    alerts: 10,
+    scansPerMonth: 30,
+    aiInsights: true,       // featured + hype + momentum only
+    aiInsightsFull: false,  // undervalued + long_term locked
+    cardAnalysis: false,
+    csvExport: false,
+    monthlyReport: false,
+  },
+  ELITE: {
+    chartRanges: ['7d', '30d', '90d', '1y', 'all'] as string[],
+    portfolioCards: Infinity,
     alerts: Infinity,
     scansPerMonth: Infinity,
+    aiInsights: true,
+    aiInsightsFull: true,   // all categories
+    cardAnalysis: true,     // per-card AI analysis
+    csvExport: true,
+    monthlyReport: true,
   },
 }
 
 export function isPremiumTier(tier: Tier): boolean {
   return tier === 'PRO' || tier === 'ELITE' || tier === 'STARTER'
+}
+
+export function isEliteTier(tier: Tier): boolean {
+  return tier === 'ELITE'
+}
+
+export function getLimits(tier: Tier) {
+  if (tier === 'ELITE') return LIMITS.ELITE
+  if (tier === 'PRO' || tier === 'STARTER') return LIMITS.PRO
+  return LIMITS.FREE
 }
 
 export async function getUserWithTier(clerkId: string, email?: string): Promise<{

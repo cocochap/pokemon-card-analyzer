@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth, currentUser } from '@clerk/nextjs/server'
-import { stripe, STRIPE_PRICE_ID } from '@/lib/stripe'
+import { stripe, STRIPE_PRICE_ID_PRO, STRIPE_PRICE_ID_ELITE } from '@/lib/stripe'
 import { getUserWithTier } from '@/lib/subscription'
 import { prisma } from '@/lib/db/prisma'
 
@@ -9,6 +9,9 @@ export const runtime = 'nodejs'
 export async function POST(req: NextRequest) {
   const { userId: clerkId } = await auth()
   if (!clerkId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { plan } = await req.json().catch(() => ({ plan: 'pro' }))
+  const priceId = plan === 'elite' ? STRIPE_PRICE_ID_ELITE : STRIPE_PRICE_ID_PRO
 
   const clerkUser = await currentUser()
   const email = clerkUser?.emailAddresses[0]?.emailAddress
@@ -34,11 +37,11 @@ export async function POST(req: NextRequest) {
     customer: stripeCustomerId,
     mode: 'subscription',
     payment_method_types: ['card'],
-    line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
-    success_url: `${origin}/pricing?success=true`,
+    line_items: [{ price: priceId, quantity: 1 }],
+    success_url: `${origin}/pricing?success=true&plan=${plan}`,
     cancel_url: `${origin}/pricing?canceled=true`,
-    metadata: { clerkId },
-    subscription_data: { metadata: { clerkId } },
+    metadata: { clerkId, plan },
+    subscription_data: { metadata: { clerkId, plan } },
     allow_promotion_codes: true,
   })
 

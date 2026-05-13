@@ -7,6 +7,7 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Briefcase,
+  Crown,
   Download,
   LineChart,
   Plus,
@@ -22,6 +23,35 @@ import { PortfolioChart } from '@/components/charts/PortfolioChart'
 import { PortfolioTable } from '@/components/portfolio/PortfolioTable'
 import { AddCardModal } from '@/components/portfolio/AddCardModal'
 import { ImportCsvModal } from '@/components/portfolio/ImportCsvModal'
+
+function ExportCsvButton() {
+  const { data: userInfo } = useQuery({
+    queryKey: ['user-me'],
+    queryFn: () => fetch('/api/user/me').then(r => r.ok ? r.json() : null),
+    staleTime: 60_000,
+  })
+  const isElite = userInfo?.tier === 'ELITE'
+
+  if (!isElite) {
+    return (
+      <Link href="/pricing"
+        className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+        style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)', color: '#A78BFA' }}
+        title="Réservé Elite — Exporter en CSV">
+        <Crown className="w-4 h-4" />
+        Export CSV
+      </Link>
+    )
+  }
+
+  return (
+    <a href="/api/portfolio/export"
+      className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm hover:bg-white/10 transition-colors">
+      <Download className="w-4 h-4" />
+      Export CSV
+    </a>
+  )
+}
 
 export function PortfolioDashboard() {
   const [showAddCard, setShowAddCard] = useState(false)
@@ -132,13 +162,7 @@ export function PortfolioDashboard() {
             <Upload className="w-4 h-4" />
             {t.portfolio.importCsv}
           </button>
-          <button
-            onClick={() => {/* export */}}
-            className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm hover:bg-white/10 transition-colors"
-          >
-            <Download className="w-4 h-4" />
-            {t.portfolio.exportCsv}
-          </button>
+          <ExportCsvButton />
           <button
             onClick={() => setShowAddCard(true)}
             className="flex items-center gap-2 px-4 py-2 bg-pokemon-yellow text-background font-semibold rounded-lg text-sm hover:bg-pokemon-yellow/90 transition-colors"

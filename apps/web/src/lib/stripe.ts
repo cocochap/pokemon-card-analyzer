@@ -5,4 +5,8 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   typescript: true,
 })
 
-export const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID_PREMIUM!
+export const STRIPE_PRICE_ID_PRO   = process.env.STRIPE_PRICE_ID_PREMIUM!
+export const STRIPE_PRICE_ID_ELITE = process.env.STRIPE_PRICE_ID_ELITE!
+
+// Back-compat
+export const STRIPE_PRICE_ID = STRIPE_PRICE_ID_PRO
