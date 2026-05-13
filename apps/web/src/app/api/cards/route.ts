@@ -15,9 +15,9 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(100, Number(searchParams.get('limit') ?? 24))
 
   const where: Prisma.CardWhereInput = {
-    // Without a search query, only show cards with images (better default UX)
-    // When searching, show all cards so users can find sets without FR images
-    ...(!q && { imageSmUrl: { not: null } }),
+    // Only filter by image on general browse (no set, no search)
+    // When browsing a specific set or searching, show all cards
+    ...(!q && !set && { imageSmUrl: { not: null } }),
     ...(q && {
       OR: [
         { name: { contains: q, mode: 'insensitive' } },
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
     }),
     ...(set && { setId: set }),
     ...(rarity && { rarity: rarity as any }),
-    ...((sort === 'price_desc' || sort === 'price_asc') && !q && {
+    ...((sort === 'price_desc' || sort === 'price_asc') && !q && !set && {
       prices: { some: { source: 'cardmarket', variant: 'NORMAL' } },
     }),
   }
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
     sort === 'score_desc' ? { marketData: { investmentScore: { sort: 'desc', nulls: 'last' } } } :
     { marketData: { allTimeHigh: { sort: 'desc', nulls: 'last' } } }
 
-  const cacheKey = `cards:v4:${JSON.stringify({ q, set, rarity, sort, page, limit })}`
+  const cacheKey = `cards:v5:${JSON.stringify({ q, set, rarity, sort, page, limit })}`
 
   const result = await withCache(cacheKey, 60, async () => {
     const [items, total] = await Promise.all([
