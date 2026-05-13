@@ -68,31 +68,26 @@ async function syncSet(code) {
 
   const cards = data.cartes ?? []
   const frName = data.currentSeries?.fullName ?? ''
+  const nomCourt = cards[0]?.nom_court ?? code
   console.log(`${cards.length} cartes — "${frName}"`)
 
-  // Trouver le set dans notre DB par nom français (plus fiable que l'ID)
-  let dbSet = null
-  if (frName) {
+  // 1. Exact externalId match (pokecardex code lowercase = tcgdex id)
+  let dbSet = await prisma.pokemonSet.findFirst({
+    where: { externalId: { equals: nomCourt.toLowerCase() } }
+  })
+  // 2. Exact full French name match
+  if (!dbSet && frName) {
     dbSet = await prisma.pokemonSet.findFirst({
-      where: { name: { contains: frName.slice(0, 15), mode: 'insensitive' } }
-    })
-    if (!dbSet && frName.includes(' ')) {
-      // Essai avec le premier mot significatif
-      const keyword = frName.split(' ').find(w => w.length > 3) ?? frName
-      dbSet = await prisma.pokemonSet.findFirst({
-        where: { name: { contains: keyword, mode: 'insensitive' } }
-      })
-    }
-  }
-  if (!dbSet) {
-    // Fallback : matcher par nombre de cartes et date approx
-    const total = data.currentSeries?.totalCards ?? cards.length
-    dbSet = await prisma.pokemonSet.findFirst({
-      where: { totalCards: { gte: total - 5, lte: total + 5 } },
-      orderBy: { releaseDate: 'desc' }
+      where: { name: { equals: frName, mode: 'insensitive' } }
     })
   }
-  if (!dbSet) { console.log(`  ⚠️  Set introuvable en DB pour "${frName}"`); return }
+  // 3. Begins-with match (robust against minor name differences)
+  if (!dbSet && frName) {
+    dbSet = await prisma.pokemonSet.findFirst({
+      where: { name: { startsWith: frName.slice(0, 10), mode: 'insensitive' } }
+    })
+  }
+  if (!dbSet) { console.log(`  ⚠️  Set introuvable en DB pour "${frName}" (${nomCourt})`); return }
   console.log(`  → Matched: ${dbSet.externalId} (${dbSet.name})`)
 
   let priced = 0, notFound = 0, errors = 0
