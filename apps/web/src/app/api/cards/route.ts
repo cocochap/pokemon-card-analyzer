@@ -24,6 +24,8 @@ export async function GET(req: NextRequest) {
         { number: { contains: q, mode: 'insensitive' } },
         { illustrator: { contains: q, mode: 'insensitive' } },
         { localeName: { path: ['fr'], string_contains: q } },
+        { set: { name: { contains: q, mode: 'insensitive' } } },
+        { set: { externalId: { contains: q, mode: 'insensitive' } } },
       ],
     }),
     ...(set && { setId: set }),
@@ -42,7 +44,7 @@ export async function GET(req: NextRequest) {
     sort === 'score_desc' ? { marketData: { investmentScore: { sort: 'desc', nulls: 'last' } } } :
     { marketData: { allTimeHigh: { sort: 'desc', nulls: 'last' } } }
 
-  const cacheKey = `cards:v3:${JSON.stringify({ q, set, rarity, sort, page, limit })}`
+  const cacheKey = `cards:v4:${JSON.stringify({ q, set, rarity, sort, page, limit })}`
 
   const result = await withCache(cacheKey, 60, async () => {
     const [items, total] = await Promise.all([
