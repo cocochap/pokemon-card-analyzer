@@ -2,17 +2,20 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowDownRight, ArrowUpRight } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, Lock } from 'lucide-react'
+import Link from 'next/link'
 import { clsx } from 'clsx'
 import { api } from '@/lib/api'
 import { formatCurrency } from '@/lib/formatters'
 import { useT, useLanguage } from '@/lib/i18n/LanguageContext'
+import { useUserTier } from '@/lib/useUserTier'
 
 type Range = '7d' | '30d' | '90d'
 
 export function CardPriceTable({ cardId }: { cardId: string }) {
   const t = useT()
   const { locale } = useLanguage()
+  const { isPremium } = useUserTier()
   const [range, setRange] = useState<Range>('30d')
 
   const { data, isLoading } = useQuery({
@@ -30,10 +33,10 @@ export function CardPriceTable({ cardId }: { cardId: string }) {
   const step = Math.max(1, Math.floor(rawPrices.length / 15))
   const rows = rawPrices.filter((_, i) => i % step === 0 || i === rawPrices.length - 1).slice(-15).reverse()
 
-  const RANGES: { key: Range; label: string }[] = [
-    { key: '7d', label: t.chart.range7d },
-    { key: '30d', label: t.chart.range30d },
-    { key: '90d', label: t.chart.range90d },
+  const RANGES: { key: Range; label: string; locked: boolean }[] = [
+    { key: '7d',  label: t.chart.range7d,  locked: false },
+    { key: '30d', label: t.chart.range30d, locked: false },
+    { key: '90d', label: t.chart.range90d, locked: !isPremium },
   ]
 
   const dateLocale = locale === 'fr' ? 'fr-FR' : 'en-US'
@@ -43,15 +46,23 @@ export function CardPriceTable({ cardId }: { cardId: string }) {
       <div className="p-5 flex items-center justify-between flex-wrap gap-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
         <h3 className="font-semibold">{t.card.priceHistory}</h3>
         <div className="flex gap-1 rounded-xl p-1" style={{ background: 'rgba(255,255,255,0.05)' }}>
-          {RANGES.map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setRange(key)}
-              className={clsx('px-3 py-1 rounded-lg text-sm font-medium transition-all')}
-              style={range === key ? { background: 'rgba(255,203,5,0.15)', color: '#FFCB05', border: '1px solid rgba(255,203,5,0.3)' } : { color: 'rgba(255,255,255,0.4)' }}
-            >
-              {label}
-            </button>
+          {RANGES.map(({ key, label, locked }) => (
+            locked ? (
+              <Link key={key} href="/pricing"
+                className="flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-medium text-white/20 hover:text-white/40 transition-colors"
+                title="Premium requis">
+                <Lock className="w-3 h-3" />{label}
+              </Link>
+            ) : (
+              <button
+                key={key}
+                onClick={() => setRange(key)}
+                className={clsx('px-3 py-1 rounded-lg text-sm font-medium transition-all')}
+                style={range === key ? { background: 'rgba(255,203,5,0.15)', color: '#FFCB05', border: '1px solid rgba(255,203,5,0.3)' } : { color: 'rgba(255,255,255,0.4)' }}
+              >
+                {label}
+              </button>
+            )
           ))}
         </div>
       </div>

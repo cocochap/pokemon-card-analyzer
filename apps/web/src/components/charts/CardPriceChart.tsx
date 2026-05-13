@@ -2,15 +2,17 @@
 
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import Link from 'next/link'
 import {
-  ResponsiveContainer, ComposedChart, Area, Line, Bar,
-  XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, Legend,
+  ResponsiveContainer, ComposedChart, Area, Line,
+  XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
 } from 'recharts'
 import { clsx } from 'clsx'
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { Lock, TrendingUp, TrendingDown } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatCurrency } from '@/lib/formatters'
 import { useT, useLanguage } from '@/lib/i18n/LanguageContext'
+import { useUserTier } from '@/lib/useUserTier'
 
 type Range = '7d' | '30d' | '90d' | '1y'
 
@@ -52,8 +54,13 @@ function PriceStat({ label, value, change }: { label: string; value: number; cha
 export function CardPriceChart({ cardId }: { cardId: string }) {
   const t = useT()
   const { locale } = useLanguage()
-  const [range, setRange] = useState<Range>('90d')
+  const { isPremium, isElite } = useUserTier()
+  const [range, setRange] = useState<Range>('30d')
   const [showMA, setShowMA] = useState(true)
+
+  const allowedRanges = isElite ? ['7d','30d','90d','1y']
+    : isPremium ? ['7d','30d','90d','1y']
+    : ['7d','30d']
 
   const { data, isLoading } = useQuery({
     queryKey: ['card-price-history', cardId, range],
@@ -86,11 +93,11 @@ export function CardPriceChart({ cardId }: { cardId: string }) {
   const isPositive = priceChange >= 0
   const color = isPositive ? '#22C55E' : '#EF4444'
 
-  const RANGES: { key: Range; label: string }[] = [
-    { key: '7d', label: t.chart.range7d },
-    { key: '30d', label: t.chart.range30d },
-    { key: '90d', label: t.chart.range90d },
-    { key: '1y', label: t.chart.range1y },
+  const RANGES: { key: Range; label: string; locked: boolean }[] = [
+    { key: '7d',  label: t.chart.range7d,  locked: false },
+    { key: '30d', label: t.chart.range30d, locked: false },
+    { key: '90d', label: t.chart.range90d, locked: !allowedRanges.includes('90d') },
+    { key: '1y',  label: t.chart.range1y,  locked: !allowedRanges.includes('1y') },
   ]
 
   const rsiColor = rsi < 30 ? '#22C55E' : rsi > 70 ? '#EF4444' : '#FFCB05'
@@ -122,20 +129,26 @@ export function CardPriceChart({ cardId }: { cardId: string }) {
           <div className="flex flex-col gap-2 items-end">
             {/* Range */}
             <div className="flex gap-1 rounded-xl p-1" style={{ background: 'rgba(255,255,255,0.05)' }}>
-              {RANGES.map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => setRange(key)}
-                  className={clsx(
-                    'px-3 py-1 rounded-lg text-xs font-medium transition-all',
-                    range === key
-                      ? 'font-bold'
-                      : 'text-white/40 hover:text-white/70',
-                  )}
-                  style={range === key ? { background: 'rgba(255,203,5,0.15)', color: '#FFCB05', border: '1px solid rgba(255,203,5,0.3)' } : {}}
-                >
-                  {label}
-                </button>
+              {RANGES.map(({ key, label, locked }) => (
+                locked ? (
+                  <Link key={key} href="/pricing"
+                    className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium text-white/20 hover:text-white/40 transition-colors"
+                    title="Premium requis">
+                    <Lock className="w-2.5 h-2.5" />{label}
+                  </Link>
+                ) : (
+                  <button
+                    key={key}
+                    onClick={() => setRange(key)}
+                    className={clsx(
+                      'px-3 py-1 rounded-lg text-xs font-medium transition-all',
+                      range === key ? 'font-bold' : 'text-white/40 hover:text-white/70',
+                    )}
+                    style={range === key ? { background: 'rgba(255,203,5,0.15)', color: '#FFCB05', border: '1px solid rgba(255,203,5,0.3)' } : {}}
+                  >
+                    {label}
+                  </button>
+                )
               ))}
             </div>
 

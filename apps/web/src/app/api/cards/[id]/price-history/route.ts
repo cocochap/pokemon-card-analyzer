@@ -33,15 +33,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const range = searchParams.get('range') ?? '30d'
   const source = searchParams.get('source') ?? 'cardmarket'
 
-  // 1y range requires Premium
-  if (range === '1y') {
+  // Range gating: 90d+ requires Premium, 1y requires Premium, all requires Elite
+  if (range === '90d' || range === '1y' || range === 'all') {
     const { userId: clerkId } = await auth()
     if (!clerkId) {
-      return NextResponse.json({ error: 'Premium requis', upgradeUrl: '/pricing' }, { status: 403 })
+      return NextResponse.json({ error: 'Premium requis', upgradeUrl: '/pricing', requiresPremium: true }, { status: 403 })
     }
     const tier = await getUserTier(clerkId)
     if (!isPremiumTier(tier)) {
-      return NextResponse.json({ error: 'Premium requis', upgradeUrl: '/pricing' }, { status: 403 })
+      return NextResponse.json({ error: 'Premium requis', upgradeUrl: '/pricing', requiresPremium: true }, { status: 403 })
     }
   }
 
