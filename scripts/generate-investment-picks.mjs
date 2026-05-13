@@ -22,18 +22,133 @@ const PERIOD = periodArg
   : new Date().toISOString().slice(0, 7) // "2026-05"
 
 // ─── Character tier scoring ────────────────────────────────────────────────
+// S-tier: globally iconic, always in demand, premium regardless of format
+// A-tier: fan favorites, strong collector demand
+// B-tier: popular starters & pseudo-legendaries, significant but secondary demand
+// C-tier: competitive/semi-popular Pokémon
 const CHARACTER_TIERS = {
-  S: ['charizard', 'pikachu', 'mewtwo', 'lugia', 'rayquaza', 'mew', 'umbreon', 'eevee', 'gengar'],
-  A: ['blastoise', 'venusaur', 'snorlax', 'espeon', 'gyarados', 'dragonite', 'articuno', 'zapdos', 'moltres', 'ho-oh', 'celebi'],
-  B: ['bulbasaur', 'charmander', 'squirtle', 'raichu', 'vaporeon', 'jolteon', 'flareon', 'togekiss', 'sylveon', 'garchomp', 'lucario', 'zoroark', 'tyranitar'],
+  // Bilingual: English + French names (our DB uses French card names)
+  S: [
+    // EN names
+    'charizard', 'pikachu', 'mewtwo', 'lugia', 'rayquaza', 'mew', 'umbreon',
+    'eevee', 'gengar', 'snorlax',
+    // FR names
+    'dracaufeu',  // Charizard
+    'mewtwo',     // same
+    'evoli',      // Eevee
+    'noctali',    // Umbreon
+    'ectoplasma', // Gengar
+    'ronflex',    // Snorlax
+  ],
+  A: [
+    // EN names
+    'blastoise', 'venusaur', 'espeon', 'gyarados', 'dragonite',
+    'articuno', 'zapdos', 'moltres', 'ho-oh', 'celebi', 'suicune',
+    'entei', 'raikou', 'latias', 'latios', 'jirachi', 'deoxys',
+    'darkrai', 'shaymin', 'arceus', 'victini', 'zoroark',
+    'sylveon', 'xerneas', 'yveltal', 'zygarde', 'solgaleo', 'lunala',
+    'necrozma', 'marshadow', 'zeraora', 'zacian', 'zamazenta',
+    // FR names
+    'tortank',    // Blastoise
+    'florizarre', // Venusaur
+    'mentali',    // Espeon
+    'léviator',   // Gyarados
+    'dracolosse', // Dragonite
+    'artikodin',  // Articuno
+    'électhor',   // Zapdos
+    'sulfura',    // Moltres
+    'iguolta',    // Suicune
+    'zoroark',    // same
+    'nixaly',     // Sylveon
+    'xerneas',    // same
+    'yveltal',    // same
+    'zacian',     // same
+    'zamazenta',  // same
+  ],
+  B: [
+    // Starters EN (all pre-evos — a Charmander promo ≈ rare collectible)
+    'charmander', 'charmeleon',
+    'squirtle', 'wartortle',
+    'bulbasaur', 'ivysaur',
+    'chikorita', 'cyndaquil', 'totodile',
+    'torchic', 'mudkip', 'treecko',
+    'turtwig', 'chimchar', 'piplup',
+    'snivy', 'tepig', 'oshawott',
+    'chespin', 'fennekin', 'froakie',
+    'rowlet', 'litten', 'popplio',
+    'grookey', 'scorbunny', 'sobble',
+    'sprigatito', 'fuecoco', 'quaxly',
+    // Starters FR names (critical — our DB is in French!)
+    'salamèche', 'reptincel',  // Charmander / Charmeleon
+    'carapuce', 'carabaffe',   // Squirtle / Wartortle
+    'bulbizarre', 'herbizarre',// Bulbasaur / Ivysaur
+    'germignon', 'héricendre', 'kaiminus', // Gen2 starters FR
+    'poussifeu', 'gobou', 'arcko',          // Gen3 starters FR
+    'tortipouss', 'ouisticram', 'tiplouf',  // Gen4 starters FR
+    'vipélierre', 'gruikui', 'moustillon',  // Gen5 starters FR
+    'marisson', 'feunnec', 'grenousse',     // Gen6 starters FR
+    'brindibou', 'flamiaou', 'otaquin',     // Gen7 starters FR
+    'ouistempo', 'flambino', 'larméléon',   // Gen8 starters FR
+    'poussacha', 'chochodile', 'coiffeton',  // Gen9 starters FR
+    // Other fan favorites EN
+    'raichu', 'vaporeon', 'jolteon', 'flareon', 'leafeon', 'glaceon',
+    'togekiss', 'garchomp', 'lucario', 'tyranitar',
+    'gardevoir', 'mimikyu', 'dragapult', 'urshifu', 'calyrex',
+    // Fan favorites FR
+    'aquali',    // Vaporeon
+    'voltali',   // Jolteon
+    'pyroli',    // Flareon
+    'phyllali',  // Leafeon
+    'givrali',   // Glaceon
+    'togekiss',  // same
+    'togetic',
+    'mimiqui',   // Mimikyu
+    'carchacrok',// Garchomp
+    'lucario',   // same
+  ],
 }
 
 function characterScore(name) {
   const lower = name.toLowerCase()
   if (CHARACTER_TIERS.S.some(c => lower.includes(c))) return 1.0
-  if (CHARACTER_TIERS.A.some(c => lower.includes(c))) return 0.75
-  if (CHARACTER_TIERS.B.some(c => lower.includes(c))) return 0.5
-  return 0.25
+  if (CHARACTER_TIERS.A.some(c => lower.includes(c))) return 0.78
+  if (CHARACTER_TIERS.B.some(c => lower.includes(c))) return 0.55
+  return 0.22
+}
+
+// ─── Set scarcity scoring ─────────────────────────────────────────────────
+// Promo sets from special coffrets, limited editions, and discontinued
+// products have a finite supply that will never increase → structural floor
+const SCARCE_SET_PREFIXES = [
+  'me',      // Méga-Evolution coffrets (me01, me02, me03) — never reprinted
+  'cel',     // Célébrations — anniversary, one-time
+  'tk-',     // Kits dresseur (trainer kits) — very limited
+  'mcd',     // McDonald's collections
+  '2018sm',  // McDonald's 2018
+  '2019sm',  // McDonald's 2019
+  '2021swsh','2022swsh','2023sv','2024sv', // McDonald's annual
+  'swsh35',  // Champion's Path — limited
+  'dpp',     // DP Promos — discontinued
+  'hgssp',   // HGSS Promos
+  'prsm',    // SM Promos
+  'prxy',    // XY Promos
+  'prwc',    // World Championships
+  'pop',     // POP Series — long discontinued
+  'np',      // Nintendo Promos
+]
+
+const SCARCE_SET_EXACT = new Set([
+  'cel25', 'swsh35', 'cel', 'dpp', 'hgssp', 'smp',
+  'me01', 'me02', 'me03', 'mep', 'mee', 'meg',
+])
+
+function setScarcityScore(card) {
+  const id = (card.set?.externalId ?? '').toLowerCase()
+  if (SCARCE_SET_EXACT.has(id)) return 1.0
+  if (SCARCE_SET_PREFIXES.some(p => id.startsWith(p.toLowerCase()))) return 0.85
+  // Promos from any source are scarcer than regular sets
+  if (card.rarity === 'PROMO') return 0.70
+  return 0.0 // no scarcity bonus for regular sets
 }
 
 // ─── Rarity tier scoring ──────────────────────────────────────────────────
@@ -84,6 +199,7 @@ function scoreCard(card) {
   if (!price || price < 0.5) return null
 
   const recent = isRecentSet(card)
+  const scarcity = setScarcityScore(card)
   const ath = md?.allTimeHigh ? Number(md.allTimeHigh) : price
   const atl = md?.allTimeLow ? Number(md.allTimeLow) : price
   const change7d = md?.priceChange7d ? Number(md.priceChange7d) : 0
@@ -94,26 +210,45 @@ function scoreCard(card) {
   const momentumScore = Math.max(0, Math.min(1, 0.5 + momentumRaw * 2))
 
   const athRatio = ath > 0 ? price / ath : 1
-  // Recent cards get a baseline recovery score: they haven't had time to build ATH history
-  const baseRecovery = recent ? 0.25 : 0
+  // Recent + scarce sets get a baseline recovery score (no ATH history ≠ no potential)
+  const baseRecovery = recent ? 0.25 : scarcity > 0 ? 0.20 : 0
   const recoveryScore = Math.max(baseRecovery, 1 - athRatio)
 
   const stabilityScore = Math.max(0, 1 - Math.min(vol30d, 50) / 50)
   const rarityWeight = rarityScore(card.rarity)
   const charWeight = characterScore(card.name)
 
-  // Boost rarity weight for recent high-rarity cards (SIR/Hyper Rare = the premium SV market)
+  // Boost rarity for recent high-rarity cards
   const rarityMult = recent && rarityWeight >= 0.7 ? 1.3 : 1.0
 
-  const valueMod = price >= 10 ? 1.0 : price >= 5 ? 0.85 : price >= 2 ? 0.7 : 0.4
+  // For scarce sets, promo rarity underestimates the real scarcity of the card.
+  // A discontinued coffret promo ≈ a Rare Holo in terms of true supply constraint.
+  const rarityEffective = scarcity >= 0.85
+    ? Math.max(rarityWeight, 0.50)   // floor at Rare Holo level
+    : scarcity >= 0.7
+    ? Math.max(rarityWeight, 0.38)   // floor at near-Rare Holo
+    : rarityWeight
+
+  // Scarce + popular Pokémon = amplify character score significantly
+  // (Salamèche promo from discontinued coffret >> random Holo in regular set)
+  const charMult = scarcity >= 0.85 && charWeight >= 0.50 ? 1.6
+                 : scarcity >= 0.70 && charWeight >= 0.50 ? 1.35
+                 : 1.0
+
+  // Hidden gem: scarce set + iconic Pokémon + still affordable → strong upside
+  const hiddenGemBonus = scarcity >= 0.7 && charWeight >= 0.50 && price < 60 ? 0.10 : 0
+
+  const valueMod = price >= 10 ? 1.0 : price >= 5 ? 0.85 : price >= 2 ? 0.70 : price >= 0.5 ? 0.55 : 0.3
 
   const score =
-    momentumScore * 0.24 +
-    recoveryScore * 0.18 +
-    (rarityWeight * rarityMult) * 0.22 +
-    charWeight * 0.18 +
-    stabilityScore * 0.13 +
-    (recent ? 0.05 : 0) // recency bonus
+    momentumScore                    * 0.18 +
+    recoveryScore                    * 0.14 +
+    (rarityEffective * rarityMult)   * 0.20 +
+    (charWeight * charMult)          * 0.20 +
+    stabilityScore                   * 0.09 +
+    scarcity                         * 0.10 +  // supply-side signal (increased weight)
+    (recent ? 0.04 : 0)                      +  // recency bonus
+    hiddenGemBonus                             // iconic Pokémon in scarce format
 
   return {
     score: Math.round(Math.min(score, 1) * valueMod * 100),
@@ -126,8 +261,10 @@ function scoreCard(card) {
       recoveryScore: +(recoveryScore * 100).toFixed(1),
       rarityWeight: +(rarityWeight * 100).toFixed(1),
       charWeight: +(charWeight * 100).toFixed(1),
+      scarcityScore: +(scarcity * 100).toFixed(0),
       athDropPct: athRatio < 1 ? +(((1 - athRatio) * 100)).toFixed(1) : 0,
       isRecent: recent,
+      isScarce: scarcity > 0,
     },
   }
 }
@@ -225,6 +362,13 @@ const LONGTERM_NARRATIVES = [
     `La carte ${name} issue de ${set} s'impose comme un actif de fond de portefeuille incontournable pour tout investisseur Pokémon TCG. Sa rareté, combinée à la liquidité du marché Cardmarket, offre une flexibilité de sortie que peu de cartes peuvent garantir. À ${price.toFixed(2)}€, elle reste accessible tout en offrant une exposition à un segment premium du marché. Les tendances de long terme du collectible Pokémon plaident pour une appréciation soutenue sur 12 à 18 mois.`,
 ]
 
+const SCARCE_NARRATIVES = [
+  (name, set, price) =>
+    `${name} provient de l'extension ${set}, un produit à tirage limité qui ne sera jamais réédité — le stock total disponible sur le marché est donc définitivement connu et ne peut que diminuer. À seulement ${price.toFixed(2)}€, le prix actuel ne reflète pas encore la rareté structurelle de cette carte. À mesure que les coffrets d'origine disparaissent et que la demande des collectionneurs grandit, ce type de carte voit historiquement sa valeur s'apprécier de façon significative. Un achat patient qui récompense ceux qui agissent avant la prise de conscience du marché.`,
+  (name, set, price) =>
+    `Avec ${name} de la collection ${set}, on est face à une carte dont l'offre est définitivement figée : plus aucun nouveau tirage n'est possible. Ce facteur de rareté absolue, combiné à la popularité durable du Pokémon concerné, crée un profil d'investissement asymétrique rare. À ${price.toFixed(2)}€, la carte reste sous-évaluée par rapport à son potentiel à 12-24 mois. Les collectionneurs sérieux anticipent ce type d'opportunité avant que la rareté soit pleinement intégrée dans les prix du marché secondaire.`,
+]
+
 const FEATURED_NARRATIVES = [
   (name, set, price, score, ath) =>
     `${name} de l'extension ${set} est notre sélection premium pour ce mois — avec un score de ${score}/100, c'est la carte qui cumule le plus de signaux positifs sur l'ensemble du marché Pokémon TCG. Sa rareté exceptionnelle, la popularité mondiale du Pokémon et son positionnement par rapport à son ATH de ${ath.toFixed(2)}€ en font un investissement de premier ordre. La demande structurelle des collectionneurs garantit une liquidité saine, limitant le risque de blocage à la revente. Nous estimons un potentiel de revalorisation significatif sur les 3 à 6 prochains mois.`,
@@ -242,14 +386,18 @@ const RECENT_HYPE_NARRATIVES = [
 const BULLISH_POOL = {
   high_rarity: 'Rareté élevée — offre limitée sur le marché',
   popular_char: 'Pokémon iconique à forte demande mondiale',
+  starter_pokemon: 'Pokémon starter — demande pérenne des collectionneurs',
   below_ath: 'Prix bien en dessous de son All-Time High',
   momentum: 'Momentum haussier confirmé sur 7 jours',
   old_set: 'Extension ancienne — cartes de plus en plus rares',
+  scarce_set: 'Coffret / promo discontinué — offre définitivement figée',
+  no_reprint: 'Jamais réimprimé — supply total connu et décroissant',
   new_extension: 'Extension récente — marché secondaire en construction',
   sir_rarity: 'Illustration Spéciale — tirage le plus rare de la série',
   liquid: 'Bonne liquidité sur Cardmarket EU',
   stable: 'Faible volatilité — mouvement de prix ordonné',
   tcg_growth: 'Marché TCG Pokémon en croissance structurelle',
+  underpriced: 'Sous-évalué par rapport à la popularité du Pokémon',
 }
 
 const BEARISH_POOL = {
@@ -261,12 +409,28 @@ const BEARISH_POOL = {
   condition: 'Condition de la carte critique pour la valeur',
 }
 
+const STARTER_NAMES = ['charmander','charmeleon','squirtle','wartortle','bulbasaur','ivysaur',
+  'salamèche','reptincel','carapuce','carabaffe','bulbizarre','herbizarre',
+  'chikorita','cyndaquil','totodile','torchic','mudkip','treecko',
+  'turtwig','chimchar','piplup','snivy','tepig','oshawott',
+  'chespin','fennekin','froakie','rowlet','litten','popplio',
+  'grookey','scorbunny','sobble','sprigatito','fuecoco','quaxly']
+
 function selectBullish(card, signals, pickType) {
   const tags = []
+  const lower = card.name.toLowerCase()
+  const isStarter = STARTER_NAMES.some(s => lower.includes(s))
+
   if (rarityScore(card.rarity) >= 0.6) tags.push(BULLISH_POOL.high_rarity)
-  if (characterScore(card.name) >= 0.75) tags.push(BULLISH_POOL.popular_char)
+  if (characterScore(card.name) >= 0.78) tags.push(BULLISH_POOL.popular_char)
+  if (isStarter) tags.push(BULLISH_POOL.starter_pokemon)
+  if (signals.isScarce) {
+    tags.push(BULLISH_POOL.scarce_set)
+    tags.push(BULLISH_POOL.no_reprint)
+  }
   if (signals.athDropPct > 15) tags.push(BULLISH_POOL.below_ath)
   if (signals.change7d > 2) tags.push(BULLISH_POOL.momentum)
+  if (signals.isScarce && characterScore(card.name) >= 0.55 && signals.price < 15) tags.push(BULLISH_POOL.underpriced)
   if (signals.isRecent) {
     tags.push(BULLISH_POOL.new_extension)
     if (['SPECIAL_ILLUSTRATION_RARE','HYPER_RARE','CROWN_RARE'].includes(card.rarity)) tags.push(BULLISH_POOL.sir_rarity)
@@ -310,7 +474,10 @@ function generateNarrative(card, signals, pickType, period) {
     const tmpl = pickRandom(RECENT_HYPE_NARRATIVES, seed)
     narrative = tmpl(card.name, set, price)
   } else {
-    const tmpl = pickRandom(LONGTERM_NARRATIVES, seed)
+    // Use scarce narrative if the card comes from a limited/promo set
+    const scarce = setScarcityScore(card) >= 0.7
+    const pool = scarce ? SCARCE_NARRATIVES : LONGTERM_NARRATIVES
+    const tmpl = pickRandom(pool, seed)
     narrative = tmpl(card.name, set, price)
   }
 
@@ -337,9 +504,27 @@ async function main() {
     imageSmUrl: { not: null },
   }
 
-  // Fetch in two passes: recent high-rarity cards + general pool
-  const [recentCards, generalCards] = await Promise.all([
-    // Recent SV/SWSH cards with top rarity — all of them (few hundred)
+  // Fetch the list of scarce set externalIds from DB
+  const scarceSets = await prisma.pokemonSet.findMany({
+    where: {
+      OR: [
+        { externalId: { in: ['me01','me02','me03','mep','mee','meg','cel25','swsh35','dpp','hgssp','smp'] } },
+        { externalId: { startsWith: 'pop' } },
+        { externalId: { startsWith: 'tk-' } },
+        { externalId: { startsWith: 'prswsh' } },
+        { externalId: { startsWith: 'prxy' } },
+        { externalId: { startsWith: 'prsm' } },
+        { externalId: { startsWith: 'np' } },
+        { externalId: { startsWith: 'wc' } },
+      ]
+    },
+    select: { externalId: true }
+  })
+  const scarceSetIds = scarceSets.map(s => s.externalId)
+
+  // Fetch in three passes: recent high-rarity + scarce promos + general pool
+  const [recentCards, scarceCards, generalCards] = await Promise.all([
+    // Recent SV/SWSH high-rarity cards
     prisma.card.findMany({
       where: {
         ...cardWhere,
@@ -348,7 +533,15 @@ async function main() {
       },
       include: cardInclude,
     }),
-    // General pool (vintage + any remaining)
+    // Scarce promo sets — all cards regardless of rarity (rarity is often UNKNOWN/PROMO)
+    prisma.card.findMany({
+      where: {
+        ...cardWhere,
+        set: { externalId: { in: scarceSetIds } },
+      },
+      include: cardInclude,
+    }),
+    // General pool
     prisma.card.findMany({
       where: cardWhere,
       include: cardInclude,
@@ -358,7 +551,7 @@ async function main() {
 
   // Merge, deduplicate by id
   const seenIds = new Set()
-  const cards = [...recentCards, ...generalCards].filter(c => {
+  const cards = [...recentCards, ...scarceCards, ...generalCards].filter(c => {
     if (seenIds.has(c.id)) return false
     seenIds.add(c.id)
     return true
