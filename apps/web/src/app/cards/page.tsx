@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import Image from 'next/image'
 import Link from 'next/link'
 import { Search, SlidersHorizontal, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -100,18 +99,17 @@ export default function CardsPage() {
                     className="group relative flex flex-col rounded-2xl overflow-hidden border border-gray-200 hover:border-amber-300 transition-all duration-300 hover:scale-105 hover:shadow-md bg-white shadow-sm"
                   >
                     {/* Card image */}
-                    <div className="relative aspect-[2/3] w-full overflow-hidden">
+                    <div className="relative aspect-[2/3] w-full overflow-hidden bg-gray-100">
                       {card.imageSmUrl ? (
-                        <Image
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
                           src={card.imageSmUrl}
                           alt={cardName}
-                          fill
-                          className="object-cover"
-                          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 16vw, 12.5vw"
-                          unoptimized
+                          className="absolute inset-0 w-full h-full object-cover"
+                          loading="lazy"
                         />
                       ) : (
-                        <div className="w-full h-full bg-gray-100 flex items-center justify-center text-xs text-muted-foreground p-2 text-center">
+                        <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground p-2 text-center">
                           {cardName}
                         </div>
                       )}
