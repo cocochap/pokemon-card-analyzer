@@ -33,11 +33,11 @@ export function Footer() {
           <div className="col-span-2">
             <Link href="/" className="flex items-center gap-2.5 mb-4">
               <div className="relative w-8 h-8 drop-shadow-[0_0_8px_rgba(255,203,5,0.4)]">
-                <Image src="/logo-pokescan.png" alt="Scard" fill className="object-contain" />
+                <Image src="/logo-pokescan.png" alt="PokeScard" fill className="object-contain" />
               </div>
               <span className="font-bold text-lg"
                 style={{ background: 'linear-gradient(135deg,#FFCB05,#F59E0B)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                Scard
+                PokeScard
               </span>
             </Link>
             <p className="text-sm text-white/40 max-w-xs leading-relaxed mb-5">
@@ -94,7 +94,7 @@ export function Footer() {
         {/* Bottom */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-3">
           <p className="text-xs text-white/25">
-            © 2026 Scard. Tous droits réservés.
+            © 2026 PokeScard. Tous droits réservés.
           </p>
           <p className="text-xs text-white/25 text-center">
             Prix fournis à titre indicatif. Pas un conseil financier.

@@ -8,10 +8,10 @@ import { CtaBanner } from '@/components/dashboard/CtaBanner'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Scard — Scanner vos cartes Pokémon avec l\'IA',
+  title: 'PokeScard — Scanner vos cartes Pokémon avec l\'IA',
   description: 'Identifiez instantanément n\'importe quelle carte Pokémon, estimez sa valeur Cardmarket, son potentiel PSA et suivez votre collection. 22 000+ cartes, 94% de précision.',
   openGraph: {
-    title: 'Scard — Scanner vos cartes Pokémon avec l\'IA',
+    title: 'PokeScard — Scanner vos cartes Pokémon avec l\'IA',
     description: 'Identification IA, prix Cardmarket en temps réel, pré-grading PSA et gestion de collection.',
     type: 'website',
   },

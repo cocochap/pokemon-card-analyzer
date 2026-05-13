@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    /* ── Scard — Dark Pokémon Premium ───────────────────────── */
+    /* ── PokeScard — Dark Pokémon Premium ───────────────────────── */
     --background:           230 55% 6%;     /* #060918 deep space */
     --foreground:           220 30% 95%;    /* #EEF1FA */
     --card:                 228 50% 9%;     /* #0B1122 */
@@ -26,7 +26,7 @@
     --ring:                 47 100% 51%;
     --radius:               0.75rem;
 
-    /* ── Scard custom tokens ─────────────────────────────────── */
+    /* ── PokeScard custom tokens ─────────────────────────────────── */
     --pokemon-yellow: #FFCB05;
     --pokemon-blue:   #3B4CCA;
     --pokemon-red:    #E3350D;

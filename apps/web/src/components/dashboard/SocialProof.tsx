@@ -9,7 +9,7 @@ const TESTIMONIALS = [
     name: 'Alexandre D.',
     role: 'Collectionneur & Investisseur',
     avatar: 'AD',
-    text: 'Scard a complètement changé ma façon d\'évaluer ma collection. La prédiction PSA est incroyablement précise — ça m\'a évité de surpayer une carte qui était en réalité PSA 7.',
+    text: 'PokeScard a complètement changé ma façon d\'évaluer ma collection. La prédiction PSA est incroyablement précise — ça m\'a évité de surpayer une carte qui était en réalité PSA 7.',
     stars: 5,
     avatarColor: '#2563EB',
   },

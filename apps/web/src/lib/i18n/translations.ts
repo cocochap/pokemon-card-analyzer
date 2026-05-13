@@ -108,7 +108,7 @@ const t = {
       stat3Label: 'Vitesse de scan',
       stat4Label: 'Scans effectués',
       title: 'Approuvé par les collectionneurs',
-      subtitle: 'Rejoignez des milliers d\'investisseurs Pokémon sur Scard',
+      subtitle: 'Rejoignez des milliers d\'investisseurs Pokémon sur PokeScard',
     },
     // Dashboard
     dashboard: {
@@ -301,7 +301,7 @@ const t = {
     footer: {
       tagline: 'La plateforme de référence pour le marché Pokémon TCG. Suivez les prix, anticipez les tendances, investissez mieux.',
       disclaimer: 'Non affilié à Nintendo, Game Freak ou The Pokémon Company.',
-      rights: `© ${new Date().getFullYear()} Scard. Tous droits réservés.`,
+      rights: `© ${new Date().getFullYear()} PokeScard. Tous droits réservés.`,
       infoOnly: 'Prix fournis à titre indicatif uniquement. Pas un conseil financier.',
       product: 'Produit',
       platform: 'Plateforme',
@@ -457,7 +457,7 @@ const t = {
       stat3Label: 'Avg Scan Speed',
       stat4Label: 'Scans Completed',
       title: 'Loved by collectors',
-      subtitle: 'Join thousands of Pokémon investors using Scard',
+      subtitle: 'Join thousands of Pokémon investors using PokeScard',
     },
     dashboard: {
       hero: {
@@ -640,7 +640,7 @@ const t = {
     footer: {
       tagline: 'The most advanced Pokémon TCG market intelligence platform. Track prices, predict trends, invest smarter.',
       disclaimer: 'Not affiliated with Nintendo, Game Freak, or The Pokémon Company.',
-      rights: `© ${new Date().getFullYear()} Scard. All rights reserved.`,
+      rights: `© ${new Date().getFullYear()} PokeScard. All rights reserved.`,
       infoOnly: 'Prices are for informational purposes only. Not financial advice.',
       product: 'Product',
       platform: 'Platform',
