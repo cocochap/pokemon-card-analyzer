@@ -7,7 +7,7 @@ import { Footer } from '@/components/layout/Footer'
 import { InvestmentPickCard } from '@/components/ai/InvestmentPickCard'
 import { FeaturedPickHero } from '@/components/ai/FeaturedPickHero'
 import { AiLockedState } from '@/components/ai/AiLockedState'
-import { Sparkles, TrendingUp, Gem, Clock, Trophy } from 'lucide-react'
+import { Sparkles, TrendingUp, Gem, Clock, Trophy, Zap } from 'lucide-react'
 
 async function fetchPicks(period: string) {
   const res = await fetch(`/api/ai/picks?period=${period}`)
@@ -32,6 +32,7 @@ export default function AiPage() {
   const picks = data?.picks ?? []
 
   const featured = picks.find((p: any) => p.pickType === 'monthly_featured')
+  const recentHype = picks.filter((p: any) => p.pickType === 'recent_hype').slice(0, 5)
   const momentum = picks.filter((p: any) => p.pickType === 'momentum').slice(0, 5)
   const undervalued = picks.filter((p: any) => p.pickType === 'undervalued').slice(0, 5)
   const longTerm = picks.filter((p: any) => p.pickType === 'long_term').slice(0, 5)
@@ -109,6 +110,23 @@ export default function AiPage() {
                   badge="N°1"
                 />
                 <FeaturedPickHero pick={featured} />
+              </section>
+            )}
+
+            {/* Hype récente */}
+            {recentHype.length > 0 && (
+              <section>
+                <SectionHeader
+                  icon={<Zap className="w-5 h-5 text-orange-400" />}
+                  title="Hype récente"
+                  subtitle="Cartes SV & SWSH — raretés SIR, Hyper Rare, Secret Rare en pleine croissance"
+                  badge={`${recentHype.length} picks`}
+                />
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                  {recentHype.map((pick: any) => (
+                    <InvestmentPickCard key={pick.id} pick={pick} accent="green" />
+                  ))}
+                </div>
               </section>
             )}
 
