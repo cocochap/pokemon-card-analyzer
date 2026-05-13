@@ -4,6 +4,8 @@ import { GeistMono } from 'geist/font/mono'
 import { ClerkProvider } from '@clerk/nextjs'
 import { QueryProvider } from '@/components/providers/QueryProvider'
 import { ThemeProvider } from '@/components/providers/ThemeProvider'
+import { TierProvider } from '@/components/providers/TierProvider'
+import { TierWelcomeBanner } from '@/components/ui/TierWelcomeBanner'
 import { LanguageProvider } from '@/lib/i18n/LanguageContext'
 import { LanguageModal } from '@/components/ui/LanguageModal'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
@@ -69,13 +71,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <body className="min-h-screen bg-background font-sans antialiased">
           <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} forcedTheme="dark">
             <QueryProvider>
+              <TierProvider>
               <LanguageProvider>
                 <LanguageModal />
+                <TierWelcomeBanner />
                 <div className="pb-mobile-nav md:pb-0">
                   {children}
                 </div>
                 <MobileBottomNav />
               </LanguageProvider>
+              </TierProvider>
               <Toaster
                 position="bottom-right"
                 toastOptions={{

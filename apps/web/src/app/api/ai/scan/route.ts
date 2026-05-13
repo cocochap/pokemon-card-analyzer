@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth, currentUser } from '@clerk/nextjs/server'
 import { prisma } from '@/lib/db/prisma'
-import { getUserWithTier, isPremiumTier, getScanUsage, incrementScanUsage, LIMITS } from '@/lib/subscription'
+import { getUserWithTier, getLimits, getScanUsage, incrementScanUsage } from '@/lib/subscription'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -271,15 +271,16 @@ export async function POST(req: NextRequest) {
   const email = clerkUser?.emailAddresses[0]?.emailAddress
   const user = await getUserWithTier(clerkId, email ?? undefined)
 
-  if (!isPremiumTier(user.tier as any)) {
+  const limits = getLimits(user.tier as any)
+  if (limits.scansPerMonth !== Infinity) {
     const used = await getScanUsage(user.id)
-    if (used >= LIMITS.FREE.scansPerMonth) {
+    if (used >= limits.scansPerMonth) {
       return NextResponse.json({
         ok: false,
-        error: `Limite de ${LIMITS.FREE.scansPerMonth} scans/mois atteinte.`,
+        error: `Limite de ${limits.scansPerMonth} scans/mois atteinte.`,
         limitReached: true,
         used,
-        limit: LIMITS.FREE.scansPerMonth,
+        limit: limits.scansPerMonth,
         upgradeUrl: '/pricing',
       }, { status: 429 })
     }

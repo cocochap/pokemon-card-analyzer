@@ -10,12 +10,15 @@ import { BarChart3, Bell, Briefcase, Camera, Home, Search, Sparkles, TrendingUp,
 import { clsx } from 'clsx'
 import { CommandPalette } from '@/components/ui/CommandPalette'
 import { useLanguage } from '@/lib/i18n/LanguageContext'
+import { useUserTier, TIER_CONFIG } from '@/lib/useUserTier'
 
 export function Navbar() {
   const pathname = usePathname()
   const [scrolled, setScrolled] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
   const { t, locale, setLocale } = useLanguage()
+  const { tier } = useUserTier()
+  const tierConf = TIER_CONFIG[tier]
 
   const navLinks = [
     { href: '/',          label: t.nav.market,    icon: Home },
@@ -44,7 +47,11 @@ export function Navbar() {
       <nav className={clsx(
         'sticky top-0 z-50 w-full transition-all duration-300',
         scrolled
-          ? 'bg-[#060918]/95 backdrop-blur-xl border-b border-[#FFCB05]/10 shadow-[0_4px_24px_rgba(0,0,0,0.5)]'
+          ? tier === 'ELITE'
+            ? 'bg-[#060918]/95 backdrop-blur-xl border-b border-purple-500/20 shadow-[0_4px_24px_rgba(0,0,0,0.5),0_0_40px_rgba(167,139,250,0.06)]'
+            : tier === 'PRO' || tier === 'STARTER'
+            ? 'bg-[#060918]/95 backdrop-blur-xl border-b border-[#FFCB05]/15 shadow-[0_4px_24px_rgba(0,0,0,0.5)]'
+            : 'bg-[#060918]/95 backdrop-blur-xl border-b border-[#FFCB05]/10 shadow-[0_4px_24px_rgba(0,0,0,0.5)]'
           : 'bg-[#060918]/80 backdrop-blur-md border-b border-white/5',
       )}>
         <div className="container mx-auto px-4 max-w-[1600px]">
@@ -154,6 +161,16 @@ export function Navbar() {
                   <Bell className="w-5 h-5 text-white/60" />
                   <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full" style={{ background: '#FFCB05' }} />
                 </Link>
+                {/* Tier badge */}
+                {tierConf.badgeText && (
+                  <Link href="/pricing" className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider transition-all hover:brightness-110"
+                    style={tier === 'ELITE'
+                      ? { background: 'linear-gradient(135deg,rgba(124,58,237,0.25),rgba(167,139,250,0.15))', color: '#A78BFA', border: '1px solid rgba(167,139,250,0.35)' }
+                      : { background: 'rgba(255,203,5,0.12)', color: '#FFCB05', border: '1px solid rgba(255,203,5,0.30)' }
+                    }>
+                    {tier === 'ELITE' ? '👑' : '⭐'} {tierConf.badgeText}
+                  </Link>
+                )}
                 <UserButton afterSignOutUrl="/" appearance={{ elements: { avatarBox: 'w-9 h-9' } }} />
               </SignedIn>
 
