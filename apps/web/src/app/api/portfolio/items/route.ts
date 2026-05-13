@@ -33,12 +33,26 @@ export async function POST(req: NextRequest) {
     where: { clerkId },
     create: { clerkId, email: `${clerkId}@placeholder.com` },
     update: {},
-    include: { portfolio: true },
+    include: { portfolio: { include: { _count: { select: { items: true } } } } },
   })
 
   const portfolio = user.portfolio ?? await prisma.portfolio.create({
     data: { userId: user.id },
+    include: { _count: { select: { items: true } } },
   })
+
+  // Enforce portfolio limit for free users
+  const { isPremiumTier, LIMITS } = await import('@/lib/subscription')
+  if (!isPremiumTier(user.tier as any)) {
+    const itemCount = user.portfolio?._count?.items ?? 0
+    if (itemCount >= LIMITS.FREE.portfolioCards) {
+      return NextResponse.json({
+        error: `Limite de ${LIMITS.FREE.portfolioCards} cartes atteinte pour le plan gratuit.`,
+        limitReached: true,
+        upgradeUrl: '/pricing',
+      }, { status: 403 })
+    }
+  }
 
   const item = await prisma.portfolioItem.create({
     data: {
