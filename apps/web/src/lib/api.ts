@@ -12,6 +12,7 @@ async function fetcher<T = any>(url: string, options?: RequestInit): Promise<T> 
     const error = await res.json().catch(() => ({ message: res.statusText }))
     throw new Error(error.message ?? `Request failed: ${res.status}`)
   }
+  if (res.status === 204 || res.headers.get('content-length') === '0') return null as T
   return res.json()
 }
 
