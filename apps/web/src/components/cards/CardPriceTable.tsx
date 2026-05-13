@@ -40,16 +40,16 @@ export function CardPriceTable({ cardId }: { cardId: string }) {
 
   return (
     <div className="glass-card overflow-hidden">
-      <div className="p-5 border-b border-white/10 flex items-center justify-between flex-wrap gap-3">
+      <div className="p-5 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3">
         <h3 className="font-semibold">{t.card.priceHistory}</h3>
-        <div className="flex gap-1 bg-white/5 rounded-xl p-1">
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
           {RANGES.map(({ key, label }) => (
             <button
               key={key}
               onClick={() => setRange(key)}
               className={clsx(
                 'px-3 py-1 rounded-lg text-sm font-medium transition-all',
-                range === key ? 'bg-pokemon-yellow text-background font-bold' : 'text-muted-foreground hover:text-foreground',
+                range === key ? 'bg-white text-gray-900 font-bold shadow-sm' : 'text-gray-500 hover:text-gray-700',
               )}
             >
               {label}
@@ -61,14 +61,14 @@ export function CardPriceTable({ cardId }: { cardId: string }) {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/10">
+            <tr className="border-b border-gray-200">
               <th className="text-left py-3 px-5 text-xs font-medium text-muted-foreground">{t.card.date}</th>
               <th className="text-right py-3 px-5 text-xs font-medium text-muted-foreground">{t.card.price}</th>
               <th className="text-right py-3 px-5 text-xs font-medium text-muted-foreground">{t.card.change}</th>
               <th className="text-right py-3 px-5 text-xs font-medium text-muted-foreground">{t.card.volume}</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/5">
+          <tbody className="divide-y divide-gray-100">
             {isLoading ? (
               Array(8).fill(null).map((_, i) => (
                 <tr key={i}>
@@ -94,7 +94,7 @@ export function CardPriceTable({ cardId }: { cardId: string }) {
                 const date = new Date(row.time * 1000)
 
                 return (
-                  <tr key={i} className="hover:bg-white/2 transition-colors">
+                  <tr key={i} className="hover:bg-gray-50 transition-colors">
                     <td className="py-2.5 px-5 text-muted-foreground text-xs">
                       {date.toLocaleDateString(dateLocale, { month: 'short', day: 'numeric', year: 'numeric' })}
                     </td>

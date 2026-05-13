@@ -55,23 +55,23 @@ export default function CardsPage() {
         {/* Search + Sort */}
         <div className="flex gap-3 mb-6 flex-wrap">
           <div className="relative flex-1 min-w-60">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
               placeholder={t.cards.searchPlaceholder}
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1) }}
-              className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-pokemon-yellow/50 transition-colors placeholder:text-muted-foreground"
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors placeholder:text-gray-400 text-gray-900 shadow-sm"
             />
           </div>
 
           {/* Sort dropdown */}
           <div className="relative">
-            <SlidersHorizontal className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+            <SlidersHorizontal className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
             <select
               value={sort}
               onChange={(e) => { setSort(e.target.value as SortOption); setPage(1) }}
-              className="appearance-none pl-9 pr-10 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-foreground focus:outline-none focus:border-pokemon-yellow/50 transition-colors cursor-pointer min-w-48"
+              className="appearance-none pl-9 pr-10 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-900 focus:outline-none focus:border-blue-400 transition-colors cursor-pointer min-w-48 shadow-sm"
             >
               {SORT_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
@@ -97,7 +97,7 @@ export default function CardsPage() {
                   <Link
                     key={card.id}
                     href={`/cards/${card.id}`}
-                    className="group relative flex flex-col rounded-2xl overflow-hidden border border-white/10 hover:border-pokemon-yellow/50 transition-all duration-300 hover:scale-105 hover:shadow-glow bg-white/3"
+                    className="group relative flex flex-col rounded-2xl overflow-hidden border border-gray-200 hover:border-amber-300 transition-all duration-300 hover:scale-105 hover:shadow-md bg-white shadow-sm"
                   >
                     {/* Card image */}
                     <div className="relative aspect-[2/3] w-full overflow-hidden">
@@ -111,7 +111,7 @@ export default function CardsPage() {
                           unoptimized
                         />
                       ) : (
-                        <div className="w-full h-full bg-white/5 flex items-center justify-center text-xs text-muted-foreground p-2 text-center">
+                        <div className="w-full h-full bg-gray-100 flex items-center justify-center text-xs text-muted-foreground p-2 text-center">
                           {cardName}
                         </div>
                       )}
@@ -126,8 +126,8 @@ export default function CardsPage() {
                     </div>
 
                     {/* Price bar — always visible */}
-                    <div className="px-2 py-1.5 flex items-center justify-between bg-background/60 backdrop-blur-sm">
-                      <span className="font-mono font-bold text-xs text-pokemon-yellow">
+                    <div className="px-2 py-1.5 flex items-center justify-between bg-white border-t border-gray-100">
+                      <span className="font-mono font-bold text-xs text-blue-600">
                         {price > 0 ? formatCurrency(price) : '—'}
                       </span>
                       {change24h !== 0 && (
@@ -159,7 +159,7 @@ export default function CardsPage() {
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm disabled:opacity-40 hover:border-pokemon-yellow/30 transition-colors"
+              className="px-4 py-2 rounded-xl bg-white border border-gray-200 text-sm text-gray-700 disabled:opacity-40 hover:border-blue-300 transition-colors shadow-sm"
             >
               {t.cards.prev}
             </button>
@@ -169,7 +169,7 @@ export default function CardsPage() {
             <button
               onClick={() => setPage(p => Math.min(pages, p + 1))}
               disabled={page === pages}
-              className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm disabled:opacity-40 hover:border-pokemon-yellow/30 transition-colors"
+              className="px-4 py-2 rounded-xl bg-white border border-gray-200 text-sm text-gray-700 disabled:opacity-40 hover:border-blue-300 transition-colors shadow-sm"
             >
               {t.cards.next}
             </button>

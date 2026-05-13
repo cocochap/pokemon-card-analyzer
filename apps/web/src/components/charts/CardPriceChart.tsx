@@ -19,7 +19,7 @@ function CustomTooltip({ active, payload, label }: any) {
   const price = payload.find((p: any) => p.dataKey === 'price')
   const ma = payload.find((p: any) => p.dataKey === 'ma20')
   return (
-    <div className="bg-[#06080f] border border-white/15 rounded-xl px-4 py-3 shadow-2xl text-xs min-w-[140px]">
+    <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-lg text-xs min-w-[140px]">
       <p className="text-muted-foreground mb-2 font-medium">{label}</p>
       {price && (
         <p className="font-mono font-bold text-base" style={{ color: price.color }}>
@@ -101,7 +101,7 @@ export function CardPriceChart({ cardId }: { cardId: string }) {
   return (
     <div className="glass-card overflow-hidden">
       {/* Header */}
-      <div className="px-5 pt-5 pb-3 border-b border-white/10">
+      <div className="px-5 pt-5 pb-3 border-b border-gray-200">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider mb-1">
@@ -121,7 +121,7 @@ export function CardPriceChart({ cardId }: { cardId: string }) {
 
           <div className="flex flex-col gap-2 items-end">
             {/* Range */}
-            <div className="flex gap-1 bg-white/5 rounded-xl p-1">
+            <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
               {RANGES.map(({ key, label }) => (
                 <button
                   key={key}
@@ -129,8 +129,8 @@ export function CardPriceChart({ cardId }: { cardId: string }) {
                   className={clsx(
                     'px-3 py-1 rounded-lg text-xs font-medium transition-all',
                     range === key
-                      ? 'bg-pokemon-yellow text-background font-bold'
-                      : 'text-muted-foreground hover:text-foreground',
+                      ? 'bg-white text-gray-900 font-bold shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700',
                   )}
                 >
                   {label}
@@ -144,8 +144,8 @@ export function CardPriceChart({ cardId }: { cardId: string }) {
               className={clsx(
                 'text-[10px] px-2 py-0.5 rounded-full border transition-colors',
                 showMA
-                  ? 'border-blue-400/50 text-blue-400 bg-blue-400/10'
-                  : 'border-white/10 text-muted-foreground',
+                  ? 'border-blue-400 text-blue-600 bg-blue-50'
+                  : 'border-gray-200 text-gray-400',
               )}
             >
               MA20
@@ -171,7 +171,7 @@ export function CardPriceChart({ cardId }: { cardId: string }) {
                   <stop offset="100%" stopColor={color} stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
               <XAxis
                 dataKey="date"
                 tick={{ fontSize: 10, fill: '#64748B' }}
@@ -193,7 +193,7 @@ export function CardPriceChart({ cardId }: { cardId: string }) {
                 <ReferenceLine
                   yAxisId="price"
                   y={startPrice}
-                  stroke="rgba(255,255,255,0.08)"
+                  stroke="rgba(0,0,0,0.1)"
                   strokeDasharray="4 4"
                 />
               )}
@@ -228,7 +228,7 @@ export function CardPriceChart({ cardId }: { cardId: string }) {
       {/* Footer stats */}
       {!isLoading && chartData.length > 0 && (
         <div className="px-5 pb-4">
-          <div className="flex items-center justify-between pt-3 border-t border-white/5">
+          <div className="flex items-center justify-between pt-3 border-t border-gray-100">
             <div className="grid grid-cols-3 gap-6 flex-1">
               <PriceStat
                 label={locale === 'fr' ? 'Début période' : 'Period Open'}
