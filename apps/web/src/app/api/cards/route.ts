@@ -15,7 +15,9 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(100, Number(searchParams.get('limit') ?? 24))
 
   const where: Prisma.CardWhereInput = {
-    imageSmUrl: { not: null },
+    // Without a search query, only show cards with images (better default UX)
+    // When searching, show all cards so users can find sets without FR images
+    ...(!q && { imageSmUrl: { not: null } }),
     ...(q && {
       OR: [
         { name: { contains: q, mode: 'insensitive' } },

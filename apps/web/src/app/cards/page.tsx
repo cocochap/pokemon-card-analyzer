@@ -109,8 +109,9 @@ export default function CardsPage() {
                           loading="lazy"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground p-2 text-center">
-                          {cardName}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-gradient-to-b from-gray-200 to-gray-300 p-2">
+                          <div className="text-2xl opacity-40">🃏</div>
+                          <p className="text-[10px] text-gray-500 text-center leading-tight line-clamp-3">{cardName}</p>
                         </div>
                       )}
 
