@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: 'images.pokemontcg.io' },
       { protocol: 'https', hostname: 'limitlesstcg.nyc3.cdn.digitaloceanspaces.com' },
       { protocol: 'https', hostname: '*.cloudfront.net' },
+      { protocol: 'https', hostname: '*.b-cdn.net' },
     ],
     formats: ['image/avif', 'image/webp'],
     minimumCacheTTL: 86400,
