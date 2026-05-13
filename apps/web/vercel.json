@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/update-prices-fr",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/investment-picks",
+      "schedule": "0 8 1 * *"
     }
   ]
 }
