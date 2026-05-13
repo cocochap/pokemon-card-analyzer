@@ -145,6 +145,8 @@ export const api = {
   ai: {
     getCardAnalysis: (cardId: string) =>
       fetcher(`/api/ai/cards/${cardId}/analysis`),
+    getEliteCardAnalysis: (cardId: string) =>
+      fetcher(`/api/ai/cards/analyze?cardId=${cardId}`),
   },
 
   // ─── PAYMENTS ─────────────────────────────────────────────────────────────

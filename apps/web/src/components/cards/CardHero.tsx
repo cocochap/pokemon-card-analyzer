@@ -81,8 +81,8 @@ export function CardHero({ card }: CardHeroProps) {
             <div
               className={clsx(
                 'relative rounded-2xl overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.15)]',
-                'border border-gray-200',
-                !loaded && 'aspect-[5/7] bg-gray-100 animate-pulse',
+                'border border-white/10',
+                !loaded && 'aspect-[5/7] bg-white/5 animate-pulse',
               )}
             >
               {card.imageLgUrl && (
@@ -122,7 +122,7 @@ export function CardHero({ card }: CardHeroProps) {
 
             {/* Expand button */}
             <button
-              className="absolute top-3 right-3 p-1.5 bg-white/90 backdrop-blur-sm border border-gray-200 rounded-lg hover:bg-white transition-colors shadow-sm"
+              className="absolute top-3 right-3 p-1.5 bg-black/50 backdrop-blur-sm border border-white/10 rounded-lg hover:bg-black/70 transition-colors"
               onClick={(e) => { e.stopPropagation(); setZoomed(true) }}
             >
               <Expand className="w-3.5 h-3.5" />
@@ -143,7 +143,7 @@ export function CardHero({ card }: CardHeroProps) {
                 <Image src={card.set.logoUrl} alt={getSetName(card.set, locale)} width={20} height={20} className="h-5 w-auto" />
               )}
               <span>{getSetName(card.set, locale)}</span>
-              <span className="text-gray-300">·</span>
+              <span className="text-white/20">·</span>
               <span>#{card.number}</span>
             </div>
 

@@ -5,6 +5,7 @@ import { CardHero } from '@/components/cards/CardHero'
 import { CardPriceChart } from '@/components/charts/CardPriceChart'
 import { CardPriceTable } from '@/components/cards/CardPriceTable'
 import { CardAiAnalysis } from '@/components/cards/CardAiAnalysis'
+import { CardEliteAnalysis } from '@/components/cards/CardEliteAnalysis'
 import { CardMarketStats } from '@/components/cards/CardMarketStats'
 import { CardGradedPrices } from '@/components/cards/CardGradedPrices'
 import { CardRecentSales } from '@/components/cards/CardRecentSales'
@@ -70,6 +71,8 @@ export default async function CardDetailPage({ params }: CardPageProps) {
             <Suspense fallback={<div className="skeleton h-44 w-full rounded-2xl" />}>
               <CardPsaPopulation cardId={card!.id} />
             </Suspense>
+
+            <CardEliteAnalysis cardId={card!.id} />
           </div>
 
           {/* Colonne droite — stats, chart, IA */}

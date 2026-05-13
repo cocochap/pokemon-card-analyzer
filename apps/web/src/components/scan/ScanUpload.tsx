@@ -104,7 +104,7 @@ function ScoreRing({ score }: { score: number }) {
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="text-base font-bold" style={{ color }}>{score}</span>
-        <span className="text-[9px] text-gray-400 -mt-0.5">/100</span>
+        <span className="text-[9px] text-white/30 -mt-0.5">/100</span>
       </div>
     </div>
   )
@@ -115,8 +115,8 @@ function ChangeBadge({ value, label }: { value: number; label: string }) {
   const up = value >= 0
   return (
     <div className="glass-card p-3 text-center">
-      <div className="text-xs text-gray-500 mb-1">{label}</div>
-      <div className={`flex items-center justify-center gap-1 text-sm font-bold ${up ? 'text-green-600' : 'text-red-600'}`}>
+      <div className="text-xs text-white/40 mb-1">{label}</div>
+      <div className={`flex items-center justify-center gap-1 text-sm font-bold ${up ? 'text-green-400' : 'text-red-400'}`}>
         {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
         {up ? '+' : ''}{value.toFixed(1)}%
       </div>
@@ -146,11 +146,12 @@ function ResultPanel({ result, preview, onReset, s }: { result: ScanResult; prev
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="space-y-3">
 
       {/* Identified header */}
-      <div className="flex items-center gap-2 text-sm font-semibold text-green-700">
-        <CheckCircle2 className="w-4 h-4 text-green-600" />
+      <div className="flex items-center gap-2 text-sm font-semibold text-green-400">
+        <CheckCircle2 className="w-4 h-4 text-green-400" />
         {s.identified} {id.confidence}%
         {id.isFirstEdition && (
-          <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 border border-amber-200 text-amber-800">
+          <span className="text-[10px] px-2 py-0.5 rounded-full font-bold"
+            style={{ background: 'rgba(255,203,5,0.15)', border: '1px solid rgba(255,203,5,0.3)', color: '#FFCB05' }}>
             {s.firstEdition}
           </span>
         )}
@@ -158,7 +159,8 @@ function ResultPanel({ result, preview, onReset, s }: { result: ScanResult; prev
 
       {/* Card hero */}
       <div className="glass-card p-4 flex gap-4 items-start">
-        <div className="w-24 h-32 rounded-xl overflow-hidden flex-shrink-0 border border-gray-200">
+        <div className="w-24 h-32 rounded-xl overflow-hidden flex-shrink-0"
+          style={{ border: '1px solid rgba(255,255,255,0.12)' }}>
           {imageUrl
             /* eslint-disable-next-line @next/next/no-img-element */
             ? <img src={imageUrl} alt={displayName} className="w-full h-full object-cover" />
@@ -167,16 +169,17 @@ function ResultPanel({ result, preview, onReset, s }: { result: ScanResult; prev
           }
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="text-lg font-bold text-gray-900 leading-tight mb-1">{displayName}</h3>
-          <p className="text-xs text-gray-500 mb-0.5">{displaySet}</p>
-          {displayNum && <p className="text-xs text-gray-400 mb-2">#{displayNum}</p>}
+          <h3 className="text-lg font-bold text-white leading-tight mb-1">{displayName}</h3>
+          <p className="text-xs text-white/50 mb-0.5">{displaySet}</p>
+          {displayNum && <p className="text-xs text-white/35 mb-2">#{displayNum}</p>}
           {displayRar && (
-            <span className="inline-block text-[11px] px-2 py-0.5 rounded-full mb-2 bg-blue-50 border border-blue-200 text-blue-700">
-              {displayRar}
+            <span className="inline-block text-[11px] px-2 py-0.5 rounded-full mb-2"
+              style={{ background: 'rgba(255,203,5,0.10)', border: '1px solid rgba(255,203,5,0.25)', color: '#FFCB05' }}>
+              {displayRar.replace(/_/g, ' ')}
             </span>
           )}
           {db?.ai?.keyInsight && (
-            <p className="text-xs text-gray-600 leading-relaxed line-clamp-2 mt-1 italic">{db.ai.keyInsight}</p>
+            <p className="text-xs text-white/45 leading-relaxed line-clamp-2 mt-1 italic">{db.ai.keyInsight}</p>
           )}
         </div>
         {score > 0 && <ScoreRing score={score} />}
@@ -187,10 +190,10 @@ function ResultPanel({ result, preview, onReset, s }: { result: ScanResult; prev
         price > 0 ? (
           <div className="grid grid-cols-3 gap-2">
             <div className="glass-card p-3 text-center col-span-1">
-              <div className="text-xs text-gray-500 mb-1">{s.currentPrice}</div>
-              <div className="text-xl font-bold text-gray-900">{sym}{price.toFixed(2)}</div>
+              <div className="text-xs text-white/40 mb-1">{s.currentPrice}</div>
+              <div className="text-xl font-bold text-pokemon-yellow">{sym}{price.toFixed(2)}</div>
               {db.price!.high > 0 && (
-                <div className="text-[10px] text-gray-400 mt-0.5">
+                <div className="text-[10px] text-white/30 mt-0.5">
                   {sym}{db.price!.low.toFixed(2)} – {sym}{db.price!.high.toFixed(2)}
                 </div>
               )}
@@ -199,13 +202,13 @@ function ResultPanel({ result, preview, onReset, s }: { result: ScanResult; prev
             <ChangeBadge value={db.market?.change1y ?? 0}  label={s.change1y} />
           </div>
         ) : (
-          <div className="glass-card px-4 py-3 flex items-center gap-2 text-sm text-gray-500">
+          <div className="glass-card px-4 py-3 flex items-center gap-2 text-sm text-white/45">
             <span>💰</span>
             <span>Prix Cardmarket non disponible pour cette carte</span>
           </div>
         )
       ) : (
-        <div className="glass-card px-4 py-3 text-sm text-gray-500">
+        <div className="glass-card px-4 py-3 text-sm text-white/45">
           Cette carte n&apos;est pas encore dans notre base — mais l&apos;IA l&apos;a bien identifiée.
         </div>
       )}
@@ -214,12 +217,12 @@ function ResultPanel({ result, preview, onReset, s }: { result: ScanResult; prev
       {db?.market && (
         <div className="grid grid-cols-3 gap-2">
           {[
-            { label: 'Score invest.',  value: `${db.market.investmentScore}/100`, color: db.market.investmentScore > 70 ? 'text-green-600' : db.market.investmentScore > 40 ? 'text-amber-600' : 'text-red-600' },
-            { label: 'Score rareté',   value: `${db.market.rarityScore}/100`,    color: 'text-blue-600' },
-            { label: 'Liquidité',      value: `${db.market.liquidityScore}/100`, color: 'text-violet-600' },
+            { label: 'Score invest.',  value: `${db.market.investmentScore}/100`, color: db.market.investmentScore > 70 ? 'text-green-400' : db.market.investmentScore > 40 ? 'text-amber-400' : 'text-red-400' },
+            { label: 'Score rareté',   value: `${db.market.rarityScore}/100`,    color: 'text-blue-400' },
+            { label: 'Liquidité',      value: `${db.market.liquidityScore}/100`, color: 'text-violet-400' },
           ].map(({ label, value, color }) => (
             <div key={label} className="glass-card p-3 text-center">
-              <div className="text-xs text-gray-500 mb-1">{label}</div>
+              <div className="text-xs text-white/40 mb-1">{label}</div>
               <div className={`text-sm font-bold ${color}`}>{value}</div>
             </div>
           ))}
@@ -230,8 +233,9 @@ function ResultPanel({ result, preview, onReset, s }: { result: ScanResult; prev
       {proj && price > 0 && (
         <div className="glass-card p-4">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-bold text-gray-900">{s.projectionTitle}</p>
-            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${ratePos ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+            <p className="text-sm font-bold text-white">{s.projectionTitle}</p>
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${ratePos ? 'text-green-400' : 'text-red-400'}`}
+              style={{ background: ratePos ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)', border: `1px solid ${ratePos ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}` }}>
               {ratePos ? '+' : ''}{rate.toFixed(1)}%/an
             </span>
           </div>
@@ -243,15 +247,16 @@ function ResultPanel({ result, preview, onReset, s }: { result: ScanResult; prev
               { label: s.in5years,  value: proj.y5.value },
               { label: s.in10years, value: proj.y10.value, highlight: true },
             ].map(({ label, value, highlight }) => (
-              <div key={label} className={`flex justify-between items-center py-1.5 px-3 rounded-xl ${highlight ? 'bg-blue-50 border border-blue-100' : 'hover:bg-gray-50'} transition-colors`}>
-                <span className="text-sm text-gray-600">{label}</span>
-                <span className={`text-sm font-bold ${highlight ? 'text-blue-700' : 'text-gray-900'}`}>
+              <div key={label} className="flex justify-between items-center py-1.5 px-3 rounded-xl transition-colors"
+                style={highlight ? { background: 'rgba(255,203,5,0.08)', border: '1px solid rgba(255,203,5,0.20)' } : {}}>
+                <span className="text-sm text-white/55">{label}</span>
+                <span className="text-sm font-bold" style={{ color: highlight ? '#FFCB05' : 'rgba(255,255,255,0.85)' }}>
                   {sym}{value.toFixed(2)}
                 </span>
               </div>
             ))}
           </div>
-          <p className="text-[10px] text-gray-400 mt-2 text-center">{s.projectionDisclaimer}</p>
+          <p className="text-[10px] text-white/25 mt-2 text-center">{s.projectionDisclaimer}</p>
         </div>
       )}
 
@@ -259,13 +264,13 @@ function ResultPanel({ result, preview, onReset, s }: { result: ScanResult; prev
       {db?.ai && (db.ai.bullishSignals.length > 0 || db.ai.bearishSignals.length > 0) && (
         <div className="glass-card p-4 space-y-1.5">
           {db.ai.bullishSignals.map((sig, i) => (
-            <div key={i} className="flex items-start gap-2 text-xs text-green-700">
-              <span className="text-green-600 font-bold mt-0.5">↑</span>{sig}
+            <div key={i} className="flex items-start gap-2 text-xs text-green-400">
+              <span className="font-bold mt-0.5">↑</span>{sig}
             </div>
           ))}
           {db.ai.bearishSignals.map((sig, i) => (
-            <div key={i} className="flex items-start gap-2 text-xs text-red-700">
-              <span className="text-red-600 font-bold mt-0.5">↓</span>{sig}
+            <div key={i} className="flex items-start gap-2 text-xs text-red-400">
+              <span className="font-bold mt-0.5">↓</span>{sig}
             </div>
           ))}
         </div>
@@ -361,7 +366,7 @@ export function ScanUpload() {
               {/* Corner marks */}
               {['top-3 left-3 border-t-2 border-l-2', 'top-3 right-3 border-t-2 border-r-2',
                 'bottom-3 left-3 border-b-2 border-l-2', 'bottom-3 right-3 border-b-2 border-r-2'].map((cls, i) => (
-                <div key={i} className={`absolute w-5 h-5 border-blue-400/50 rounded-sm ${cls}`} />
+                <div key={i} className={`absolute w-5 h-5 border-pokemon-yellow/40 rounded-sm ${cls}`} />
               ))}
 
               {/* Upload icon */}
@@ -370,13 +375,14 @@ export function ScanUpload() {
                 transition={{ duration: 2.5, ease: 'easeInOut', repeat: Infinity }}
                 className="mb-5"
               >
-                <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-blue-50 border border-blue-200">
-                  <ImageUp className="w-7 h-7 text-blue-600" />
+                <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
+                  style={{ background: 'rgba(255,203,5,0.10)', border: '1px solid rgba(255,203,5,0.25)' }}>
+                  <ImageUp className="w-7 h-7 text-pokemon-yellow" />
                 </div>
               </motion.div>
 
-              <p className="text-base font-bold text-gray-900 mb-1">{s.dropTitle}</p>
-              <p className="text-sm text-gray-500 text-center mb-6">{s.dropSubtitle}</p>
+              <p className="text-base font-bold text-white mb-1">{s.dropTitle}</p>
+              <p className="text-sm text-white/50 text-center mb-6">{s.dropSubtitle}</p>
 
               <div className="flex gap-2">
                 <button
@@ -392,7 +398,7 @@ export function ScanUpload() {
                   <Camera className="w-4 h-4" />{s.camera}
                 </button>
               </div>
-              <p className="text-xs text-gray-400 mt-4">{s.fileTypes}</p>
+              <p className="text-xs text-white/30 mt-4">{s.fileTypes}</p>
             </div>
           </motion.div>
         )}
@@ -428,11 +434,11 @@ export function ScanUpload() {
                 <motion.div
                   animate={{ rotate: 360 }}
                   transition={{ duration: 1, ease: 'linear', repeat: Infinity }}
-                  className="w-5 h-5 rounded-full border-2 border-blue-600 border-t-transparent flex-shrink-0"
+                  className="w-5 h-5 rounded-full border-2 border-pokemon-yellow border-t-transparent flex-shrink-0"
                 />
                 <div>
-                  <p className="text-sm font-semibold text-gray-900">{s.analyzing}</p>
-                  <p className="text-xs text-gray-500">{s.analyzingDetail}</p>
+                  <p className="text-sm font-semibold text-white">{s.analyzing}</p>
+                  <p className="text-xs text-white/50">{s.analyzingDetail}</p>
                 </div>
               </div>
             )}
@@ -452,8 +458,8 @@ export function ScanUpload() {
             <div className="glass-card p-6 text-center space-y-4">
               <AlertCircle className="w-10 h-10 text-red-500 mx-auto" />
               <div>
-                <p className="font-bold text-gray-900 mb-1">{s.scanFailed}</p>
-                <p className="text-sm text-gray-500">{errorMsg || s.scanFailedDesc}</p>
+                <p className="font-bold text-white mb-1">{s.scanFailed}</p>
+                <p className="text-sm text-white/50">{errorMsg || s.scanFailedDesc}</p>
               </div>
               <button className="btn-primary w-full justify-center py-3 rounded-xl" onClick={reset}>
                 <RotateCcw className="w-4 h-4" />{s.tryAgain}

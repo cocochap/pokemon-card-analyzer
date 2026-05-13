@@ -14,11 +14,19 @@ export async function GET() {
 
   const user = await getUserWithTier(clerkId, email ?? undefined)
 
-  const subscription = await prisma.subscription.findFirst({
-    where: { user: { clerkId }, status: { in: ['active', 'trialing'] } },
-    orderBy: { createdAt: 'desc' },
-    select: { tier: true, status: true, currentPeriodEnd: true, cancelAtPeriodEnd: true },
-  })
+  const yearMonth = new Date().toISOString().slice(0, 7)
 
-  return NextResponse.json({ tier: user.tier, subscription })
+  const [subscription, scanUsageRow] = await Promise.all([
+    prisma.subscription.findFirst({
+      where: { user: { clerkId }, status: { in: ['active', 'trialing'] } },
+      orderBy: { createdAt: 'desc' },
+      select: { tier: true, status: true, currentPeriodEnd: true, cancelAtPeriodEnd: true },
+    }),
+    prisma.scanUsage.findUnique({
+      where: { userId_yearMonth: { userId: user.id, yearMonth } },
+      select: { count: true },
+    }),
+  ])
+
+  return NextResponse.json({ tier: user.tier, subscription, scanUsage: scanUsageRow?.count ?? 0 })
 }
