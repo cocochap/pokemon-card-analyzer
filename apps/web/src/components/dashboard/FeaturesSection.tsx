@@ -1,105 +1,100 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import {
-  BarChart3, Camera, Package, Shield, Sparkles, Star, TrendingUp, Zap,
-} from 'lucide-react'
+import { BarChart3, Camera, Package, Shield, Sparkles, Star, TrendingUp } from 'lucide-react'
 
 const features = [
   {
     icon: Camera,
-    gradient: 'from-blue-500 to-blue-700',
-    bg: 'bg-blue-50',
+    color: '#FFCB05',
+    bg: 'rgba(255,203,5,0.10)',
+    border: 'rgba(255,203,5,0.25)',
     title: 'Scan IA instantané',
-    desc: "Photographiez n'importe quelle carte Pokémon et obtenez l'identification en moins de 2 secondes. Fonctionne même avec des cartes en japonais ou en anglais.",
+    desc: "Photographiez n'importe quelle carte Pokémon et obtenez l'identification en moins de 2 secondes. Fonctionne même avec des cartes japonaises ou anglaises.",
     badge: 'Nouveau',
-    badgeColor: 'bg-blue-100 text-blue-700',
+    badgeBg: 'rgba(255,203,5,0.12)',
+    badgeColor: '#FFCB05',
   },
   {
     icon: TrendingUp,
-    gradient: 'from-green-500 to-emerald-700',
-    bg: 'bg-green-50',
-    title: 'Prix Cardmarket en temps réel',
-    desc: 'Valeur de marché quotidiennement actualisée depuis Cardmarket en euros. Historique 30 jours inclus pour chaque carte.',
+    color: '#22C55E',
+    bg: 'rgba(34,197,94,0.10)',
+    border: 'rgba(34,197,94,0.25)',
+    title: 'Prix Cardmarket live',
+    desc: 'Valeur de marché actualisée quotidiennement depuis Cardmarket en euros. Historique 30 jours et variation de prix inclus.',
     badge: 'Live',
-    badgeColor: 'bg-green-100 text-green-700',
+    badgeBg: 'rgba(34,197,94,0.12)',
+    badgeColor: '#22C55E',
   },
   {
     icon: Package,
-    gradient: 'from-violet-500 to-purple-700',
-    bg: 'bg-violet-50',
+    color: '#A78BFA',
+    bg: 'rgba(167,139,250,0.10)',
+    border: 'rgba(167,139,250,0.25)',
     title: 'Gestion de collection',
-    desc: "Construisez votre portfolio de cartes, suivez la valeur totale de votre collection et exportez vos données au format CSV.",
+    desc: "Construisez votre portfolio, suivez la valeur totale et les performances de votre collection en temps réel.",
     badge: null,
+    badgeBg: '',
     badgeColor: '',
   },
   {
     icon: Star,
-    gradient: 'from-amber-500 to-orange-600',
-    bg: 'bg-amber-50',
+    color: '#F59E0B',
+    bg: 'rgba(245,158,11,0.10)',
+    border: 'rgba(245,158,11,0.25)',
     title: 'Pré-grading PSA IA',
-    desc: "Notre IA analyse l'état de votre carte (centrage, coins, surface, edges) et estime la note PSA probable avant envoi en grading.",
-    badge: 'Pro',
-    badgeColor: 'bg-amber-100 text-amber-700',
+    desc: "Notre IA analyse l'état de votre carte (centrage, coins, surface) et estime la note PSA probable avant envoi en grading.",
+    badge: 'Premium',
+    badgeBg: 'rgba(255,203,5,0.10)',
+    badgeColor: '#FFCB05',
   },
   {
     icon: BarChart3,
-    gradient: 'from-sky-500 to-cyan-700',
-    bg: 'bg-sky-50',
-    title: 'Tendances & investissement',
-    desc: 'Score d\'investissement, volatilité 30 jours, RSI et projection de valeur à 1, 3, 5 et 10 ans basées sur les tendances historiques.',
-    badge: null,
-    badgeColor: '',
+    color: '#60A5FA',
+    bg: 'rgba(96,165,250,0.10)',
+    border: 'rgba(96,165,250,0.25)',
+    title: "Analyses d'investissement",
+    desc: "Score d'investissement, RSI, volatilité 30j et picks du mois générés par IA. Identifiez les meilleures opportunités du marché Pokémon.",
+    badge: 'Premium',
+    badgeBg: 'rgba(255,203,5,0.10)',
+    badgeColor: '#FFCB05',
   },
   {
     icon: Shield,
-    gradient: 'from-rose-500 to-pink-700',
-    bg: 'bg-rose-50',
+    color: '#F87171',
+    bg: 'rgba(248,113,113,0.10)',
+    border: 'rgba(248,113,113,0.25)',
     title: 'Détection de faux',
-    desc: "L'IA analyse la texture d'impression, le hologramme et les proportions pour détecter les cartes contrefaites avant achat ou vente.",
+    desc: "L'IA analyse la texture d'impression, le hologramme et les proportions pour détecter les contrefaçons avant achat.",
     badge: 'Bientôt',
-    badgeColor: 'bg-gray-100 text-gray-500',
+    badgeBg: 'rgba(255,255,255,0.06)',
+    badgeColor: 'rgba(255,255,255,0.35)',
   },
 ] as const
 
 export function FeaturesSection() {
   return (
     <section className="py-20 md:py-28">
-      {/* Header */}
       <div className="text-center mb-14">
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          className="inline-flex mb-4"
-        >
-          <span className="section-label">
+        <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
+          className="inline-flex mb-4">
+          <span className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-sm font-semibold"
+            style={{ background: 'rgba(255,203,5,0.10)', border: '1px solid rgba(255,203,5,0.20)', color: '#FFCB05' }}>
             <Sparkles className="w-3.5 h-3.5" />
             Fonctionnalités
           </span>
         </motion.div>
-        <motion.h2
-          initial={{ opacity: 0, y: 16 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ delay: 0.08 }}
-          className="text-3xl md:text-4xl font-bold text-gray-900 mb-4"
-        >
+        <motion.h2 initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
+          transition={{ delay: 0.08 }} className="text-3xl md:text-4xl font-bold text-white mb-4">
           Tout ce qu'il faut pour votre collection
         </motion.h2>
-        <motion.p
-          initial={{ opacity: 0, y: 16 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ delay: 0.14 }}
-          className="text-gray-500 text-lg max-w-lg mx-auto"
-        >
+        <motion.p initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
+          transition={{ delay: 0.14 }} className="text-white/45 text-lg max-w-lg mx-auto">
           De la simple identification à l'analyse d'investissement avancée.
         </motion.p>
       </div>
 
-      {/* Features grid */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
         {features.map((feat, i) => (
           <motion.div
             key={feat.title}
@@ -107,22 +102,23 @@ export function FeaturesSection() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: '-40px' }}
             transition={{ delay: i * 0.08, duration: 0.5 }}
-            className="group bg-white border border-gray-200 rounded-2xl p-6 hover:border-blue-200 hover:shadow-[0_4px_24px_rgba(59,130,246,0.08)] transition-all duration-300"
+            className="group rounded-2xl p-6 transition-all duration-300 cursor-default"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}
           >
-            {/* Icon + badge */}
             <div className="flex items-start justify-between mb-5">
-              <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${feat.gradient} flex items-center justify-center shadow-md group-hover:scale-105 transition-transform duration-200`}>
-                <feat.icon className="w-6 h-6 text-white" />
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center transition-transform duration-200 group-hover:scale-105"
+                style={{ background: feat.bg, border: `1px solid ${feat.border}` }}>
+                <feat.icon className="w-6 h-6" style={{ color: feat.color }} />
               </div>
               {feat.badge && (
-                <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${feat.badgeColor}`}>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold"
+                  style={{ background: feat.badgeBg, color: feat.badgeColor }}>
                   {feat.badge}
                 </span>
               )}
             </div>
-
-            <h3 className="font-bold text-gray-900 mb-2 text-lg">{feat.title}</h3>
-            <p className="text-gray-500 text-sm leading-relaxed">{feat.desc}</p>
+            <h3 className="font-bold text-white mb-2 text-lg">{feat.title}</h3>
+            <p className="text-white/40 text-sm leading-relaxed">{feat.desc}</p>
           </motion.div>
         ))}
       </div>
