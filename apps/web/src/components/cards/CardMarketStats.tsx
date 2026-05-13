@@ -90,13 +90,13 @@ export function CardMarketStats({ card }: { card: any }) {
       )}
 
       {/* Stats grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-px bg-white/5">
+      <div className="grid grid-cols-3 gap-px bg-white/5">
         {stats.map((s, i) => (
-          <div key={i} className="bg-card/80 p-4 flex flex-col gap-1.5">
+          <div key={i} className="bg-card/80 p-3 sm:p-4 flex flex-col gap-1.5">
             <div className={clsx('w-7 h-7 rounded-lg flex items-center justify-center', s.bg)}>
               <s.icon className={clsx('w-3.5 h-3.5', s.color)} />
             </div>
-            <div className={clsx('text-base font-bold font-mono', s.color)}>{s.value}</div>
+            <div className={clsx('text-sm sm:text-base font-bold font-mono', s.color)}>{s.value}</div>
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               {s.label}
               {s.tooltip && <InfoTooltip text={s.tooltip} side="bottom" />}

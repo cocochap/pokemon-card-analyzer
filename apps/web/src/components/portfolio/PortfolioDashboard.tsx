@@ -74,7 +74,7 @@ export function PortfolioDashboard() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           {Array(4).fill(null).map((_, i) => (
             <div key={i} className="skeleton h-28 rounded-xl" />
           ))}
@@ -149,18 +149,18 @@ export function PortfolioDashboard() {
   return (
     <div className="space-y-6">
       {/* Action Bar */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">{t.portfolio.title}</h1>
           <p className="text-muted-foreground text-sm">{t.portfolio.subtitle}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setShowImport(true)}
             className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm hover:bg-white/10 transition-colors"
           >
             <Upload className="w-4 h-4" />
-            {t.portfolio.importCsv}
+            <span className="hidden sm:inline">{t.portfolio.importCsv}</span>
           </button>
           <ExportCsvButton />
           <button
@@ -174,7 +174,7 @@ export function PortfolioDashboard() {
       </div>
 
       {/* KPI Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {kpis.map((kpi, i) => (
           <motion.div
             key={kpi.label}

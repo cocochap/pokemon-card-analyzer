@@ -53,7 +53,7 @@ export default function CardsPage() {
 
         {/* Search + Sort */}
         <div className="flex gap-3 mb-6 flex-wrap">
-          <div className="relative flex-1 min-w-60">
+          <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
             <input
               type="text"
@@ -73,7 +73,7 @@ export default function CardsPage() {
             <select
               value={sort}
               onChange={(e) => { setSort(e.target.value as SortOption); setPage(1) }}
-              className="appearance-none pl-9 pr-10 py-2.5 rounded-xl text-sm focus:outline-none transition-colors cursor-pointer min-w-48 text-white/80"
+              className="appearance-none pl-9 pr-10 py-2.5 rounded-xl text-sm focus:outline-none transition-colors cursor-pointer w-full sm:min-w-48 text-white/80"
               style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
             >
               {SORT_OPTIONS.map((o) => (
@@ -86,7 +86,7 @@ export default function CardsPage() {
         </div>
 
         {/* Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8 gap-3">
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8 gap-2 sm:gap-3">
           {isLoading
             ? Array.from({ length: 24 }).map((_, i) => (
                 <div key={i} className="skeleton aspect-[2/3] rounded-2xl" />

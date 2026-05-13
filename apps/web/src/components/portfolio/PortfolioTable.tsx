@@ -55,11 +55,11 @@ export function PortfolioTable({ portfolioId }: { portfolioId?: string }) {
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
               <th className="text-left py-3 px-5 text-xs font-medium text-white/40">Carte</th>
-              <th className="text-right py-3 px-5 text-xs font-medium text-white/40">Qté</th>
-              <th className="text-right py-3 px-5 text-xs font-medium text-white/40">Achat</th>
-              <th className="text-right py-3 px-5 text-xs font-medium text-white/40">Prix actuel</th>
-              <th className="text-right py-3 px-5 text-xs font-medium text-white/40">ROI</th>
-              <th className="text-right py-3 px-5 text-xs font-medium text-white/40">7j</th>
+              <th className="text-right py-3 px-3 sm:px-5 text-xs font-medium text-white/40">Qté</th>
+              <th className="text-right py-3 px-3 sm:px-5 text-xs font-medium text-white/40 hidden sm:table-cell">Achat</th>
+              <th className="text-right py-3 px-3 sm:px-5 text-xs font-medium text-white/40">Prix</th>
+              <th className="text-right py-3 px-3 sm:px-5 text-xs font-medium text-white/40">ROI</th>
+              <th className="text-right py-3 px-3 sm:px-5 text-xs font-medium text-white/40 hidden md:table-cell">7j</th>
               <th className="py-3 px-3" />
             </tr>
           </thead>
@@ -116,22 +116,22 @@ export function PortfolioTable({ portfolioId }: { portfolioId?: string }) {
                     </td>
 
                     {/* Quantity */}
-                    <td className="py-2.5 px-5 text-right font-mono text-white/70">
+                    <td className="py-2.5 px-3 sm:px-5 text-right font-mono text-white/70 text-sm">
                       {item.quantity}
                     </td>
 
                     {/* Purchase price */}
-                    <td className="py-2.5 px-5 text-right font-mono text-white/50">
+                    <td className="py-2.5 px-3 sm:px-5 text-right font-mono text-white/50 text-sm hidden sm:table-cell">
                       {purchasePrice ? formatCurrency(purchasePrice) : <span className="text-white/20">—</span>}
                     </td>
 
                     {/* Current price */}
-                    <td className="py-2.5 px-5 text-right font-mono font-medium text-white">
+                    <td className="py-2.5 px-3 sm:px-5 text-right font-mono font-medium text-white text-sm">
                       {currentPrice > 0 ? formatCurrency(currentPrice) : <span className="text-white/20">—</span>}
                     </td>
 
                     {/* ROI */}
-                    <td className="py-2.5 px-5 text-right">
+                    <td className="py-2.5 px-3 sm:px-5 text-right">
                       {roi !== null ? (
                         <span className={clsx(
                           'flex items-center justify-end gap-0.5 text-xs font-semibold',
@@ -144,7 +144,7 @@ export function PortfolioTable({ portfolioId }: { portfolioId?: string }) {
                     </td>
 
                     {/* 7d change */}
-                    <td className="py-2.5 px-5 text-right">
+                    <td className="py-2.5 px-3 sm:px-5 text-right hidden md:table-cell">
                       {change7d !== null ? (
                         <span className={clsx(
                           'text-xs font-medium',

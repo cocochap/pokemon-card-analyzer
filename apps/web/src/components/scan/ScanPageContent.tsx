@@ -87,7 +87,7 @@ export function ScanPageContent() {
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.07 }}
-          className="text-4xl md:text-5xl font-bold tracking-tight mb-4 leading-tight text-white"
+          className="text-3xl md:text-5xl font-bold tracking-tight mb-4 leading-tight text-white"
         >
           {s.pageTitle}{' '}
           <span style={{ background: 'linear-gradient(135deg,#FFCB05,#F59E0B)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>

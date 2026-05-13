@@ -50,10 +50,10 @@ export default async function CardDetailPage({ params }: CardPageProps) {
 
       <main className="container mx-auto px-4 py-8 max-w-[1600px]">
         {/* Hero + données principales */}
-        <div className="grid grid-cols-1 xl:grid-cols-5 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 lg:gap-8">
 
           {/* Colonne gauche — image + actions + scores */}
-          <div className="xl:col-span-2 space-y-4">
+          <div className="lg:col-span-2 space-y-4">
             <CardHero card={card as any} />
 
             <div className="flex flex-col gap-3">
@@ -76,7 +76,7 @@ export default async function CardDetailPage({ params }: CardPageProps) {
           </div>
 
           {/* Colonne droite — stats, chart, IA */}
-          <div className="xl:col-span-3 space-y-6">
+          <div className="lg:col-span-3 space-y-6">
             <Suspense fallback={<div className="skeleton h-40 w-full rounded-2xl" />}>
               <CardMarketStats card={card as any} />
             </Suspense>
