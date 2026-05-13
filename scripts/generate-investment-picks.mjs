@@ -11,10 +11,7 @@
  */
 
 import { PrismaClient } from '@prisma/client'
-import Anthropic from '@anthropic-ai/sdk'
-
 const prisma = new PrismaClient()
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 const args = process.argv.slice(2)
 const DRY_RUN = args.includes('--dry-run')
@@ -178,53 +175,129 @@ function priceTargets(price, ath, pickType) {
   return { targetLow: +(price * 1.30).toFixed(2), targetHigh: +(price * 2.00).toFixed(2) }
 }
 
-// ─── Claude narrative generation ──────────────────────────────────────────
-async function generateNarrative(card, signals, pickType, period) {
-  const rarityLabel = card.rarity.replace(/_/g, ' ').toLowerCase()
-  const setName = card.set?.name ?? 'Extension inconnue'
-  const { price, ath, change7d, change30d, volatility30d, athDropPct } = signals
-
-  const prompt = `Tu es un analyste expert en investissement de cartes Pokémon TCG, reconnu pour tes analyses précises et tes conseils d'investissement.
-Génère une analyse d'investissement professionnelle et percutante en français pour la période ${period}.
-
-Carte : ${card.name}
-Extension : ${setName} (${card.set?.series ?? ''})
-Rareté : ${rarityLabel}
-Numéro : ${card.number}
-Prix actuel (Cardmarket) : ${price}€
-All-Time High : ${ath}€
-Écart par rapport à l'ATH : -${athDropPct}%
-Variation 7 jours : ${change7d > 0 ? '+' : ''}${change7d}%
-Variation 30 jours : ${change30d > 0 ? '+' : ''}${change30d}%
-Volatilité 30j : ${volatility30d}%
-Catégorie du pick : ${pickType === 'momentum' ? 'Momentum' : pickType === 'undervalued' ? 'Sous-évalué' : pickType === 'long_term' ? 'Long terme' : 'Carte du mois'}
-
-Génère une réponse JSON avec exactement ces champs :
-{
-  "narrative": "Analyse de 3-4 phrases percutantes et professionnelles qui explique pourquoi cette carte est un bon investissement en ce moment. Mentionne le contexte du marché, la rareté, et les catalyseurs potentiels.",
-  "bullish": ["Signal haussier 1", "Signal haussier 2", "Signal haussier 3"],
-  "bearish": ["Risque 1", "Risque 2"]
+// ─── Template narrative generation (no API cost) ─────────────────────────
+const RARITY_LABELS = {
+  SPECIAL_ILLUSTRATION_RARE: 'Illustration Spéciale Rare',
+  HYPER_RARE: 'Hyper Rare',
+  CROWN_RARE: 'Crown Rare',
+  ILLUSTRATION_RARE: 'Illustration Rare',
+  RARE_RAINBOW: 'Rainbow Rare',
+  RARE_SECRET: 'Secret Rare',
+  RARE_ULTRA: 'Ultra Rare',
+  RARE_HOLO_VMAX: 'VMAX',
+  RARE_HOLO_VSTAR: 'VSTAR',
+  RARE_HOLO_EX: 'ex Holo',
+  RARE_HOLO_GX: 'GX Holo',
+  RARE_HOLO_V: 'V Holo',
+  RARE_HOLO: 'Holo Rare',
+  AMAZING_RARE: 'Amazing Rare',
+  RARE_SHINY_GX: 'Shiny GX',
+  RARE_SHINY: 'Shiny Rare',
+  RARE_PRISM: 'Prism Star',
+  LEGEND: 'LEGEND',
+  PROMO: 'Promo',
+  RARE: 'Rare',
 }
 
-Les signaux doivent être concis (max 10 mots chacun), factuels et spécifiques à cette carte.
-Réponds uniquement avec le JSON, sans markdown.`
+const MOMENTUM_NARRATIVES = [
+  (name, set, price, change7d, ath) =>
+    `${name} affiche une dynamique remarquable avec une progression de ${change7d.toFixed(1)}% sur les 7 derniers jours, signalant un regain d'intérêt marqué des collectionneurs. Issu de l'extension ${set}, ce spécimen bénéficie d'une liquidité élevée sur Cardmarket, ce qui facilite les transactions. Avec un All-Time High à ${ath.toFixed(2)}€, le potentiel de revalorisation reste intact. Le momentum actuel suggère une fenêtre d'entrée favorable avant une prochaine résistance.`,
+  (name, set, price, change7d, ath) =>
+    `La carte ${name} de l'extension ${set} enregistre une accélération haussière de ${change7d.toFixed(1)}% cette semaine, portée par une demande croissante sur le marché secondaire. À ${price.toFixed(2)}€, elle se positionne encore bien en dessous de son sommet historique de ${ath.toFixed(2)}€, offrant un rapport risque/rendement attractif. Les volumes d'échanges en hausse confirment l'intérêt des investisseurs pour ce profil de carte. Une consolidation au-dessus du prix actuel renforcerait le signal d'entrée.`,
+]
 
-  const response = await anthropic.messages.create({
-    model: 'claude-opus-4-7',
-    max_tokens: 600,
-    messages: [{ role: 'user', content: prompt }],
-  })
+const UNDERVALUED_NARRATIVES = [
+  (name, set, price, athDropPct, ath) =>
+    `${name} de l'extension ${set} se négocie actuellement ${athDropPct.toFixed(0)}% sous son All-Time High de ${ath.toFixed(2)}€ — une décote qui ne reflète pas ses fondamentaux. Sa rareté et la popularité persistante du Pokémon en font un candidat naturel à la revalorisation dans un marché en normalisation. Les collectionneurs avisés reconnaissent dans cette correction une opportunité d'acquisition à prix réduit. La résistance historique à ${ath.toFixed(2)}€ constitue un objectif réaliste à moyen terme.`,
+  (name, set, price, athDropPct, ath) =>
+    `Avec une décote de ${athDropPct.toFixed(0)}% par rapport à son sommet historique, ${name} de l'extension ${set} représente l'une des meilleures opportunités de valeur du marché Pokémon TCG en ce moment. À ${price.toFixed(2)}€, le downside est limité par la rareté intrinsèque de la carte et la demande structurelle des collectionneurs. Un retour vers les ${ath.toFixed(2)}€ impliquerait un gain substantiel. C'est le type de setup que recherchent les investisseurs patients.`,
+]
 
-  const text = response.content[0].text.trim()
-  try {
-    return JSON.parse(text)
-  } catch {
-    // Fallback if JSON parsing fails
-    return {
-      narrative: `${card.name} présente un profil d'investissement intéressant sur le marché Pokémon TCG.`,
-      bullish: ['Rareté élevée garantit la valeur', 'Forte demande des collectionneurs', 'Potentiel de revalorisation'],
-      bearish: ['Volatilité du marché', 'Dépendance à la tendance Pokémon'],
-    }
+const LONGTERM_NARRATIVES = [
+  (name, set, price) =>
+    `${name} de l'extension ${set} présente un profil d'investissement long terme solide, combinant rareté élevée, popularité du Pokémon et offre limitée sur le marché secondaire. À ${price.toFixed(2)}€, la valorisation actuelle reste conservatrice au regard de l'engouement croissant pour le TCG Pokémon vintage et moderne. L'extension d'origine garantit une authenticité prisée des collectionneurs sérieux. Sur un horizon de 6 à 18 mois, les catalyseurs potentiels (anniversaires, tournois, médias) pourraient accélérer la revalorisation.`,
+  (name, set, price) =>
+    `La carte ${name} issue de ${set} s'impose comme un actif de fond de portefeuille incontournable pour tout investisseur Pokémon TCG. Sa rareté, combinée à la liquidité du marché Cardmarket, offre une flexibilité de sortie que peu de cartes peuvent garantir. À ${price.toFixed(2)}€, elle reste accessible tout en offrant une exposition à un segment premium du marché. Les tendances de long terme du collectible Pokémon plaident pour une appréciation soutenue sur 12 à 18 mois.`,
+]
+
+const FEATURED_NARRATIVES = [
+  (name, set, price, score, ath) =>
+    `${name} de l'extension ${set} est notre sélection premium pour ce mois — avec un score de ${score}/100, c'est la carte qui cumule le plus de signaux positifs sur l'ensemble du marché Pokémon TCG. Sa rareté exceptionnelle, la popularité mondiale du Pokémon et son positionnement par rapport à son ATH de ${ath.toFixed(2)}€ en font un investissement de premier ordre. La demande structurelle des collectionneurs garantit une liquidité saine, limitant le risque de blocage à la revente. Nous estimons un potentiel de revalorisation significatif sur les 3 à 6 prochains mois.`,
+  (name, set, price, score, ath) =>
+    `Notre algorithme d'analyse — croisant momentum, rareté, popularité et distance à l'ATH — désigne ${name} de l'extension ${set} comme la meilleure opportunité d'investissement Pokémon TCG de ce mois (score ${score}/100). À ${price.toFixed(2)}€, la carte offre un point d'entrée rationnel sur un actif dont l'ATH à ${ath.toFixed(2)}€ témoigne d'un fort potentiel de valorisation. La rareté de l'édition et la notoriété du Pokémon constituent des remparts solides contre la dépréciation. Un investissement à considérer sérieusement pour tout portefeuille orienté Pokémon.`,
+]
+
+const BULLISH_POOL = {
+  high_rarity: 'Rareté élevée — offre limitée sur le marché',
+  popular_char: 'Pokémon iconique à forte demande mondiale',
+  below_ath: 'Prix bien en dessous de son All-Time High',
+  momentum: 'Momentum haussier confirmé sur 7 jours',
+  old_set: 'Extension ancienne — cartes de plus en plus rares',
+  liquid: 'Bonne liquidité sur Cardmarket EU',
+  stable: 'Faible volatilité — mouvement de prix ordonné',
+  tcg_growth: 'Marché TCG Pokémon en croissance structurelle',
+  low_supply: 'Faible offre disponible à la vente',
+}
+
+const BEARISH_POOL = {
+  volatility: 'Volatilité du marché Pokémon imprévisible',
+  trend: 'Dépendance à la tendance générale du TCG',
+  reprint_risk: 'Risque de réimpression par The Pokémon Company',
+  low_price: 'Prix bas peut refléter un manque d\'intérêt',
+  spread: 'Spread achat/vente parfois élevé sur Cardmarket',
+  condition: 'Condition de la carte critique pour la valeur',
+}
+
+function selectBullish(card, signals, pickType) {
+  const tags = []
+  if (rarityScore(card.rarity) >= 0.6) tags.push(BULLISH_POOL.high_rarity)
+  if (characterScore(card.name) >= 0.75) tags.push(BULLISH_POOL.popular_char)
+  if (signals.athDropPct > 15) tags.push(BULLISH_POOL.below_ath)
+  if (signals.change7d > 2) tags.push(BULLISH_POOL.momentum)
+  if (card.set?.series?.includes('Base') || card.set?.name?.includes('Base') || card.set?.name?.includes('Jungle') || card.set?.name?.includes('Fossil')) tags.push(BULLISH_POOL.old_set)
+  if (signals.volatility30d < 15) tags.push(BULLISH_POOL.stable)
+  tags.push(BULLISH_POOL.tcg_growth)
+  tags.push(BULLISH_POOL.liquid)
+  return [...new Set(tags)].slice(0, 3)
+}
+
+function selectBearish(card, signals) {
+  const tags = []
+  if (signals.volatility30d > 20) tags.push(BEARISH_POOL.volatility)
+  tags.push(BEARISH_POOL.trend)
+  if (card.rarity === 'PROMO' || card.rarity === 'RARE') tags.push(BEARISH_POOL.reprint_risk)
+  tags.push(BEARISH_POOL.spread)
+  return [...new Set(tags)].slice(0, 2)
+}
+
+function pickRandom(arr, seed) {
+  return arr[seed % arr.length]
+}
+
+function generateNarrative(card, signals, pickType, period) {
+  const { price, ath, change7d, athDropPct } = signals
+  const set = card.set?.name ?? 'Extension inconnue'
+  const seed = card.id.charCodeAt(0) + card.id.charCodeAt(1)
+
+  let narrative
+  if (pickType === 'monthly_featured') {
+    const tmpl = pickRandom(FEATURED_NARRATIVES, seed)
+    narrative = tmpl(card.name, set, price, Math.round(signals.momentumScore + signals.rarityWeight), ath)
+  } else if (pickType === 'momentum') {
+    const tmpl = pickRandom(MOMENTUM_NARRATIVES, seed)
+    narrative = tmpl(card.name, set, price, change7d, ath)
+  } else if (pickType === 'undervalued') {
+    const tmpl = pickRandom(UNDERVALUED_NARRATIVES, seed)
+    narrative = tmpl(card.name, set, price, athDropPct, ath)
+  } else {
+    const tmpl = pickRandom(LONGTERM_NARRATIVES, seed)
+    narrative = tmpl(card.name, set, price)
+  }
+
+  return {
+    narrative,
+    bullish: selectBullish(card, signals, pickType),
+    bearish: selectBearish(card, signals),
   }
 }
 
@@ -343,19 +416,9 @@ async function main() {
       const { card, score, signals } = items[i]
       const rank = i + 1
 
-      console.log(`\n🤖 Generating narrative: ${card.name} [${pickType} #${rank}]`)
+      console.log(`\n📝 Generating narrative: ${card.name} [${pickType} #${rank}]`)
 
-      let aiResult
-      try {
-        aiResult = await generateNarrative(card, signals, pickType, PERIOD)
-      } catch (err) {
-        console.error(`   ❌ AI failed for ${card.name}: ${err.message}`)
-        aiResult = {
-          narrative: `${card.name} présente des caractéristiques favorables pour les investisseurs Pokémon TCG.`,
-          bullish: ['Rareté élevée', 'Demande soutenue', 'Potentiel de hausse'],
-          bearish: ['Volatilité marché', 'Liquidité variable'],
-        }
-      }
+      const aiResult = generateNarrative(card, signals, pickType, PERIOD)
 
       const { targetLow, targetHigh } = priceTargets(signals.price, signals.ath, pickType)
 
