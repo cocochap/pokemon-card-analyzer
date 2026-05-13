@@ -60,7 +60,7 @@ export function CardMarketStats({ card }: { card: any }) {
       sub: rsi < 30 ? (t.ai.stable + ' ↗') : rsi > 70 ? '↘' : '—',
       icon: BarChart2,
       color: rsi < 30 ? 'text-market-bull' : rsi > 70 ? 'text-market-bear' : 'text-muted-foreground',
-      bg: rsi < 30 ? 'bg-market-bull/10' : rsi > 70 ? 'bg-market-bear/10' : 'bg-gray-100',
+      bg: rsi < 30 ? 'bg-market-bull/10' : rsi > 70 ? 'bg-market-bear/10' : 'bg-white/5',
     },
     {
       label: t.card.marketCap, tooltip: t.tooltips.marketCap,
@@ -73,7 +73,7 @@ export function CardMarketStats({ card }: { card: any }) {
     <div className="glass-card overflow-hidden">
       {/* ATH / ATL */}
       {md && (
-        <div className="grid grid-cols-2 divide-x divide-gray-200 border-b border-gray-200">
+        <div className="grid grid-cols-2 divide-x divide-white/5 border-b border-white/5">
           <div className="p-4">
             <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
               {t.card.allTimeHigh} <InfoTooltip text={t.tooltips.athAtl} />
@@ -90,9 +90,9 @@ export function CardMarketStats({ card }: { card: any }) {
       )}
 
       {/* Stats grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-px bg-gray-100">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-px bg-white/5">
         {stats.map((s, i) => (
-          <div key={i} className="bg-white p-4 flex flex-col gap-1.5">
+          <div key={i} className="bg-card/80 p-4 flex flex-col gap-1.5">
             <div className={clsx('w-7 h-7 rounded-lg flex items-center justify-center', s.bg)}>
               <s.icon className={clsx('w-3.5 h-3.5', s.color)} />
             </div>
@@ -107,13 +107,13 @@ export function CardMarketStats({ card }: { card: any }) {
 
       {/* Prices by platform */}
       {(cmPrice || tcgPrice) && (
-        <div className="p-4 border-t border-gray-200">
+        <div className="p-4 border-t border-white/5">
           <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
             {t.card.platform}
           </div>
           <div className="grid grid-cols-2 gap-3">
             {cmPrice && (
-              <div className="bg-gray-50 rounded-xl p-3 border border-gray-200">
+              <div className="bg-white/3 rounded-xl p-3 border border-white/8">
                 <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
                   Cardmarket <InfoTooltip text={t.tooltips.cardmarket} side="bottom" />
                 </div>
@@ -124,7 +124,7 @@ export function CardMarketStats({ card }: { card: any }) {
               </div>
             )}
             {tcgPrice && (
-              <div className="bg-gray-50 rounded-xl p-3 border border-gray-200">
+              <div className="bg-white/3 rounded-xl p-3 border border-white/8">
                 <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
                   TCGPlayer <InfoTooltip text={t.tooltips.tcgplayer} side="bottom" />
                 </div>

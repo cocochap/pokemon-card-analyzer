@@ -4,39 +4,36 @@
 
 @layer base {
   :root {
-    /* ── Scard — Premium light mode ─────────────────────────────── */
-    --background:           210 20% 98%;    /* #F8FAFC */
-    --foreground:           222 47% 11%;    /* #0F172A */
-    --card:                 0 0% 100%;      /* #FFFFFF */
-    --card-foreground:      222 47% 11%;
-    --popover:              0 0% 100%;
-    --popover-foreground:   222 47% 11%;
-    --primary:              217 91% 48%;    /* #1D4ED8 */
-    --primary-foreground:   0 0% 100%;
-    --secondary:            220 14% 96%;    /* #F1F5F9 */
-    --secondary-foreground: 222 47% 11%;
-    --muted:                220 14% 95%;    /* #EFF1F5 */
-    --muted-foreground:     215 16% 47%;    /* #64748B */
-    --accent:               220 14% 95%;
-    --accent-foreground:    222 47% 11%;
-    --destructive:          0 72% 51%;
+    /* ── Scard — Dark Pokémon Premium ───────────────────────── */
+    --background:           230 55% 6%;     /* #060918 deep space */
+    --foreground:           220 30% 95%;    /* #EEF1FA */
+    --card:                 228 50% 9%;     /* #0B1122 */
+    --card-foreground:      220 30% 95%;
+    --popover:              228 50% 9%;
+    --popover-foreground:   220 30% 95%;
+    --primary:              47 100% 51%;    /* #FFCB05 Pokémon yellow */
+    --primary-foreground:   230 55% 6%;
+    --secondary:            213 60% 40%;    /* #2B65A8 Pokémon blue */
+    --secondary-foreground: 0 0% 100%;
+    --muted:                224 44% 13%;    /* #111C33 */
+    --muted-foreground:     215 22% 54%;    /* #6D85A6 */
+    --accent:               47 100% 51%;
+    --accent-foreground:    230 55% 6%;
+    --destructive:          4 86% 58%;
     --destructive-foreground: 0 0% 100%;
-    --border:               220 13% 91%;    /* #E2E8F0 */
-    --input:                220 13% 91%;
-    --ring:                 213 90% 58%;
+    --border:               224 38% 16%;    /* #172033 */
+    --input:                224 38% 16%;
+    --ring:                 47 100% 51%;
     --radius:               0.75rem;
 
-    /* ── Pokémon type energy ──────────────────────────────────── */
-    --poke-fire:      25 100% 55%;
-    --poke-water:    210  90% 65%;
-    --poke-grass:    130  60% 50%;
-    --poke-electric:  47 100% 60%;
-    --poke-psychic:  330  80% 65%;
-    --poke-dragon:   260  65% 60%;
-    --poke-dark:     240  20% 30%;
-    --poke-fairy:    340  75% 70%;
-    --poke-ice:      195  70% 70%;
-    --poke-fighting:  10  85% 50%;
+    /* ── Scard custom tokens ─────────────────────────────────── */
+    --pokemon-yellow: #FFCB05;
+    --pokemon-blue:   #3B4CCA;
+    --pokemon-red:    #E3350D;
+    --market-bull:    #22C55E;
+    --market-bear:    #EF4444;
+    --gold-start:     #F59E0B;
+    --gold-end:       #FFCB05;
   }
 }
 
@@ -54,88 +51,121 @@
     @apply bg-background text-foreground;
     overflow-x: hidden;
     background-image:
-      radial-gradient(ellipse at 75% -5%, rgba(59,130,246,0.06) 0%, transparent 55%),
-      radial-gradient(ellipse at 5% 85%, rgba(245,158,11,0.04) 0%, transparent 40%);
+      radial-gradient(ellipse 80% 60% at 50% -20%, rgba(255,203,5,0.07) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 50% at 80% 80%, rgba(59,76,202,0.06) 0%, transparent 50%),
+      radial-gradient(ellipse 50% 40% at 10% 60%, rgba(227,53,13,0.04) 0%, transparent 50%);
     min-height: 100vh;
   }
 
-  ::selection { background: rgba(59,130,246,0.15); color: #1d4ed8; }
+  ::selection { background: rgba(255,203,5,0.25); color: #FFCB05; }
 
-  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.14); border-radius: 9999px; }
-  ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.24); }
+  ::-webkit-scrollbar-thumb { background: rgba(255,203,5,0.2); border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,203,5,0.4); }
 }
 
 @layer components {
-  /* ── Premium card ─────────────────────────────────────────── */
+
+  /* ── Glass card (surface) ────────────────────────────────── */
   .glass-card {
     @apply rounded-2xl;
-    background: #FFFFFF;
-    border: 1px solid rgba(0,0,0,0.07);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.05);
+    background: rgba(11,17,34,0.85);
+    border: 1px solid rgba(255,203,5,0.10);
+    box-shadow: 0 1px 1px rgba(0,0,0,0.5), 0 4px 16px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04);
+    backdrop-filter: blur(12px);
   }
   .glass-card-hover {
-    @apply glass-card transition-all duration-200 cursor-pointer;
+    @apply glass-card transition-all duration-300 cursor-pointer;
   }
   .glass-card-hover:hover {
-    border-color: rgba(59,130,246,0.20);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.08), 0 0 0 1px rgba(59,130,246,0.10);
+    border-color: rgba(255,203,5,0.30);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,203,5,0.15), 0 0 20px rgba(255,203,5,0.08);
     transform: translateY(-2px);
+  }
+
+  /* ── Pokémon Card tile ───────────────────────────────────── */
+  .card-tile {
+    @apply relative flex flex-col rounded-2xl overflow-hidden transition-all duration-300 cursor-pointer;
+    background: rgba(11,17,34,0.9);
+    border: 1px solid rgba(255,255,255,0.07);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+  }
+  .card-tile:hover {
+    border-color: rgba(255,203,5,0.45);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,203,5,0.2), 0 0 24px rgba(255,203,5,0.12);
+    transform: translateY(-4px) scale(1.02);
+  }
+  .card-tile:hover .card-tile-holo {
+    opacity: 1;
+  }
+
+  /* Holographic overlay on hover */
+  .card-tile-holo {
+    @apply absolute inset-0 pointer-events-none opacity-0 transition-opacity duration-300;
+    background: linear-gradient(
+      115deg,
+      transparent 25%,
+      rgba(255,203,5,0.06) 35%,
+      rgba(100,180,255,0.06) 50%,
+      rgba(200,100,255,0.06) 60%,
+      rgba(255,100,100,0.04) 70%,
+      transparent 80%
+    );
+    background-size: 200% 200%;
+    animation: holoShift 3s ease-in-out infinite;
   }
 
   /* ── Buttons ──────────────────────────────────────────────── */
   .btn-primary {
-    @apply inline-flex items-center gap-2 font-semibold text-sm rounded-xl transition-all duration-200;
-    background: linear-gradient(135deg, #1D4ED8 0%, #3B82F6 100%);
-    color: #fff;
-    padding: 0.625rem 1.25rem;
-    box-shadow: 0 1px 3px rgba(29,78,216,0.25), 0 4px 12px rgba(59,130,246,0.18);
+    @apply inline-flex items-center gap-2 font-bold text-sm rounded-xl transition-all duration-200;
+    background: linear-gradient(135deg, #F59E0B 0%, #FFCB05 100%);
+    color: #0A0E18;
+    padding: 0.625rem 1.375rem;
+    box-shadow: 0 1px 3px rgba(245,158,11,0.3), 0 4px 16px rgba(255,203,5,0.2);
   }
   .btn-primary:hover {
     transform: translateY(-1px);
-    box-shadow: 0 4px 20px rgba(59,130,246,0.38), 0 8px 24px rgba(59,130,246,0.14);
+    box-shadow: 0 4px 20px rgba(255,203,5,0.45), 0 8px 32px rgba(255,203,5,0.15);
+    filter: brightness(1.05);
   }
-  .btn-primary:active { transform: scale(0.98); }
+  .btn-primary:active { transform: scale(0.97); }
 
   .btn-gold {
-    @apply inline-flex items-center gap-2 font-semibold text-sm rounded-xl transition-all duration-200;
-    background: linear-gradient(135deg, #D97706 0%, #F59E0B 100%);
-    color: #fff;
-    padding: 0.625rem 1.25rem;
-    box-shadow: 0 1px 3px rgba(217,119,6,0.25);
+    @apply inline-flex items-center gap-2 font-bold text-sm rounded-xl transition-all duration-200;
+    background: linear-gradient(135deg, #FFCB05, #F59E0B);
+    color: #0A0E18;
+    padding: 0.625rem 1.375rem;
+    box-shadow: 0 0 24px rgba(255,203,5,0.3);
   }
-  .btn-gold:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 20px rgba(245,158,11,0.32);
-  }
+  .btn-gold:hover { transform: translateY(-1px); filter: brightness(1.07); }
 
   .btn-ghost {
     @apply inline-flex items-center gap-2 font-semibold text-sm rounded-xl transition-all duration-200;
-    background: transparent;
-    border: 1.5px solid rgba(15,23,42,0.13);
-    color: #374151;
+    background: rgba(255,255,255,0.04);
+    border: 1.5px solid rgba(255,255,255,0.12);
+    color: rgba(255,255,255,0.75);
     padding: 0.625rem 1.25rem;
   }
   .btn-ghost:hover {
-    background: rgba(15,23,42,0.04);
-    border-color: rgba(15,23,42,0.20);
-    color: #111827;
+    background: rgba(255,203,5,0.08);
+    border-color: rgba(255,203,5,0.35);
+    color: #FFCB05;
   }
 
   /* ── Scan drop zone ───────────────────────────────────────── */
   .scan-zone {
     @apply relative rounded-2xl border-2 border-dashed transition-all duration-300;
-    border-color: rgba(59,130,246,0.28);
-    background: rgba(59,130,246,0.02);
+    border-color: rgba(255,203,5,0.25);
+    background: rgba(255,203,5,0.02);
   }
   .scan-zone:hover, .scan-zone.drag-over {
-    border-color: rgba(59,130,246,0.55);
-    background: rgba(59,130,246,0.04);
-    box-shadow: 0 0 0 4px rgba(59,130,246,0.07);
+    border-color: rgba(255,203,5,0.55);
+    background: rgba(255,203,5,0.05);
+    box-shadow: 0 0 0 4px rgba(255,203,5,0.07), inset 0 0 40px rgba(255,203,5,0.03);
   }
   .scan-zone.scanning {
-    border-color: rgba(59,130,246,0.80);
+    border-color: rgba(255,203,5,0.85);
     animation: borderGlow 1.5s ease-in-out infinite;
   }
 
@@ -143,123 +173,159 @@
   .scan-beam {
     @apply absolute left-0 right-0 h-0.5 pointer-events-none;
     background: linear-gradient(90deg,
-      transparent 0%, rgba(59,130,246,0.85) 30%,
-      rgba(147,197,253,1) 50%, rgba(59,130,246,0.85) 70%, transparent 100%);
-    box-shadow: 0 0 16px rgba(59,130,246,0.8), 0 0 32px rgba(59,130,246,0.4);
+      transparent 0%, rgba(255,203,5,0.85) 30%,
+      rgba(255,240,150,1) 50%, rgba(255,203,5,0.85) 70%, transparent 100%);
+    box-shadow: 0 0 16px rgba(255,203,5,0.8), 0 0 32px rgba(255,203,5,0.4);
     animation: scanBeam 2s ease-in-out infinite;
   }
 
   /* ── Stat badge ───────────────────────────────────────────── */
   .stat-badge {
     @apply flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium;
-    background: rgba(59,130,246,0.07);
-    border: 1px solid rgba(59,130,246,0.14);
-    color: #2563EB;
+    background: rgba(255,203,5,0.08);
+    border: 1px solid rgba(255,203,5,0.20);
+    color: #FFCB05;
   }
 
   /* ── Grade badge ──────────────────────────────────────────── */
   .grade-badge {
     @apply flex items-center justify-center w-10 h-10 rounded-xl font-bold text-lg;
-    background: linear-gradient(135deg, #D97706, #F59E0B);
-    color: #fff;
-    box-shadow: 0 0 12px rgba(245,158,11,0.25);
+    background: linear-gradient(135deg, #F59E0B, #FFCB05);
+    color: #0A0E18;
+    box-shadow: 0 0 16px rgba(255,203,5,0.35);
   }
 
   /* ── Pokémon type pills ───────────────────────────────────── */
-  .type-fire    { @apply bg-orange-50 text-orange-700 border border-orange-200; }
-  .type-water   { @apply bg-blue-50 text-blue-700 border border-blue-200; }
-  .type-grass   { @apply bg-green-50 text-green-700 border border-green-200; }
-  .type-electric{ @apply bg-yellow-50 text-yellow-700 border border-yellow-200; }
-  .type-psychic { @apply bg-pink-50 text-pink-700 border border-pink-200; }
-  .type-dragon  { @apply bg-purple-50 text-purple-700 border border-purple-200; }
-  .type-fairy   { @apply bg-pink-50 text-pink-600 border border-pink-200; }
-  .type-dark    { @apply bg-gray-100 text-gray-700 border border-gray-300; }
-  .type-ice     { @apply bg-cyan-50 text-cyan-700 border border-cyan-200; }
-  .type-fighting{ @apply bg-red-50 text-red-700 border border-red-200; }
-  .type-normal  { @apply bg-gray-50 text-gray-600 border border-gray-200; }
-  .type-poison  { @apply bg-purple-50 text-purple-700 border border-purple-200; }
-  .type-ground  { @apply bg-amber-50 text-amber-700 border border-amber-200; }
-  .type-rock    { @apply bg-stone-50 text-stone-700 border border-stone-200; }
-  .type-bug     { @apply bg-lime-50 text-lime-700 border border-lime-200; }
-  .type-ghost   { @apply bg-indigo-50 text-indigo-700 border border-indigo-200; }
-  .type-steel   { @apply bg-slate-50 text-slate-600 border border-slate-200; }
-  .type-flying  { @apply bg-sky-50 text-sky-700 border border-sky-200; }
+  .type-fire    { background: rgba(239,68,68,0.15);   color: #FCA5A5; border: 1px solid rgba(239,68,68,0.3); border-radius:9999px; padding: 2px 10px; font-size:.75rem; font-weight:600; }
+  .type-water   { background: rgba(59,130,246,0.15);  color: #93C5FD; border: 1px solid rgba(59,130,246,0.3); border-radius:9999px; padding: 2px 10px; font-size:.75rem; font-weight:600; }
+  .type-grass   { background: rgba(34,197,94,0.15);   color: #86EFAC; border: 1px solid rgba(34,197,94,0.3); border-radius:9999px; padding: 2px 10px; font-size:.75rem; font-weight:600; }
+  .type-electric{ background: rgba(255,203,5,0.15);   color: #FFCB05; border: 1px solid rgba(255,203,5,0.35); border-radius:9999px; padding: 2px 10px; font-size:.75rem; font-weight:600; }
+  .type-psychic { background: rgba(236,72,153,0.15);  color: #F9A8D4; border: 1px solid rgba(236,72,153,0.3); border-radius:9999px; padding: 2px 10px; font-size:.75rem; font-weight:600; }
+  .type-dragon  { background: rgba(99,102,241,0.15);  color: #C4B5FD; border: 1px solid rgba(99,102,241,0.3); border-radius:9999px; padding: 2px 10px; font-size:.75rem; font-weight:600; }
+  .type-dark    { background: rgba(71,85,105,0.25);   color: #CBD5E1; border: 1px solid rgba(71,85,105,0.4);  border-radius:9999px; padding: 2px 10px; font-size:.75rem; font-weight:600; }
+  .type-ice     { background: rgba(34,211,238,0.12);  color: #A5F3FC; border: 1px solid rgba(34,211,238,0.3); border-radius:9999px; padding: 2px 10px; font-size:.75rem; font-weight:600; }
+  .type-fighting{ background: rgba(239,68,68,0.12);   color: #FCA5A5; border: 1px solid rgba(239,68,68,0.25); border-radius:9999px; padding: 2px 10px; font-size:.75rem; font-weight:600; }
+  .type-fairy   { background: rgba(244,114,182,0.15); color: #FBCFE8; border: 1px solid rgba(244,114,182,0.3); border-radius:9999px; padding: 2px 10px; font-size:.75rem; font-weight:600; }
+  .type-normal  { background: rgba(148,163,184,0.15); color: #CBD5E1; border: 1px solid rgba(148,163,184,0.3); border-radius:9999px; padding: 2px 10px; font-size:.75rem; font-weight:600; }
+  .type-poison  { background: rgba(168,85,247,0.15);  color: #D8B4FE; border: 1px solid rgba(168,85,247,0.3); border-radius:9999px; padding: 2px 10px; font-size:.75rem; font-weight:600; }
+  .type-ground  { background: rgba(217,119,6,0.15);   color: #FCD34D; border: 1px solid rgba(217,119,6,0.3);  border-radius:9999px; padding: 2px 10px; font-size:.75rem; font-weight:600; }
+  .type-ghost   { background: rgba(99,102,241,0.12);  color: #A5B4FC; border: 1px solid rgba(99,102,241,0.25); border-radius:9999px; padding: 2px 10px; font-size:.75rem; font-weight:600; }
+  .type-steel   { background: rgba(148,163,184,0.12); color: #CBD5E1; border: 1px solid rgba(148,163,184,0.25); border-radius:9999px; padding: 2px 10px; font-size:.75rem; font-weight:600; }
+  .type-flying  { background: rgba(186,230,253,0.12); color: #BAE6FD; border: 1px solid rgba(186,230,253,0.25); border-radius:9999px; padding: 2px 10px; font-size:.75rem; font-weight:600; }
+  .type-rock    { background: rgba(120,113,108,0.15); color: #D6D3D1; border: 1px solid rgba(120,113,108,0.3); border-radius:9999px; padding: 2px 10px; font-size:.75rem; font-weight:600; }
+  .type-bug     { background: rgba(132,204,22,0.12);  color: #BEF264; border: 1px solid rgba(132,204,22,0.25); border-radius:9999px; padding: 2px 10px; font-size:.75rem; font-weight:600; }
 
   /* ── Gradient text ────────────────────────────────────────── */
   .gradient-text-electric {
-    background: linear-gradient(135deg, #1D4ED8 0%, #3B82F6 50%, #60A5FA 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-size: 200% auto;
-    animation: gradient-shift 4s linear infinite;
-  }
-  .gradient-text-gold {
-    background: linear-gradient(135deg, #D97706 0%, #F59E0B 50%, #FBBF24 100%);
+    background: linear-gradient(135deg, #FFCB05 0%, #F59E0B 40%, #FFCB05 80%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
     background-size: 200% auto;
     animation: gradient-shift 3s linear infinite;
   }
+  .gradient-text-gold {
+    background: linear-gradient(135deg, #F59E0B 0%, #FFCB05 50%, #FDE68A 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-size: 200% auto;
+    animation: gradient-shift 3s linear infinite;
+  }
+  .gradient-text-blue {
+    background: linear-gradient(135deg, #3B4CCA 0%, #60A5FA 50%, #3B4CCA 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-size: 200% auto;
+    animation: gradient-shift 4s linear infinite;
+  }
   .gradient-text { @apply gradient-text-electric; }
 
   /* ── Rarity glows ─────────────────────────────────────────── */
-  .rarity-crown   { box-shadow: 0 0 20px rgba(255,215,0,0.45); border-color: rgba(255,215,0,0.5); }
-  .rarity-hyper   { box-shadow: 0 0 16px rgba(232,121,249,0.40); border-color: rgba(232,121,249,0.4); }
-  .rarity-special { box-shadow: 0 0 14px rgba(99,102,241,0.35); border-color: rgba(99,102,241,0.4); }
-  .rarity-ultra   { box-shadow: 0 0 12px rgba(251,146,60,0.35); border-color: rgba(251,146,60,0.35); }
-  .rarity-holo    { box-shadow: 0 0 12px rgba(56,189,248,0.30); border-color: rgba(56,189,248,0.3); }
+  .rarity-crown   { box-shadow: 0 0 24px rgba(255,215,0,0.55);   border-color: rgba(255,215,0,0.6); }
+  .rarity-hyper   { box-shadow: 0 0 20px rgba(232,121,249,0.50); border-color: rgba(232,121,249,0.5); }
+  .rarity-special { box-shadow: 0 0 18px rgba(99,102,241,0.45);  border-color: rgba(99,102,241,0.5); }
+  .rarity-ultra   { box-shadow: 0 0 16px rgba(251,146,60,0.45);  border-color: rgba(251,146,60,0.45); }
+  .rarity-holo    { box-shadow: 0 0 16px rgba(56,189,248,0.40);  border-color: rgba(56,189,248,0.4); }
 
   /* ── Skeleton ─────────────────────────────────────────────── */
   .skeleton {
     @apply rounded-xl;
-    background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+    background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%);
     background-size: 200% 100%;
-    animation: shimmer 1.6s ease-in-out infinite;
+    animation: shimmer 1.8s ease-in-out infinite;
   }
 
   /* ── Market colors ────────────────────────────────────────── */
-  .market-bull { @apply text-green-600; }
-  .market-bear { @apply text-red-600; }
+  .market-bull { color: #22C55E; }
+  .market-bear { color: #EF4444; }
+  .text-market-bull { color: #22C55E; }
+  .text-market-bear { color: #EF4444; }
+
+  /* ── Pokemon yellow text ──────────────────────────────────── */
+  .text-pokemon-yellow { color: #FFCB05; }
+  .text-pokemon-blue   { color: #3B4CCA; }
+  .text-pokemon-red    { color: #E3350D; }
+  .bg-pokemon-yellow   { background-color: #FFCB05; }
 
   /* ── Mobile bottom nav ────────────────────────────────────── */
   .mobile-bottom-nav {
     @apply fixed bottom-0 left-0 right-0 z-50 md:hidden;
-    background: rgba(255,255,255,0.96);
-    border-top: 1px solid rgba(0,0,0,0.07);
+    background: rgba(8,12,25,0.97);
+    border-top: 1px solid rgba(255,203,5,0.12);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
     padding-bottom: env(safe-area-inset-bottom, 0px);
-    box-shadow: 0 -4px 20px rgba(0,0,0,0.06);
+    box-shadow: 0 -4px 24px rgba(0,0,0,0.6);
   }
 
-  /* ── Holographic shimmer (cards) ──────────────────────────── */
+  /* ── Section label ────────────────────────────────────────── */
+  .section-label {
+    @apply inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-sm font-semibold;
+    background: rgba(255,203,5,0.08);
+    border: 1px solid rgba(255,203,5,0.20);
+    color: #FFCB05;
+  }
+
+  /* ── Premium badge ────────────────────────────────────────── */
+  .premium-badge {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold;
+    background: linear-gradient(135deg, rgba(245,158,11,0.2), rgba(255,203,5,0.15));
+    border: 1px solid rgba(255,203,5,0.35);
+    color: #FFCB05;
+  }
+
+  /* ── Gold divider ─────────────────────────────────────────── */
+  .gold-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,203,5,0.3), transparent);
+  }
+
+  /* ── Holo shimmer (cards listing) ────────────────────────── */
   .holo-shimmer {
     background: linear-gradient(
       115deg,
-      transparent 30%, rgba(255,220,100,0.20) 40%,
-      rgba(100,200,255,0.20) 50%, rgba(200,100,255,0.20) 55%,
+      transparent 30%, rgba(255,220,100,0.15) 40%,
+      rgba(100,200,255,0.15) 50%, rgba(200,100,255,0.15) 55%,
       transparent 65%
     );
     background-size: 300% 300%;
     animation: holo 3s ease-in-out infinite;
   }
 
-  /* ── Section label ────────────────────────────────────────── */
-  .section-label {
-    @apply inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-sm font-semibold;
-    background: rgba(59,130,246,0.06);
-    border: 1px solid rgba(59,130,246,0.14);
-    color: #2563EB;
+  /* ── Shadow glow (card hover) ─────────────────────────────── */
+  .shadow-glow {
+    box-shadow: 0 0 24px rgba(255,203,5,0.25), 0 8px 32px rgba(0,0,0,0.6);
   }
 }
 
 @layer utilities {
-  .glow-electric { box-shadow: 0 0 20px rgba(59,130,246,0.25), 0 0 40px rgba(59,130,246,0.10); }
-  .glow-gold     { box-shadow: 0 0 20px rgba(245,158,11,0.25), 0 0 40px rgba(245,158,11,0.10); }
-  .glow-green    { box-shadow: 0 0 16px rgba(34,197,94,0.25); }
-  .glow-red      { box-shadow: 0 0 16px rgba(239,68,68,0.25); }
+  .glow-electric { box-shadow: 0 0 24px rgba(59,76,202,0.40), 0 0 48px rgba(59,76,202,0.15); }
+  .glow-gold     { box-shadow: 0 0 24px rgba(255,203,5,0.40),  0 0 48px rgba(255,203,5,0.15); }
+  .glow-green    { box-shadow: 0 0 20px rgba(34,197,94,0.35); }
+  .glow-red      { box-shadow: 0 0 20px rgba(239,68,68,0.35); }
+  .glow-yellow   { box-shadow: 0 0 20px rgba(255,203,5,0.35), 0 0 40px rgba(255,203,5,0.12); }
 
   .text-balance  { text-wrap: balance; }
   .pb-mobile-nav { padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px)); }
@@ -268,13 +334,18 @@
 }
 
 /* ── Keyframes ───────────────────────────────────────────────── */
-@keyframes ticker         { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-@keyframes shimmer        { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-@keyframes float          { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+@keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
 @keyframes gradient-shift { 0% { background-position: 0% center; } 50% { background-position: 100% center; } 100% { background-position: 0% center; } }
-@keyframes holo           { 0% { background-position: 0% 0%; } 50% { background-position: 100% 100%; } 100% { background-position: 0% 0%; } }
-@keyframes spin-slow      { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-@keyframes bounce-in      { 0% { transform: scale(0.85); opacity: 0; } 60% { transform: scale(1.05); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes holo { 0% { background-position: 0% 0%; } 50% { background-position: 100% 100%; } 100% { background-position: 0% 0%; } }
+@keyframes holoShift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+@keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes bounce-in { 0% { transform: scale(0.85); opacity: 0; } 60% { transform: scale(1.05); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes pulse-gold {
+  0%, 100% { box-shadow: 0 0 12px rgba(255,203,5,0.2); }
+  50%       { box-shadow: 0 0 28px rgba(255,203,5,0.5), 0 0 48px rgba(255,203,5,0.2); }
+}
 @keyframes scanBeam {
   0%   { top: -1%; opacity: 0; }
   5%   { opacity: 1; }
@@ -282,14 +353,22 @@
   100% { top: 101%; opacity: 0; }
 }
 @keyframes borderGlow {
-  0%, 100% { border-color: rgba(59,130,246,0.4); box-shadow: 0 0 12px rgba(59,130,246,0.12); }
-  50%       { border-color: rgba(59,130,246,0.80); box-shadow: 0 0 24px rgba(59,130,246,0.28); }
+  0%, 100% { border-color: rgba(255,203,5,0.4); box-shadow: 0 0 12px rgba(255,203,5,0.12); }
+  50%       { border-color: rgba(255,203,5,0.85); box-shadow: 0 0 28px rgba(255,203,5,0.30); }
 }
 @keyframes pulseElectric {
-  0%, 100% { box-shadow: 0 0 12px rgba(59,130,246,0.15); }
-  50%       { box-shadow: 0 0 28px rgba(59,130,246,0.40); }
+  0%, 100% { box-shadow: 0 0 12px rgba(255,203,5,0.15); }
+  50%       { box-shadow: 0 0 28px rgba(255,203,5,0.45); }
 }
 @keyframes countUp {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1; }
 }

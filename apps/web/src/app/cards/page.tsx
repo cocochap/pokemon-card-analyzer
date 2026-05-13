@@ -54,26 +54,30 @@ export default function CardsPage() {
         {/* Search + Sort */}
         <div className="flex gap-3 mb-6 flex-wrap">
           <div className="relative flex-1 min-w-60">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
             <input
               type="text"
               placeholder={t.cards.searchPlaceholder}
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1) }}
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors placeholder:text-gray-400 text-gray-900 shadow-sm"
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm focus:outline-none transition-colors placeholder:text-white/30 text-white/90"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', boxShadow: 'none' }}
+              onFocus={e => e.currentTarget.style.borderColor = 'rgba(255,203,5,0.4)'}
+              onBlur={e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)'}
             />
           </div>
 
           {/* Sort dropdown */}
           <div className="relative">
-            <SlidersHorizontal className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <SlidersHorizontal className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none" />
             <select
               value={sort}
               onChange={(e) => { setSort(e.target.value as SortOption); setPage(1) }}
-              className="appearance-none pl-9 pr-10 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-900 focus:outline-none focus:border-blue-400 transition-colors cursor-pointer min-w-48 shadow-sm"
+              className="appearance-none pl-9 pr-10 py-2.5 rounded-xl text-sm focus:outline-none transition-colors cursor-pointer min-w-48 text-white/80"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
             >
               {SORT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
+                <option key={o.value} value={o.value} style={{ background: '#0B1122' }}>
                   {locale === 'fr' ? o.labelFr : o.labelEn}
                 </option>
               ))}
@@ -96,10 +100,14 @@ export default function CardsPage() {
                   <Link
                     key={card.id}
                     href={`/cards/${card.id}`}
-                    className="group relative flex flex-col rounded-2xl overflow-hidden border border-gray-200 hover:border-amber-300 transition-all duration-300 hover:scale-105 hover:shadow-md bg-white shadow-sm"
+                    className="card-tile group"
                   >
+                    {/* Holographic overlay */}
+                    <div className="card-tile-holo" />
+
                     {/* Card image */}
-                    <div className="relative aspect-[2/3] w-full overflow-hidden bg-gray-100">
+                    <div className="relative aspect-[2/3] w-full overflow-hidden"
+                      style={{ background: 'linear-gradient(180deg,#0D1529,#060918)' }}>
                       {card.imageSmUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
@@ -109,24 +117,27 @@ export default function CardsPage() {
                           loading="lazy"
                         />
                       ) : (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-gradient-to-b from-gray-200 to-gray-300 p-2">
-                          <div className="text-2xl opacity-40">🃏</div>
-                          <p className="text-[10px] text-gray-500 text-center leading-tight line-clamp-3">{cardName}</p>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-2"
+                          style={{ background: 'linear-gradient(180deg,rgba(255,203,5,0.05),rgba(59,76,202,0.08))' }}>
+                          <div className="text-2xl opacity-30">🃏</div>
+                          <p className="text-[10px] text-white/30 text-center leading-tight line-clamp-3">{cardName}</p>
                         </div>
                       )}
 
                       {/* Hover overlay with name */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                        style={{ background: 'linear-gradient(to top,rgba(6,9,24,0.95) 0%,rgba(6,9,24,0.3) 50%,transparent 100%)' }}>
                         <div className="absolute bottom-0 p-2 w-full">
                           <p className="text-white text-xs font-semibold truncate">{cardName}</p>
-                          <p className="text-muted-foreground/80 text-[10px]">{card.rarity?.replace(/_/g, ' ')}</p>
+                          <p className="text-white/40 text-[10px]">{card.rarity?.replace(/_/g, ' ')}</p>
                         </div>
                       </div>
                     </div>
 
-                    {/* Price bar — always visible */}
-                    <div className="px-2 py-1.5 flex items-center justify-between bg-white border-t border-gray-100">
-                      <span className="font-mono font-bold text-xs text-blue-600">
+                    {/* Price bar */}
+                    <div className="px-2 py-1.5 flex items-center justify-between"
+                      style={{ background: 'rgba(6,9,24,0.8)', borderTop: '1px solid rgba(255,203,5,0.08)' }}>
+                      <span className="font-mono font-bold text-xs text-[#FFCB05]">
                         {price > 0 ? formatCurrency(price) : '—'}
                       </span>
                       {change24h !== 0 && (
@@ -158,17 +169,19 @@ export default function CardsPage() {
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="px-4 py-2 rounded-xl bg-white border border-gray-200 text-sm text-gray-700 disabled:opacity-40 hover:border-blue-300 transition-colors shadow-sm"
+              className="px-4 py-2 rounded-xl text-sm disabled:opacity-30 transition-colors text-white/70 hover:text-[#FFCB05]"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.10)' }}
             >
               {t.cards.prev}
             </button>
-            <span className="text-sm text-muted-foreground">
+            <span className="text-sm text-white/40">
               {t.cards.page} {page} {t.cards.of} {pages}
             </span>
             <button
               onClick={() => setPage(p => Math.min(pages, p + 1))}
               disabled={page === pages}
-              className="px-4 py-2 rounded-xl bg-white border border-gray-200 text-sm text-gray-700 disabled:opacity-40 hover:border-blue-300 transition-colors shadow-sm"
+              className="px-4 py-2 rounded-xl text-sm disabled:opacity-30 transition-colors text-white/70 hover:text-[#FFCB05]"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.10)' }}
             >
               {t.cards.next}
             </button>
