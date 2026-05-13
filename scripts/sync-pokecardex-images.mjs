@@ -75,18 +75,33 @@ async function headOk(url) {
 
 // Match pokecardex set to our DB set — strict matching to avoid wrong sets
 async function findDbSet(nomCourt, frName) {
-  // 1. Exact externalId match (pokecardex code lowercased = tcgdex id)
+  // 1. Exact externalId match
   const byId = await prisma.pokemonSet.findFirst({
     where: { externalId: { equals: nomCourt.toLowerCase() } }
   })
   if (byId) return byId
 
-  // 2. Exact full French name match
   if (frName) {
+    // 2. Exact full French name match
     const byExact = await prisma.pokemonSet.findFirst({
       where: { name: { equals: frName, mode: 'insensitive' } }
     })
     if (byExact) return byExact
+
+    // 3. Strip series prefix (e.g. "Diamant & Perle : Trésors Mystérieux" → "Trésors Mystérieux")
+    const stripped = frName.includes(' : ') ? frName.split(' : ').slice(1).join(' : ').trim() : null
+    if (stripped) {
+      const byStripped = await prisma.pokemonSet.findFirst({
+        where: { name: { equals: stripped, mode: 'insensitive' } }
+      })
+      if (byStripped) return byStripped
+    }
+
+    // 4. Contains match on last significant word group
+    const byContains = await prisma.pokemonSet.findFirst({
+      where: { name: { contains: (stripped ?? frName).substring(0, 10), mode: 'insensitive' } }
+    })
+    if (byContains) return byContains
   }
 
   return null
