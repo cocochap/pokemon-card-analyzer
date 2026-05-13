@@ -140,6 +140,7 @@ model User {
   transactions     Transaction[]
   subscriptions    Subscription[]
   apiKeys          ApiKey[]
+  scanUsage        ScanUsage[]
 
   @@index([clerkId])
   @@index([email])
@@ -656,4 +657,16 @@ model PsaPopulation {
 
   @@unique([cardId, company, grade])
   @@index([cardId])
+}
+
+model ScanUsage {
+  id        String   @id @default(cuid())
+  userId    String
+  yearMonth String
+  count     Int      @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, yearMonth])
+  @@index([userId])
 }

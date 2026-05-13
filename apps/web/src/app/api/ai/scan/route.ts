@@ -9,7 +9,9 @@
  * 5. pokemontcg.io API + auto-import
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { auth, currentUser } from '@clerk/nextjs/server'
 import { prisma } from '@/lib/db/prisma'
+import { getUserWithTier, isPremiumTier, getScanUsage, incrementScanUsage, LIMITS } from '@/lib/subscription'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -259,6 +261,30 @@ export async function POST(req: NextRequest) {
   if (!process.env.GEMINI_API_KEY) {
     return NextResponse.json({ ok: false, error: 'GEMINI_API_KEY not configured' }, { status: 500 })
   }
+
+  // Auth + scan limit check
+  const { userId: clerkId } = await auth()
+  if (!clerkId) {
+    return NextResponse.json({ ok: false, error: 'Connexion requise pour scanner', requiresAuth: true }, { status: 401 })
+  }
+  const clerkUser = await currentUser()
+  const email = clerkUser?.emailAddresses[0]?.emailAddress
+  const user = await getUserWithTier(clerkId, email ?? undefined)
+
+  if (!isPremiumTier(user.tier as any)) {
+    const used = await getScanUsage(user.id)
+    if (used >= LIMITS.FREE.scansPerMonth) {
+      return NextResponse.json({
+        ok: false,
+        error: `Limite de ${LIMITS.FREE.scansPerMonth} scans/mois atteinte.`,
+        limitReached: true,
+        used,
+        limit: LIMITS.FREE.scansPerMonth,
+        upgradeUrl: '/pricing',
+      }, { status: 429 })
+    }
+  }
+
   try {
     const form = await req.formData()
     const file = form.get('image') as File | null
@@ -306,6 +332,9 @@ export async function POST(req: NextRequest) {
       y5: { value: project(price, rate, 5) }, y10: { value: project(price, rate, 10) },
     } : null
     const pred365 = ai?.predictions?.find((p: any) => p.horizonDays === 365)
+
+    // Count the scan
+    await incrementScanUsage(user.id)
 
     return NextResponse.json({
       ok: true,

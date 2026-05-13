@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { auth } from '@clerk/nextjs/server'
 import { prisma } from '@/lib/db/prisma'
 import { withCache } from '@/lib/db/redis'
 import { subDays, subYears } from 'date-fns'
+import { getUserTier, isPremiumTier } from '@/lib/subscription'
 
 export const runtime = 'nodejs'
 
@@ -30,6 +32,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { searchParams } = req.nextUrl
   const range = searchParams.get('range') ?? '30d'
   const source = searchParams.get('source') ?? 'cardmarket'
+
+  // 1y range requires Premium
+  if (range === '1y') {
+    const { userId: clerkId } = await auth()
+    if (!clerkId) {
+      return NextResponse.json({ error: 'Premium requis', upgradeUrl: '/pricing' }, { status: 403 })
+    }
+    const tier = await getUserTier(clerkId)
+    if (!isPremiumTier(tier)) {
+      return NextResponse.json({ error: 'Premium requis', upgradeUrl: '/pricing' }, { status: 403 })
+    }
+  }
 
   const data = await withCache(`card:${id}:history:${range}:${source}`, 120, async () => {
     const history = await prisma.priceHistory.findMany({

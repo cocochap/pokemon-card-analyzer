@@ -50,6 +50,19 @@ export async function POST(req: NextRequest) {
     update: {},
   })
 
+  // Enforce alert limit for free users
+  const { isPremiumTier, LIMITS } = await import('@/lib/subscription')
+  if (!isPremiumTier(user.tier as any)) {
+    const activeAlerts = await prisma.alert.count({ where: { userId: user.id, status: 'ACTIVE' } })
+    if (activeAlerts >= LIMITS.FREE.alerts) {
+      return NextResponse.json({
+        error: `Limite de ${LIMITS.FREE.alerts} alertes atteinte pour le plan gratuit.`,
+        limitReached: true,
+        upgradeUrl: '/pricing',
+      }, { status: 403 })
+    }
+  }
+
   const alert = await prisma.alert.create({
     data: {
       userId: user.id,
