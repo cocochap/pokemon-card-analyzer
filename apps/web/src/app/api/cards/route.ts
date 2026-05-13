@@ -15,33 +15,32 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(100, Number(searchParams.get('limit') ?? 24))
 
   const where: Prisma.CardWhereInput = {
+    imageSmUrl: { not: null },
     ...(q && {
       OR: [
         { name: { contains: q, mode: 'insensitive' } },
         { number: { contains: q, mode: 'insensitive' } },
         { illustrator: { contains: q, mode: 'insensitive' } },
-        // Recherche dans le nom français stocké en JSON
         { localeName: { path: ['fr'], string_contains: q } },
       ],
     }),
     ...(set && { setId: set }),
     ...(rarity && { rarity: rarity as any }),
-    // Only show cards with price data when sorting by price
     ...((sort === 'price_desc' || sort === 'price_asc') && !q && {
       prices: { some: { source: 'cardmarket', variant: 'NORMAL' } },
     }),
   }
 
   const orderBy: Prisma.CardOrderByWithRelationInput =
-    sort === 'price_desc' ? { marketData: { allTimeHigh: 'desc' } } :
-    sort === 'price_asc'  ? { marketData: { allTimeHigh: 'asc' } } :
-    sort === 'change_desc' ? { marketData: { priceChange24h: 'desc' } } :
+    sort === 'price_desc' ? { marketData: { allTimeHigh: { sort: 'desc', nulls: 'last' } } } :
+    sort === 'price_asc'  ? { marketData: { allTimeHigh: { sort: 'asc',  nulls: 'last' } } } :
+    sort === 'change_desc' ? { marketData: { priceChange24h: { sort: 'desc', nulls: 'last' } } } :
     sort === 'name_desc'  ? { name: 'desc' } :
     sort === 'name_asc'   ? { name: 'asc' } :
-    sort === 'score_desc' ? { marketData: { investmentScore: 'desc' } } :
-    { marketData: { allTimeHigh: 'desc' } }
+    sort === 'score_desc' ? { marketData: { investmentScore: { sort: 'desc', nulls: 'last' } } } :
+    { marketData: { allTimeHigh: { sort: 'desc', nulls: 'last' } } }
 
-  const cacheKey = `cards:v2:${JSON.stringify({ q, set, rarity, sort, page, limit })}`
+  const cacheKey = `cards:v3:${JSON.stringify({ q, set, rarity, sort, page, limit })}`
 
   const result = await withCache(cacheKey, 60, async () => {
     const [items, total] = await Promise.all([
