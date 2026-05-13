@@ -259,6 +259,7 @@ model Card {
   priceHistory      PriceHistory[]
   salesHistory      SaleEvent[]
   popularityMetrics PopularityMetric[]
+  investmentPicks   InvestmentPick[]
 
   @@index([setId])
   @@index([name])
@@ -669,4 +670,34 @@ model ScanUsage {
 
   @@unique([userId, yearMonth])
   @@index([userId])
+}
+
+// ============================================================
+// INVESTMENT PICKS (AI-generated)
+// ============================================================
+
+model InvestmentPick {
+  id          String   @id @default(cuid())
+  cardId      String
+  period      String   // "2026-05"
+  pickType    String   // "monthly_featured" | "momentum" | "undervalued" | "long_term"
+  rank        Int      @default(1)
+  score       Float
+  signals     Json
+  narrative   String   @db.Text
+  bullish     String[]
+  bearish     String[]
+  priceAtPick Float
+  targetLow   Float?
+  targetHigh  Float?
+  horizon     String?
+  riskLevel   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  card Card @relation(fields: [cardId], references: [id])
+
+  @@unique([cardId, period, pickType])
+  @@index([period, pickType])
+  @@index([cardId])
 }
