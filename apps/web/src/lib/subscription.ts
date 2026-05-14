@@ -56,6 +56,20 @@ export async function getUserWithTier(clerkId: string, email?: string): Promise<
   tier: Tier
   stripeCustomerId: string | null
 }> {
+  // If an existing user was pre-created with this email (manual tier grant),
+  // migrate their clerkId so they get the right tier on first login.
+  if (email) {
+    const byEmail = await prisma.user.findUnique({ where: { email } })
+    if (byEmail && byEmail.clerkId !== clerkId) {
+      const updated = await prisma.user.update({
+        where: { id: byEmail.id },
+        data: { clerkId },
+        select: { id: true, tier: true, stripeCustomerId: true },
+      })
+      return updated as any
+    }
+  }
+
   const user = await prisma.user.upsert({
     where: { clerkId },
     create: {
