@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Archive, AlertTriangle, Camera, CheckCircle2, Database, ImageUp,
-  Loader2, Package, Plus, RotateCcw, Search, ScanLine,
+  Loader2, Lock, Package, Plus, RotateCcw, Search, ScanLine,
   Sparkles, TrendingUp, TrendingDown, Target, X, Zap,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -364,18 +364,28 @@ export default function SealedScanPage() {
 
               {/* Mode selector */}
               <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                {[
-                  { key: 'text' as const, icon: Search, label: 'Recherche par nom' },
-                  { key: 'photo' as const, icon: Camera, label: 'Photo / Scanner' },
-                ].map(({ key, icon: Icon, label }) => (
-                  <button key={key} onClick={() => { setMode(key); setError('') }}
+                <button onClick={() => { setMode('text'); setError('') }}
+                  className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all"
+                  style={mode === 'text'
+                    ? { background: VIOLET_BG, border: `1px solid ${VIOLET_BORDER}`, color: VIOLET }
+                    : { color: 'rgba(255,255,255,0.4)' }}>
+                  <Search className="w-4 h-4" />Recherche par nom
+                </button>
+                {isPremium ? (
+                  <button onClick={() => { setMode('photo'); setError('') }}
                     className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all"
-                    style={mode === key
+                    style={mode === 'photo'
                       ? { background: VIOLET_BG, border: `1px solid ${VIOLET_BORDER}`, color: VIOLET }
                       : { color: 'rgba(255,255,255,0.4)' }}>
-                    <Icon className="w-4 h-4" />{label}
+                    <Camera className="w-4 h-4" />Photo / Scanner
                   </button>
-                ))}
+                ) : (
+                  <Link href="/pricing"
+                    className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all"
+                    style={{ color: 'rgba(255,255,255,0.30)', background: 'rgba(255,255,255,0.02)' }}>
+                    <Lock className="w-4 h-4" />Photo — Premium
+                  </Link>
+                )}
               </div>
 
               {/* TEXT mode */}

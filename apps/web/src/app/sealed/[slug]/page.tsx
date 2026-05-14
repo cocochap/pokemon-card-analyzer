@@ -4,8 +4,8 @@ import { useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import {
-  Archive, ArrowLeft, BarChart2, CheckCircle2, Loader2, Package,
-  Plus, Sparkles, Target, TrendingDown, TrendingUp,
+  Archive, ArrowLeft, BarChart2, CheckCircle2, Loader2, Lock, Package,
+  Plus, Sparkles, Target, TrendingDown, TrendingUp, Zap,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
@@ -14,6 +14,7 @@ import { Footer } from '@/components/layout/Footer'
 import { useAuth, useClerk } from '@clerk/nextjs'
 import { AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
+import { useUserTier } from '@/lib/useUserTier'
 
 const GOLD = '#FFCB05'
 const VIOLET = '#A78BFA'
@@ -102,6 +103,7 @@ function AddModal({ product, onClose }: { product: any; onClose: () => void }) {
 export default function SealedProductPage() {
   const { slug } = useParams<{ slug: string }>()
   const [addOpen, setAddOpen] = useState(false)
+  const { isPremium } = useUserTier()
 
   const { data: product, isLoading, isError } = useQuery({
     queryKey: ['sealed-product', slug],
@@ -153,13 +155,55 @@ export default function SealedProductPage() {
             {/* Hero card */}
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
               className="glass-card p-6 space-y-5">
+              {/* Product image banner */}
+              {(() => {
+                const setCode = (() => {
+                  const s = slug as string
+                  if (s.includes('sv8a')) return 'sv8a'
+                  if (s.includes('celebrations') || s.includes('cel25')) return 'cel25'
+                  if (s.includes('swsh125')) return 'swsh12pt5'
+                  if (s.includes('swsh12') && !s.includes('swsh125')) return 'swsh12'
+                  if (s.includes('swsh11')) return 'swsh11'
+                  if (s.includes('swsh10')) return 'swsh10'
+                  if (s.includes('swsh7')) return 'swsh7'
+                  if (s.includes('swsh4')) return 'swsh4'
+                  if (s.includes('swsh1') && !s.match(/swsh1[0-9]/)) return 'swsh1'
+                  if (s.includes('sv75') || s.includes('etincelles')) return 'sv8'
+                  if (s.includes('sv7') && !s.includes('sv75')) return 'sv7'
+                  if (s.includes('sv65') || s.includes('destins-paldea')) return 'sv6pt5'
+                  if (s.includes('sv6') && !s.includes('sv65')) return 'sv6'
+                  if (s.includes('sv5')) return 'sv5'
+                  if (s.includes('sv45') || s.includes('destinees')) return 'sv4pt5'
+                  if (s.includes('sv4') && !s.includes('sv45')) return 'sv4'
+                  if (s.includes('sv35') || s.includes('-151-') || s.endsWith('-151')) return 'sv3pt5'
+                  if (s.includes('sv3') && !s.includes('sv35')) return 'sv3'
+                  if (s.includes('sv2')) return 'sv2'
+                  if (s.includes('sv1') && !s.match(/sv1[0-9]/)) return 'sv1'
+                  if (s.includes('xy12') || s.includes('evolutions-xy')) return 'xy12'
+                  if (s.includes('base-set') || (s.includes('base') && s.includes('vintage'))) return 'base1'
+                  if (s.includes('jungle')) return 'base2'
+                  if (s.includes('fossile')) return 'base3'
+                  if (s.includes('neo-genesis')) return 'neo1'
+                  if (s.includes('pokemon-go')) return 'pgo'
+                  if (s.includes('vmax-climax') || s.includes('shiny-treasure') || s.includes('paldean-fates')) return 'sv4pt5'
+                  return null
+                })()
+                const imgSrc = product.imageUrl ?? (setCode ? `https://images.pokemontcg.io/${setCode}/logo.png` : null)
+                if (!imgSrc) return null
+                return (
+                  <div className="w-full h-28 rounded-2xl overflow-hidden flex items-center justify-center mb-2"
+                    style={{ background: 'linear-gradient(135deg,rgba(124,58,237,0.22) 0%,rgba(49,27,146,0.35) 100%)' }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={imgSrc} alt={product.setName ?? ''} className="h-20 object-contain drop-shadow-lg"
+                      onError={(e) => { e.currentTarget.parentElement!.style.display = 'none' }} />
+                  </div>
+                )
+              })()}
+
               <div className="flex items-start gap-4">
-                <div className="w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0 text-3xl"
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 text-2xl"
                   style={{ background: 'rgba(167,139,250,0.10)', border: '1px solid rgba(167,139,250,0.20)' }}>
-                  {product.imageUrl
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    ? <img src={product.imageUrl} alt="" className="w-12 h-12 object-contain" />
-                    : '📦'}
+                  📦
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -259,32 +303,86 @@ export default function SealedProductPage() {
             {/* Verdict Expert */}
             {product.narrative && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-                className="glass-card p-5 space-y-3">
+                className="glass-card p-5 space-y-3 relative overflow-hidden">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4" style={{ color: VIOLET }} />
                   <h3 className="font-semibold text-white">Verdict Expert</h3>
+                  {!isPremium && (
+                    <span className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+                      style={{ background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.25)', color: '#A78BFA' }}>
+                      <Lock className="w-2.5 h-2.5" /> Premium
+                    </span>
+                  )}
                 </div>
-                <p className="text-sm text-white/75 leading-relaxed">{product.narrative}</p>
+                {isPremium ? (
+                  <p className="text-sm text-white/75 leading-relaxed">{product.narrative}</p>
+                ) : (
+                  <div className="relative">
+                    <p className="text-sm text-white/75 leading-relaxed blur-sm select-none pointer-events-none">
+                      {product.narrative}
+                    </p>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-xl"
+                      style={{ background: 'rgba(6,9,24,0.65)', backdropFilter: 'blur(2px)' }}>
+                      <Lock className="w-5 h-5 text-violet-400" />
+                      <p className="text-xs text-white/60 text-center px-4">Analyse expert réservée aux membres Premium</p>
+                      <Link href="/pricing"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold hover:brightness-110"
+                        style={{ background: 'rgba(167,139,250,0.18)', border: '1px solid rgba(167,139,250,0.35)', color: '#A78BFA' }}>
+                        <Zap className="w-3 h-3" /> Passer Premium
+                      </Link>
+                    </div>
+                  </div>
+                )}
               </motion.div>
             )}
 
             {/* Signals */}
             {((product.bullish?.length ?? 0) + (product.bearish?.length ?? 0)) > 0 && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-                className="glass-card p-5 space-y-2">
-                <h3 className="font-semibold text-white text-sm mb-3">Signaux</h3>
-                {product.bullish?.map((s: string, i: number) => (
-                  <div key={i} className="flex items-start gap-2.5 text-sm">
-                    <TrendingUp className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" />
-                    <span className="text-white/70">{s}</span>
-                  </div>
-                ))}
-                {product.bearish?.map((s: string, i: number) => (
-                  <div key={i} className="flex items-start gap-2.5 text-sm">
-                    <TrendingDown className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-                    <span className="text-white/70">{s}</span>
-                  </div>
-                ))}
+                className="glass-card p-5 space-y-2 relative overflow-hidden">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-white text-sm">Signaux</h3>
+                  {!isPremium && (
+                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+                      style={{ background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.25)', color: '#A78BFA' }}>
+                      <Lock className="w-2.5 h-2.5" /> Premium
+                    </span>
+                  )}
+                </div>
+                {isPremium ? (
+                  <>
+                    {product.bullish?.map((s: string, i: number) => (
+                      <div key={i} className="flex items-start gap-2.5 text-sm">
+                        <TrendingUp className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" />
+                        <span className="text-white/70">{s}</span>
+                      </div>
+                    ))}
+                    {product.bearish?.map((s: string, i: number) => (
+                      <div key={i} className="flex items-start gap-2.5 text-sm">
+                        <TrendingDown className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                        <span className="text-white/70">{s}</span>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    {/* Show first signal blurred */}
+                    {product.bullish?.slice(0, 1).map((s: string, i: number) => (
+                      <div key={i} className="flex items-start gap-2.5 text-sm blur-sm select-none">
+                        <TrendingUp className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" />
+                        <span className="text-white/70">{s}</span>
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-2 py-2 px-3 rounded-xl"
+                      style={{ background: 'rgba(167,139,250,0.07)', border: '1px solid rgba(167,139,250,0.15)' }}>
+                      <Lock className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
+                      <p className="text-xs text-white/50">
+                        {((product.bullish?.length ?? 0) + (product.bearish?.length ?? 0) - 1)} signaux supplémentaires —{' '}
+                        <Link href="/pricing" className="text-violet-400 hover:underline">Premium requis</Link>
+                      </p>
+                    </div>
+                  </>
+                )}
               </motion.div>
             )}
 
@@ -317,11 +415,19 @@ export default function SealedProductPage() {
             {/* CTA */}
             <motion.div initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 }}
               className="glass-card p-5 space-y-3">
-              <button onClick={() => setAddOpen(true)}
-                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold transition-all hover:brightness-110"
-                style={{ background: 'rgba(255,203,5,0.12)', border: '1px solid rgba(255,203,5,0.3)', color: GOLD }}>
-                <Plus className="w-4 h-4" />Ajouter à ma collection
-              </button>
+              {isPremium ? (
+                <button onClick={() => setAddOpen(true)}
+                  className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold transition-all hover:brightness-110"
+                  style={{ background: 'rgba(255,203,5,0.12)', border: '1px solid rgba(255,203,5,0.3)', color: GOLD }}>
+                  <Plus className="w-4 h-4" />Ajouter à ma collection
+                </button>
+              ) : (
+                <Link href="/pricing"
+                  className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold transition-all hover:brightness-110"
+                  style={{ background: 'rgba(167,139,250,0.10)', border: '1px solid rgba(167,139,250,0.28)', color: '#A78BFA' }}>
+                  <Lock className="w-4 h-4" />Collection — Premium requis
+                </Link>
+              )}
               <Link href="/sealed/scan"
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all hover:brightness-110 text-white/60 hover:text-white/80"
                 style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
