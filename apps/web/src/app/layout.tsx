@@ -9,6 +9,7 @@ import { TierWelcomeBanner } from '@/components/ui/TierWelcomeBanner'
 import { LanguageProvider } from '@/lib/i18n/LanguageContext'
 import { LanguageModal } from '@/components/ui/LanguageModal'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
+import { SplashScreen } from '@/components/ui/SplashScreen'
 import { Toaster } from 'react-hot-toast'
 import '@/styles/globals.css'
 
@@ -74,6 +75,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <QueryProvider>
               <TierProvider>
               <LanguageProvider>
+                <SplashScreen />
                 <LanguageModal />
                 <TierWelcomeBanner />
                 <div className="pb-mobile-nav md:pb-0">
