@@ -3,8 +3,8 @@
 import { useCallback, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  AlertCircle, Camera, CheckCircle2, ExternalLink,
-  ImageUp, RotateCcw, TrendingDown, TrendingUp, Upload, Zap,
+  AlertCircle, Camera, CheckCircle2, ExternalLink, Info,
+  ImageUp, Plus, RotateCcw, TrendingDown, TrendingUp, Upload, Zap, X,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useT } from '@/lib/i18n/LanguageContext'
@@ -55,8 +55,65 @@ interface ScanResult {
   dbMatch: DbMatch | null
 }
 
+/* ── Photo tips ──────────────────────────────────────────────── */
+const TIPS = [
+  { icon: '📸', label: 'Face recto visible', desc: 'Montrez la face avant de la carte, centrée dans le cadre' },
+  { icon: '💡', label: 'Bonne lumière', desc: 'Lumière naturelle de côté — évitez le flash sur les holographiques' },
+  { icon: '🔢', label: 'Numéro lisible', desc: 'Le numéro en bas doit être net (ex: 004/165 ou SV107/SV122)' },
+  { icon: '📐', label: 'Carte à plat', desc: 'Posez la carte sur une surface stable, sans flou ni angle' },
+]
+
+function PhotoTips({ compact = false }: { compact?: boolean }) {
+  const [open, setOpen] = useState(!compact)
+  if (compact) {
+    return (
+      <div>
+        <button onClick={() => setOpen(o => !o)}
+          className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/60 transition-colors mb-2">
+          <Info className="w-3.5 h-3.5" />
+          Conseils pour une bonne photo
+          <span className="text-white/25">{open ? '▲' : '▼'}</span>
+        </button>
+        <AnimatePresence>
+          {open && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+              <div className="grid grid-cols-2 gap-2 pb-2">
+                {TIPS.map(t => (
+                  <div key={t.label} className="flex items-start gap-2 p-2.5 rounded-xl"
+                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                    <span className="text-lg flex-shrink-0">{t.icon}</span>
+                    <div>
+                      <p className="text-[10px] font-semibold text-white/70">{t.label}</p>
+                      <p className="text-[9px] text-white/35 leading-tight mt-0.5">{t.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    )
+  }
+  return (
+    <div className="grid grid-cols-2 gap-2 mb-5">
+      {TIPS.map(t => (
+        <div key={t.label} className="flex items-start gap-2 p-2.5 rounded-xl"
+          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+          <span className="text-xl flex-shrink-0">{t.icon}</span>
+          <div>
+            <p className="text-xs font-semibold text-white/70">{t.label}</p>
+            <p className="text-[10px] text-white/35 leading-tight mt-0.5">{t.desc}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /* ── Scan beam overlay ───────────────────────────────────────── */
-function ScanBeamOverlay() {
+function ScanBeamOverlay({ count }: { count: number }) {
   return (
     <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none z-10">
       <div className="absolute inset-0 bg-blue-950/30" />
@@ -79,10 +136,10 @@ function ScanBeamOverlay() {
         'bottom-3 left-3 border-b-2 border-l-2', 'bottom-3 right-3 border-b-2 border-r-2'].map((cls, i) => (
         <div key={i} className={`absolute w-6 h-6 border-blue-400 rounded-sm ${cls}`} />
       ))}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-blue-600/90 border border-blue-400/30 text-white backdrop-blur-sm">
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-blue-600/90 border border-blue-400/30 text-white backdrop-blur-sm whitespace-nowrap">
         <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1, repeat: Infinity }}
-          className="w-1.5 h-1.5 rounded-full bg-white" />
-        Identification IA...
+          className="w-1.5 h-1.5 rounded-full bg-white flex-shrink-0" />
+        Identification IA en cours{count > 1 ? ` (${count} photos)` : ''}…
       </div>
     </div>
   )
@@ -125,7 +182,7 @@ function ChangeBadge({ value, label }: { value: number; label: string }) {
 }
 
 /* ── Result panel ────────────────────────────────────────────── */
-function ResultPanel({ result, preview, onReset, s }: { result: ScanResult; preview: string; onReset: () => void; s: any }) {
+function ResultPanel({ result, previews, onReset, s }: { result: ScanResult; previews: string[]; onReset: () => void; s: any }) {
   const { identification: id, dbMatch: db } = result
 
   const displayName = db?.name ?? id.resolvedName ?? id.cardName
@@ -147,7 +204,7 @@ function ResultPanel({ result, preview, onReset, s }: { result: ScanResult; prev
 
       {/* Identified header */}
       <div className="flex items-center gap-2 text-sm font-semibold text-green-400">
-        <CheckCircle2 className="w-4 h-4 text-green-400" />
+        <CheckCircle2 className="w-4 h-4" />
         {s.identified} {id.confidence}%
         {id.isFirstEdition && (
           <span className="text-[10px] px-2 py-0.5 rounded-full font-bold"
@@ -165,7 +222,7 @@ function ResultPanel({ result, preview, onReset, s }: { result: ScanResult; prev
             /* eslint-disable-next-line @next/next/no-img-element */
             ? <img src={imageUrl} alt={displayName} className="w-full h-full object-cover" />
             /* eslint-disable-next-line @next/next/no-img-element */
-            : <img src={preview}  alt="preview"     className="w-full h-full object-cover" />
+            : <img src={previews[0]} alt="preview" className="w-full h-full object-cover" />
           }
         </div>
         <div className="flex-1 min-w-0">
@@ -292,42 +349,109 @@ function ResultPanel({ result, preview, onReset, s }: { result: ScanResult; prev
   )
 }
 
+/* ── Photo slot ──────────────────────────────────────────────── */
+function PhotoSlot({
+  index, preview, required, onAdd, onRemove,
+}: {
+  index: number; preview: string | null; required: boolean
+  onAdd: () => void; onRemove: () => void
+}) {
+  if (preview) {
+    return (
+      <div className="relative aspect-[3/4] rounded-xl overflow-hidden flex-1"
+        style={{ border: '1px solid rgba(59,130,246,0.4)' }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={preview} alt={`Photo ${index + 1}`} className="w-full h-full object-cover" />
+        <button onClick={onRemove}
+          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full flex items-center justify-center z-10"
+          style={{ background: 'rgba(0,0,0,0.7)', border: '1px solid rgba(255,255,255,0.2)' }}>
+          <X className="w-3 h-3 text-white" />
+        </button>
+        <div className="absolute bottom-1.5 left-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+          style={{ background: 'rgba(59,130,246,0.8)', color: 'white' }}>
+          Photo {index + 1}
+        </div>
+      </div>
+    )
+  }
+  return (
+    <button onClick={onAdd}
+      className="aspect-[3/4] rounded-xl flex flex-col items-center justify-center gap-2 flex-1 transition-all hover:brightness-110"
+      style={{
+        background: required ? 'rgba(255,203,5,0.05)' : 'rgba(255,255,255,0.03)',
+        border: required ? '2px dashed rgba(255,203,5,0.30)' : '2px dashed rgba(255,255,255,0.12)',
+      }}>
+      {required ? (
+        <>
+          <ImageUp className="w-6 h-6 text-pokemon-yellow/60" />
+          <span className="text-[10px] font-semibold text-pokemon-yellow/60">Photo principale</span>
+          <span className="text-[9px] text-white/25">Obligatoire</span>
+        </>
+      ) : (
+        <>
+          <Plus className="w-5 h-5 text-white/25" />
+          <span className="text-[10px] text-white/25">Photo {index + 1}</span>
+          <span className="text-[9px] text-white/15">Optionnel</span>
+        </>
+      )}
+    </button>
+  )
+}
+
 /* ── Main component ──────────────────────────────────────────── */
 export function ScanUpload() {
   const t = useT()
   const s = t.scan
 
-  const [state, setState]           = useState<ScanState>('idle')
-  const [preview, setPreview]       = useState<string | null>(null)
-  const [fileObj, setFileObj]       = useState<File | null>(null)
+  const [state, setState]       = useState<ScanState>('idle')
+  const [previews, setPreviews] = useState<(string | null)[]>([null, null, null])
+  const [files, setFiles]       = useState<(File | null)[]>([null, null, null])
   const [isDragging, setIsDragging] = useState(false)
-  const [result, setResult]         = useState<ScanResult | null>(null)
-  const [errorMsg, setErrorMsg]     = useState('')
+  const [result, setResult]     = useState<ScanResult | null>(null)
+  const [errorMsg, setErrorMsg] = useState('')
+  const [activeSlot, setActiveSlot] = useState(0)
 
-  const fileRef   = useRef<HTMLInputElement>(null)
-  const cameraRef = useRef<HTMLInputElement>(null)
+  const fileRefs = [
+    useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null), // camera
+  ]
 
-  const processFile = useCallback((file: File) => {
+  const filledCount = files.filter(Boolean).length
+  const hasFiles = filledCount > 0
+  const isPreviewState = hasFiles && state === 'idle'
+
+  const processFile = useCallback((file: File, slot: number) => {
     if (!file.type.startsWith('image/')) return
-    setFileObj(file)
-    setPreview(URL.createObjectURL(file))
-    setState('preview')
+    setFiles(f => { const n = [...f]; n[slot] = file; return n })
+    setPreviews(p => { const n = [...p]; n[slot] = URL.createObjectURL(file); return n })
+    setState('idle')
   }, [])
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]; if (f) processFile(f)
+  const addToSlot = (slot: number) => {
+    setActiveSlot(slot)
+    fileRefs[slot].current?.click()
   }
+
+  const removeSlot = (slot: number) => {
+    setFiles(f => { const n = [...f]; n[slot] = null; return n })
+    setPreviews(p => { const n = [...p]; n[slot] = null; return n })
+    if (fileRefs[slot].current) fileRefs[slot].current!.value = ''
+  }
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault(); setIsDragging(false)
-    const f = e.dataTransfer.files[0]; if (f) processFile(f)
+    const f = e.dataTransfer.files[0]; if (f) processFile(f, 0)
   }, [processFile])
 
   const startScan = async () => {
-    if (!fileObj) return
+    const activeFiles = files.filter(Boolean) as File[]
+    if (!activeFiles.length) return
     setState('scanning'); setErrorMsg('')
     try {
       const form = new FormData()
-      form.append('image', fileObj)
+      activeFiles.forEach((f, i) => form.append(i === 0 ? 'image' : `image${i + 1}`, f))
       const res  = await fetch('/api/ai/scan', { method: 'POST', body: form })
       const data = await res.json()
       if (!res.ok || !data.ok) throw new Error(data.error ?? 'Scan failed')
@@ -340,131 +464,150 @@ export function ScanUpload() {
   }
 
   const reset = () => {
-    setState('idle'); setPreview(null); setFileObj(null)
+    setState('idle')
+    setPreviews([null, null, null])
+    setFiles([null, null, null])
     setResult(null); setErrorMsg('')
-    if (fileRef.current)   fileRef.current.value   = ''
-    if (cameraRef.current) cameraRef.current.value = ''
+    fileRefs.forEach(r => { if (r.current) r.current.value = '' })
   }
+
+  const activePreviews = previews.filter(Boolean) as string[]
 
   return (
     <div className="w-full max-w-md mx-auto space-y-4">
-      <input ref={fileRef}   type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
-      <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileChange} />
+      {/* Hidden file inputs */}
+      {[0, 1, 2].map(i => (
+        <input key={i} ref={fileRefs[i]} type="file" accept="image/*" className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) processFile(f, i) }} />
+      ))}
+      <input ref={fileRefs[3]} type="file" accept="image/*" capture="environment" className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; if (f) processFile(f, 0) }} />
 
       <AnimatePresence mode="wait">
 
-        {/* IDLE */}
-        {state === 'idle' && (
-          <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <div
-              className={`scan-zone relative flex flex-col items-center justify-center min-h-64 p-8 cursor-pointer ${isDragging ? 'drag-over' : ''}`}
-              onDrop={handleDrop}
-              onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
-              onDragLeave={() => setIsDragging(false)}
-              onClick={() => fileRef.current?.click()}
-            >
-              {/* Corner marks */}
-              {['top-3 left-3 border-t-2 border-l-2', 'top-3 right-3 border-t-2 border-r-2',
-                'bottom-3 left-3 border-b-2 border-l-2', 'bottom-3 right-3 border-b-2 border-r-2'].map((cls, i) => (
-                <div key={i} className={`absolute w-5 h-5 border-pokemon-yellow/40 rounded-sm ${cls}`} />
-              ))}
+        {/* IDLE / PREVIEW — not scanning, not result */}
+        {(state === 'idle' || state === 'error') && (
+          <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
 
-              {/* Upload icon */}
-              <motion.div
-                animate={{ y: [0, -6, 0] }}
-                transition={{ duration: 2.5, ease: 'easeInOut', repeat: Infinity }}
-                className="mb-5"
-              >
-                <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
-                  style={{ background: 'rgba(255,203,5,0.10)', border: '1px solid rgba(255,203,5,0.25)' }}>
-                  <ImageUp className="w-7 h-7 text-pokemon-yellow" />
+            {/* Photo tips */}
+            <PhotoTips compact={hasFiles} />
+
+            {hasFiles ? (
+              /* Multi-photo preview */
+              <div className="space-y-3">
+                <p className="text-xs text-white/40 font-medium">
+                  {filledCount} photo{filledCount > 1 ? 's' : ''} ajoutée{filledCount > 1 ? 's' : ''} — plus vous en ajoutez, meilleure est l'identification
+                </p>
+                <div className="flex gap-2">
+                  {[0, 1, 2].map(i => (
+                    <PhotoSlot key={i} index={i} preview={previews[i]}
+                      required={i === 0} onAdd={() => addToSlot(i)} onRemove={() => removeSlot(i)} />
+                  ))}
                 </div>
-              </motion.div>
-
-              <p className="text-base font-bold text-white mb-1">{s.dropTitle}</p>
-              <p className="text-sm text-white/50 text-center mb-6">{s.dropSubtitle}</p>
-
-              <div className="flex gap-2">
-                <button
-                  className="btn-primary px-5 py-2.5 text-sm rounded-xl"
-                  onClick={e => { e.stopPropagation(); fileRef.current?.click() }}
-                >
-                  <Upload className="w-4 h-4" />{s.upload}
-                </button>
-                <button
-                  className="btn-ghost px-5 py-2.5 text-sm rounded-xl"
-                  onClick={e => { e.stopPropagation(); cameraRef.current?.click() }}
-                >
-                  <Camera className="w-4 h-4" />{s.camera}
+                <div className="flex gap-3 mt-2">
+                  <button className="btn-primary flex-1 justify-center py-3 text-base rounded-xl font-bold" onClick={startScan}>
+                    <Zap className="w-5 h-5" />
+                    Analyser {filledCount > 1 ? `${filledCount} photos` : 'la carte'}
+                  </button>
+                  <button className="btn-ghost px-4 py-3 rounded-xl" onClick={reset}>
+                    <RotateCcw className="w-4 h-4" />
+                  </button>
+                </div>
+                <button onClick={() => fileRefs[3].current?.click()}
+                  className="w-full flex items-center justify-center gap-2 py-2 text-xs text-white/35 hover:text-white/55 transition-colors">
+                  <Camera className="w-3.5 h-3.5" />
+                  Prendre une photo directement
                 </button>
               </div>
-              <p className="text-xs text-white/30 mt-4">{s.fileTypes}</p>
-            </div>
+            ) : (
+              /* Drop zone */
+              <div
+                className={`relative flex flex-col items-center justify-center min-h-52 p-6 cursor-pointer rounded-2xl transition-all ${isDragging ? 'drag-over' : ''}`}
+                style={{ background: 'rgba(255,203,5,0.03)', border: '2px dashed rgba(255,203,5,0.25)' }}
+                onDrop={handleDrop}
+                onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
+                onDragLeave={() => setIsDragging(false)}
+                onClick={() => fileRefs[0].current?.click()}
+              >
+                {['top-3 left-3 border-t-2 border-l-2', 'top-3 right-3 border-t-2 border-r-2',
+                  'bottom-3 left-3 border-b-2 border-l-2', 'bottom-3 right-3 border-b-2 border-r-2'].map((cls, i) => (
+                  <div key={i} className={`absolute w-5 h-5 border-pokemon-yellow/40 rounded-sm ${cls}`} />
+                ))}
+                <motion.div animate={{ y: [0, -6, 0] }} transition={{ duration: 2.5, ease: 'easeInOut', repeat: Infinity }} className="mb-4">
+                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
+                    style={{ background: 'rgba(255,203,5,0.10)', border: '1px solid rgba(255,203,5,0.25)' }}>
+                    <ImageUp className="w-6 h-6 text-pokemon-yellow" />
+                  </div>
+                </motion.div>
+                <p className="text-base font-bold text-white mb-1">Déposez une photo ici</p>
+                <p className="text-xs text-white/40 text-center mb-4">ou utilisez les boutons ci-dessous</p>
+                <div className="flex gap-2">
+                  <button className="btn-primary px-4 py-2.5 text-sm rounded-xl"
+                    onClick={e => { e.stopPropagation(); fileRefs[0].current?.click() }}>
+                    <Upload className="w-4 h-4" />{s.upload}
+                  </button>
+                  <button className="btn-ghost px-4 py-2.5 text-sm rounded-xl"
+                    onClick={e => { e.stopPropagation(); fileRefs[3].current?.click() }}>
+                    <Camera className="w-4 h-4" />{s.camera}
+                  </button>
+                </div>
+                <p className="text-[10px] text-white/25 mt-3">JPG, PNG, HEIC jusqu'à 10 MB</p>
+              </div>
+            )}
+
+            {/* Error message */}
+            {state === 'error' && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                className="glass-card p-4 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-white mb-0.5">{s.scanFailed}</p>
+                  <p className="text-xs text-white/50">{errorMsg || s.scanFailedDesc}</p>
+                  <p className="text-xs text-white/35 mt-1">
+                    💡 Essayez avec une meilleure photo : bonne lumière, carte à plat, numéro visible
+                  </p>
+                </div>
+              </motion.div>
+            )}
           </motion.div>
         )}
 
-        {/* PREVIEW / SCANNING */}
-        {(state === 'preview' || state === 'scanning') && preview && (
-          <motion.div key="preview" initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
-            <div
-              className="relative rounded-2xl overflow-hidden"
-              style={{ border: `2px solid ${state === 'scanning' ? 'rgba(59,130,246,0.7)' : 'rgba(59,130,246,0.3)'}` }}
-            >
+        {/* SCANNING */}
+        {state === 'scanning' && activePreviews.length > 0 && (
+          <motion.div key="scanning" initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
+            <div className="relative rounded-2xl overflow-hidden" style={{ border: '2px solid rgba(59,130,246,0.7)' }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={preview} alt="Card preview" className="w-full object-contain max-h-80" />
-              {state === 'scanning' && <ScanBeamOverlay />}
+              <img src={activePreviews[0]} alt="Scanning" className="w-full object-contain max-h-80" />
+              <ScanBeamOverlay count={filledCount} />
             </div>
-
-            {state === 'preview' && (
-              <div className="flex gap-3 mt-4">
-                <button
-                  className="btn-primary flex-1 justify-center py-3 text-base rounded-xl font-bold"
-                  onClick={startScan}
-                >
-                  <Zap className="w-5 h-5" />{s.analyze}
-                </button>
-                <button className="btn-ghost px-4 py-3 rounded-xl" onClick={reset}>
-                  <RotateCcw className="w-4 h-4" />
-                </button>
+            {activePreviews.length > 1 && (
+              <div className="flex gap-2 mt-2">
+                {activePreviews.slice(1).map((p, i) => (
+                  <div key={i} className="w-16 h-20 rounded-lg overflow-hidden flex-shrink-0"
+                    style={{ border: '1px solid rgba(59,130,246,0.3)', opacity: 0.6 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={p} alt="" className="w-full h-full object-cover" />
+                  </div>
+                ))}
               </div>
             )}
-
-            {state === 'scanning' && (
-              <div className="mt-4 glass-card px-4 py-3 flex items-center gap-3">
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, ease: 'linear', repeat: Infinity }}
-                  className="w-5 h-5 rounded-full border-2 border-pokemon-yellow border-t-transparent flex-shrink-0"
-                />
-                <div>
-                  <p className="text-sm font-semibold text-white">{s.analyzing}</p>
-                  <p className="text-xs text-white/50">{s.analyzingDetail}</p>
-                </div>
+            <div className="mt-3 glass-card px-4 py-3 flex items-center gap-3">
+              <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, ease: 'linear', repeat: Infinity }}
+                className="w-5 h-5 rounded-full border-2 border-pokemon-yellow border-t-transparent flex-shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-white">{s.analyzing}</p>
+                <p className="text-xs text-white/50">
+                  {filledCount > 1 ? `Analyse de ${filledCount} photos pour une identification optimale…` : s.analyzingDetail}
+                </p>
               </div>
-            )}
+            </div>
           </motion.div>
         )}
 
         {/* RESULT */}
-        {state === 'result' && result && preview && (
+        {state === 'result' && result && activePreviews.length > 0 && (
           <motion.div key="result" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <ResultPanel result={result} preview={preview} onReset={reset} s={s} />
-          </motion.div>
-        )}
-
-        {/* ERROR */}
-        {state === 'error' && (
-          <motion.div key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <div className="glass-card p-6 text-center space-y-4">
-              <AlertCircle className="w-10 h-10 text-red-500 mx-auto" />
-              <div>
-                <p className="font-bold text-white mb-1">{s.scanFailed}</p>
-                <p className="text-sm text-white/50">{errorMsg || s.scanFailedDesc}</p>
-              </div>
-              <button className="btn-primary w-full justify-center py-3 rounded-xl" onClick={reset}>
-                <RotateCcw className="w-4 h-4" />{s.tryAgain}
-              </button>
-            </div>
+            <ResultPanel result={result} previews={activePreviews} onReset={reset} s={s} />
           </motion.div>
         )}
 

@@ -288,18 +288,54 @@ export async function POST(req: NextRequest) {
 
   try {
     const form = await req.formData()
-    const file = form.get('image') as File | null
-    if (!file) return NextResponse.json({ ok: false, error: 'No image provided' }, { status: 400 })
-    if (file.size > 10 * 1024 * 1024) return NextResponse.json({ ok: false, error: 'Image too large (max 10MB)' }, { status: 400 })
 
-    const b64  = Buffer.from(await file.arrayBuffer()).toString('base64')
-    const mime = file.type || 'image/jpeg'
-
-    // 1. AI
-    const hint = await runAI(b64, mime)
-    if (!hint?.cardName && !hint?.englishName && !hint?.cardNumber) {
-      return NextResponse.json({ ok: false, error: 'Carte non reconnue — essaie avec une photo plus nette et bien éclairée' }, { status: 422 })
+    // Collect all uploaded images (up to 3)
+    const imageFiles: File[] = []
+    for (const key of ['image', 'image2', 'image3']) {
+      const f = form.get(key) as File | null
+      if (f && f.size > 0) {
+        if (f.size > 10 * 1024 * 1024) return NextResponse.json({ ok: false, error: 'Image trop grande (max 10MB)' }, { status: 400 })
+        imageFiles.push(f)
+      }
     }
+    if (!imageFiles.length) return NextResponse.json({ ok: false, error: 'No image provided' }, { status: 400 })
+
+    // 1. AI — run all images in parallel, pick best result
+    const aiResults = await Promise.all(
+      imageFiles.map(async (f) => {
+        const b64  = Buffer.from(await f.arrayBuffer()).toString('base64')
+        const mime = f.type || 'image/jpeg'
+        return runAI(b64, mime)
+      })
+    )
+
+    // Score completeness: setId=3pts, cardNumber=2pts, cardName=1pt
+    function scoreResult(r: AiResult | null): number {
+      if (!r) return 0
+      return (r.setId ? 3 : 0) + (r.cardNumber ? 2 : 0) + (r.cardName || r.englishName ? 1 : 0)
+    }
+
+    // Merge: pick best hint, supplement missing fields from other results
+    const sorted = [...aiResults].sort((a, b) => scoreResult(b) - scoreResult(a))
+    const primary = sorted[0]
+
+    if (!primary?.cardName && !primary?.englishName && !primary?.cardNumber) {
+      const count = imageFiles.length
+      const advice = count < 2
+        ? 'Essaie avec 2-3 photos : recto bien éclairé, numéro visible en bas, carte à plat'
+        : 'Vérifiez que le numéro en bas est visible et que la carte est bien éclairée sans reflet'
+      return NextResponse.json({ ok: false, error: `Carte non reconnue. ${advice}` }, { status: 422 })
+    }
+
+    // Merge missing fields from other results
+    const hint: AiResult = { ...primary! }
+    for (const r of sorted.slice(1)) {
+      if (!hint.setId && r?.setId) hint.setId = r.setId
+      if (!hint.cardNumber && r?.cardNumber) hint.cardNumber = r.cardNumber
+      if (!hint.cardName && r?.cardName) hint.cardName = r.cardName
+      if (!hint.englishName && r?.englishName) hint.englishName = r.englishName
+    }
+    console.log(`[scan] merged from ${imageFiles.length} images: "${hint.englishName}" #${hint.cardNumber} set=${hint.setId}`)
 
     // 2. DB search
     let card = await findCard(hint!)
