@@ -13,6 +13,7 @@ import { Toaster } from 'react-hot-toast'
 import '@/styles/globals.css'
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'https://pokemon-card-analyzer-web-git-main-cocochaps-projects.vercel.app'),
   title: {
     default: 'PokeScard — Pokémon TCG Intelligence Platform',
     template: '%s | PokeScard',
