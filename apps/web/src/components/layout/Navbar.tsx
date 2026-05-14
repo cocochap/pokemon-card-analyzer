@@ -85,7 +85,7 @@ export function Navbar() {
 
             {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-0.5 flex-1 justify-center">
-              {navLinks.slice(0, 5).map(({ href, label, icon: Icon, badge }) => {
+              {navLinks.slice(0, 6).map(({ href, label, icon: Icon, badge }) => {
                 const isActive = pathname === href || (href !== '/' && pathname.startsWith(href))
                 return (
                   <Link key={href} href={href}
