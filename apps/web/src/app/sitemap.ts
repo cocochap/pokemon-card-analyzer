@@ -60,5 +60,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }
   })
 
-  return [...statics, ...setUrls, ...cardUrls]
+  // Sealed products
+  const sealedProducts = await prisma.sealedProduct.findMany({
+    select: { slug: true, updatedAt: true, investmentScore: true },
+  })
+  const sealedUrls: MetadataRoute.Sitemap = sealedProducts.map(p => ({
+    url: `${BASE}/sealed/${p.slug}`,
+    lastModified: p.updatedAt ?? now,
+    changeFrequency: 'weekly',
+    priority: (p.investmentScore ?? 0) >= 70 ? 0.8 : 0.6,
+  }))
+
+  return [...statics, ...setUrls, ...cardUrls, ...sealedUrls]
 }

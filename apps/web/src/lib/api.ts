@@ -47,8 +47,6 @@ export const api = {
     getSimilar: (id: string, setId?: string) =>
       fetcher(`/api/cards/${id}/similar${qs({ setId })}`),
 
-    getTrending: (limit = 20) =>
-      fetcher(`/api/cards/trending${qs({ limit })}`),
   },
 
   // ─── MARKET ───────────────────────────────────────────────────────────────
@@ -100,11 +98,6 @@ export const api = {
     deleteItem: (itemId: string) =>
       fetcher(`/api/portfolio/items/${itemId}`, { method: 'DELETE' }),
 
-    importCsv: (file: File) => {
-      const form = new FormData()
-      form.append('file', file)
-      return fetch('/api/portfolio/import', { method: 'POST', body: form }).then((r) => r.json())
-    },
   },
 
   // ─── ALERTS ───────────────────────────────────────────────────────────────
@@ -154,8 +147,5 @@ export const api = {
   payments: {
     createCheckoutSession: (tier: string) =>
       fetcher('/api/payments/checkout', { method: 'POST', body: JSON.stringify({ tier }) }),
-
-    getSubscription: () =>
-      fetcher('/api/payments/subscription'),
   },
 }
