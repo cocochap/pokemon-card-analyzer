@@ -8,6 +8,7 @@ import { InvestmentPickCard } from '@/components/ai/InvestmentPickCard'
 import { FeaturedPickHero } from '@/components/ai/FeaturedPickHero'
 import { AiLockedState } from '@/components/ai/AiLockedState'
 import { Sparkles, TrendingUp, Gem, Clock, Trophy, Zap } from 'lucide-react'
+import { SealedPicksSection } from '@/components/sealed/SealedPicksSection'
 
 async function fetchPicks(period: string) {
   const res = await fetch(`/api/ai/picks?period=${period}`)
@@ -193,6 +194,11 @@ export default function AiPage() {
                 )}
               </section>
             )}
+
+            {/* Sealed products — Elite */}
+            <section>
+              <SealedPicksSection />
+            </section>
 
             {/* Disclaimer */}
             <p className="text-xs text-muted-foreground/50 text-center pb-4">

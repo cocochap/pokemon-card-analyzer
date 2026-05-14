@@ -141,6 +141,7 @@ model User {
   subscriptions    Subscription[]
   apiKeys          ApiKey[]
   scanUsage        ScanUsage[]
+  sealedPortfolio  SealedPortfolioItem[]
 
   @@index([clerkId])
   @@index([email])
@@ -203,7 +204,6 @@ model PokemonSet {
   updatedAt    DateTime  @updatedAt
 
   cards        Card[]
-  sealedProducts SealedProduct[]
   marketData   SetMarketData[]
 
   @@index([series])
@@ -472,38 +472,7 @@ model PricePrediction {
 // SEALED PRODUCTS
 // ============================================================
 
-model SealedProduct {
-  id          String   @id @default(cuid())
-  setId       String
-  name        String
-  type        String
-  language    Language @default(EN)
-  msrp        Decimal? @db.Decimal(10, 2)
-  imageUrl    String?
-  releaseDate DateTime?
-  isRetail    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  set        PokemonSet         @relation(fields: [setId], references: [id])
-  prices     SealedProductPrice[]
-
-  @@index([setId])
-}
-
-model SealedProductPrice {
-  id        String   @id @default(cuid())
-  productId String
-  source    String
-  price     Decimal  @db.Decimal(10, 2)
-  currency  String   @default("EUR")
-  url       String?
-  updatedAt DateTime @updatedAt
-
-  product SealedProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  @@unique([productId, source])
-}
+// SealedProduct and SealedProductPrice replaced by the richer models below
 
 // ============================================================
 // PORTFOLIO
@@ -675,6 +644,99 @@ model ScanUsage {
 // ============================================================
 // INVESTMENT PICKS (AI-generated)
 // ============================================================
+
+// ============================================================
+// SEALED PRODUCTS
+// ============================================================
+
+model SealedProduct {
+  id              String    @id @default(cuid())
+  slug            String    @unique
+  name            String
+  nameFr          String?
+  type            String    // BOOSTER_BOX | ETB | COLLECTION | BLISTER | COFFRET | BUNDLE | TIN
+  setId           String?
+  setName         String?
+  series          String?
+  language        String    @default("FR")
+  releaseDate     DateTime?
+  isDiscontinued  Boolean   @default(false)
+  retailPrice     Float?
+  imageUrl        String?
+  cardmarketUrl   String?
+  description     String?   @db.Text
+  investmentScore Float?
+  scarcityScore   Float?
+  popularityScore Float?
+  trendDirection  String?   // BULLISH | BEARISH | STABLE
+  bullish         String[]
+  bearish         String[]
+  horizon         String?
+  riskLevel       String?
+  narrative       String?   @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  priceHistory    SealedPriceHistory[]
+  portfolioItems  SealedPortfolioItem[]
+  picks           SealedPick[]
+
+  @@index([type])
+  @@index([isDiscontinued])
+}
+
+model SealedPriceHistory {
+  id        String   @id @default(cuid())
+  productId String
+  price     Float
+  source    String   @default("cardmarket")
+  recordedAt DateTime @default(now())
+
+  product SealedProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, recordedAt])
+}
+
+model SealedPortfolioItem {
+  id            String    @id @default(cuid())
+  userId        String
+  productId     String
+  quantity      Int       @default(1)
+  purchasePrice Float?
+  purchasedAt   DateTime?
+  condition     String    @default("SEALED")
+  notes         String?
+  createdAt     DateTime  @default(now())
+
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product SealedProduct @relation(fields: [productId], references: [id])
+
+  @@index([userId])
+  @@index([productId])
+}
+
+model SealedPick {
+  id        String   @id @default(cuid())
+  productId String
+  period    String
+  pickType  String
+  rank      Int      @default(1)
+  score     Float
+  narrative String   @db.Text
+  bullish   String[]
+  bearish   String[]
+  priceAtPick Float
+  targetLow   Float?
+  targetHigh  Float?
+  horizon     String?
+  riskLevel   String?
+  createdAt DateTime @default(now())
+
+  product SealedProduct @relation(fields: [productId], references: [id])
+
+  @@unique([productId, period, pickType])
+  @@index([period, pickType])
+}
 
 model InvestmentPick {
   id          String   @id @default(cuid())
