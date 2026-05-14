@@ -7,7 +7,7 @@ import { usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { SignInButton, SignedIn, SignedOut, UserButton } from '@clerk/nextjs'
 import {
-  BarChart3, Bell, Briefcase, Camera, Home, Menu, Search,
+  BarChart3, Bell, Briefcase, Camera, Home, Menu, Package, Search,
   Sparkles, TrendingUp, X, Zap,
 } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -28,6 +28,7 @@ export function Navbar() {
     { href: '/',          label: t.nav.market,    icon: Home },
     { href: '/cards',     label: t.nav.cards,     icon: BarChart3 },
     { href: '/sets',      label: t.nav.sets,      icon: TrendingUp },
+    { href: '/sealed',    label: 'Coffrets',      icon: Package },
     { href: '/portfolio', label: t.nav.portfolio, icon: Briefcase },
     { href: '/ai',        label: t.nav.aiInsights,icon: Sparkles, badge: 'AI' },
     { href: '/scan',      label: t.nav.scan,      icon: Camera },
