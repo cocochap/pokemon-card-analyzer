@@ -9,7 +9,7 @@ import {
 import Link from 'next/link'
 import { useT } from '@/lib/i18n/LanguageContext'
 
-type ScanState = 'idle' | 'preview' | 'scanning' | 'result' | 'error'
+type ScanState = 'idle' | 'preview' | 'scanning' | 'candidates' | 'result' | 'error'
 
 interface Identification {
   cardName:       string
@@ -21,6 +21,17 @@ interface Identification {
   isFirstEdition?: boolean
   resolvedName?:  string
   resolvedId?:    string
+}
+
+interface Candidate {
+  id:       string
+  name:     string
+  number:   string
+  rarity:   string
+  imageUrl: string | null
+  setName:  string
+  setId:    string
+  price:    number | null
 }
 
 interface DbMatch {
@@ -349,6 +360,148 @@ function ResultPanel({ result, previews, onReset, s }: { result: ScanResult; pre
   )
 }
 
+/* ── Candidate picker ────────────────────────────────────────── */
+function CandidatePicker({
+  candidates, identification, onSelect, onReset,
+}: {
+  candidates: Candidate[]
+  identification: Identification
+  onSelect: (id: string) => void
+  onReset: () => void
+}) {
+  const [selected, setSelected] = useState<string | null>(null)
+  const [showSearch, setShowSearch] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<Candidate[]>([])
+  const [searching, setSearching] = useState(false)
+
+  const handleSearchInput = async (q: string) => {
+    setSearchQuery(q)
+    if (q.trim().length < 2) { setSearchResults([]); return }
+    setSearching(true)
+    try {
+      const res = await fetch(`/api/cards?q=${encodeURIComponent(q.trim())}&limit=8`)
+      if (!res.ok) throw new Error('search failed')
+      const data = await res.json()
+      const cards: any[] = data.cards ?? data.data ?? data ?? []
+      setSearchResults(cards.map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        number: c.number,
+        rarity: c.rarity ?? '',
+        imageUrl: c.imageLgUrl ?? c.imageSmUrl ?? null,
+        setName: c.set?.name ?? '',
+        setId: c.set?.externalId ?? '',
+        price: Number(c.prices?.find((p: any) => p.source === 'cardmarket')?.market ?? c.prices?.[0]?.market ?? 0) || null,
+      })))
+    } catch { /* ignore */ }
+    finally { setSearching(false) }
+  }
+
+  const aiLabel = [identification.cardName, identification.cardNumber].filter(Boolean).join(' #')
+
+  const displayCandidates = showSearch ? searchResults : candidates
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="space-y-4">
+      <div>
+        <h3 className="text-lg font-bold text-white">Quelle est votre carte ?</h3>
+        {aiLabel && <p className="text-xs text-white/45 mt-0.5">IA a lu : {aiLabel}</p>}
+      </div>
+
+      {showSearch ? (
+        <div className="space-y-3">
+          <input
+            autoFocus
+            type="text"
+            value={searchQuery}
+            onChange={e => handleSearchInput(e.target.value)}
+            placeholder="Tapez le nom ou numéro de la carte"
+            className="w-full px-3 py-2.5 rounded-xl text-sm text-white placeholder-white/30 outline-none"
+            style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)' }}
+          />
+          {searching && <p className="text-xs text-white/40">Recherche…</p>}
+        </div>
+      ) : null}
+
+      {displayCandidates.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {displayCandidates.map(c => (
+            <button
+              key={c.id}
+              onClick={() => { setSelected(c.id); onSelect(c.id) }}
+              className="relative flex flex-col rounded-xl overflow-hidden text-left transition-all hover:brightness-110 focus:outline-none"
+              style={{
+                border: selected === c.id
+                  ? '2px solid rgba(255,203,5,0.9)'
+                  : '1px solid rgba(255,255,255,0.10)',
+                background: 'rgba(255,255,255,0.04)',
+              }}
+            >
+              {/* Card image */}
+              <div className="w-full" style={{ aspectRatio: '3/4', background: 'rgba(0,0,0,0.3)' }}>
+                {c.imageUrl
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  ? <img src={c.imageUrl} alt={c.name} className="w-full h-full object-contain" />
+                  : <div className="w-full h-full flex items-center justify-center text-white/20 text-xs">No image</div>
+                }
+              </div>
+              {/* Info */}
+              <div className="p-2 flex-1">
+                <p className="text-xs font-semibold text-white leading-tight line-clamp-2">{c.name}</p>
+                <p className="text-[10px] text-white/40 mt-0.5">#{c.number}</p>
+                {c.setName && <p className="text-[10px] text-white/30 truncate">{c.setName}</p>}
+                {c.price != null && (
+                  <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                    style={{ background: 'rgba(255,203,5,0.12)', border: '1px solid rgba(255,203,5,0.25)', color: '#FFCB05' }}>
+                    {c.price.toFixed(2)} €
+                  </span>
+                )}
+              </div>
+              {/* Checkmark overlay when selected */}
+              {selected === c.id && (
+                <div className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center"
+                  style={{ background: 'rgba(255,203,5,0.9)' }}>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-black" />
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!showSearch && displayCandidates.length === 0 && (
+        <p className="text-sm text-white/40">Aucun candidat trouvé.</p>
+      )}
+
+      <div className="flex flex-col gap-2">
+        {!showSearch ? (
+          <button
+            onClick={() => setShowSearch(true)}
+            className="text-xs text-white/40 hover:text-white/65 transition-colors underline underline-offset-2 text-left"
+          >
+            Aucune de ces cartes ?
+          </button>
+        ) : (
+          <button
+            onClick={() => { setShowSearch(false); setSearchQuery(''); setSearchResults([]) }}
+            className="text-xs text-white/40 hover:text-white/65 transition-colors underline underline-offset-2 text-left"
+          >
+            Retour aux suggestions
+          </button>
+        )}
+        <button
+          onClick={onReset}
+          className="flex items-center gap-1.5 text-xs text-white/35 hover:text-white/55 transition-colors"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+          Rescanner
+        </button>
+      </div>
+    </motion.div>
+  )
+}
+
 /* ── Photo slot ──────────────────────────────────────────────── */
 function PhotoSlot({
   index, preview, required, onAdd, onRemove,
@@ -403,13 +556,15 @@ export function ScanUpload() {
   const t = useT()
   const s = t.scan
 
-  const [state, setState]       = useState<ScanState>('idle')
-  const [previews, setPreviews] = useState<(string | null)[]>([null, null, null])
-  const [files, setFiles]       = useState<(File | null)[]>([null, null, null])
+  const [state, setState]           = useState<ScanState>('idle')
+  const [previews, setPreviews]     = useState<(string | null)[]>([null, null, null])
+  const [files, setFiles]           = useState<(File | null)[]>([null, null, null])
   const [isDragging, setIsDragging] = useState(false)
-  const [result, setResult]     = useState<ScanResult | null>(null)
-  const [errorMsg, setErrorMsg] = useState('')
+  const [result, setResult]         = useState<ScanResult | null>(null)
+  const [errorMsg, setErrorMsg]     = useState('')
   const [activeSlot, setActiveSlot] = useState(0)
+  const [candidates, setCandidates] = useState<Candidate[]>([])
+  const [scanIdentification, setScanIdentification] = useState<Identification | null>(null)
 
   const fileRefs = [
     useRef<HTMLInputElement>(null),
@@ -455,10 +610,101 @@ export function ScanUpload() {
       const res  = await fetch('/api/ai/scan', { method: 'POST', body: form })
       const data = await res.json()
       if (!res.ok || !data.ok) throw new Error(data.error ?? 'Scan failed')
-      setResult(data as ScanResult)
-      setState('result')
+
+      const apiCandidates: Candidate[] = data.candidates ?? []
+      setScanIdentification(data.identification ?? null)
+      setCandidates(apiCandidates)
+
+      if (apiCandidates.length >= 1) {
+        setState('candidates')
+      } else {
+        setState('error')
+        setErrorMsg('Carte non reconnue. Essayez avec une photo plus nette.')
+      }
     } catch (e: any) {
       setErrorMsg(e.message ?? 'Unknown error')
+      setState('error')
+    }
+  }
+
+  const selectCandidate = async (cardId: string) => {
+    try {
+      const res = await fetch(`/api/cards/${cardId}`)
+      if (!res.ok) throw new Error('Card not found')
+      const card = await res.json()
+
+      // Build identification from scan result or fallback to card data
+      const ident: Identification = scanIdentification ?? {
+        cardName: card.name,
+        cardNumber: card.number,
+        setName: card.set?.name ?? '',
+        setId: card.set?.externalId ?? '',
+        language: 'FR',
+        confidence: 100,
+      }
+
+      // Build dbMatch from card detail
+      const cmPrice = card.prices?.find((p: any) => p.source === 'cardmarket') ?? card.prices?.[0] ?? null
+      const price = Number(cmPrice?.market ?? 0)
+      const md = card.marketData ?? null
+      const ai = card.aiAnalysis ?? null
+
+      const roi1y  = Number(md?.priceChange1y ?? 0)
+      const roi90d = Number(ai?.predictedRoi90d ?? 0) * 4
+      const rate   = roi1y !== 0 ? roi1y : roi90d !== 0 ? roi90d : 8
+      const proj = price > 0 ? {
+        y1: { value: Math.round(price * Math.pow(1 + rate / 100, 1)  * 100) / 100 },
+        y3: { value: Math.round(price * Math.pow(1 + rate / 100, 3)  * 100) / 100 },
+        y5: { value: Math.round(price * Math.pow(1 + rate / 100, 5)  * 100) / 100 },
+        y10:{ value: Math.round(price * Math.pow(1 + rate / 100, 10) * 100) / 100 },
+      } : null
+
+      const pred365 = ai?.predictions?.find((p: any) => p.horizonDays === 365)
+
+      const dbMatch: DbMatch = {
+        id: card.id,
+        name: card.name,
+        number: card.number,
+        rarity: card.rarity ?? '',
+        imageUrl: card.imageLgUrl ?? card.imageSmUrl ?? null,
+        set: { name: card.set?.name ?? '', externalId: card.set?.externalId ?? '', releaseDate: card.set?.releaseDate ?? null },
+        price: price > 0 ? {
+          market: price,
+          low: Number(cmPrice?.low ?? 0),
+          high: Number(cmPrice?.high ?? 0),
+          currency: cmPrice?.currency ?? 'EUR',
+        } : null,
+        market: md ? {
+          investmentScore: md.investmentScore ?? 0,
+          rarityScore: md.rarityScore ?? 0,
+          liquidityScore: md.liquidityScore ?? 0,
+          trendDirection: md.trendDirection ?? '',
+          change7d: Number(md.priceChange7d ?? 0),
+          change30d: Number(md.priceChange30d ?? 0),
+          change1y: Number(md.priceChange1y ?? 0),
+          allTimeHigh: Number(md.allTimeHigh ?? 0),
+          volatility: Number(md.volatility30d ?? 0),
+        } : null,
+        ai: ai ? {
+          investmentScore: ai.investmentScore ?? 0,
+          trendDirection: ai.trendDirection ?? '',
+          bullishSignals: (ai.bullishSignals ?? []).slice(0, 3),
+          bearishSignals: (ai.bearishSignals ?? []).slice(0, 2),
+          keyInsight: ai.keyInsight ?? null,
+          pred1y: pred365 ? {
+            value: Number(pred365.predictedPrice),
+            low: Number(pred365.lowerBound),
+            high: Number(pred365.upperBound),
+          } : null,
+        } : null,
+        projections: proj,
+        annualGrowthRate: rate,
+      }
+
+      setResult({ identification: ident, dbMatch })
+      setState('result')
+    } catch (e: any) {
+      setErrorMsg(e.message ?? 'Failed to load card')
       setState('error')
     }
   }
@@ -467,7 +713,7 @@ export function ScanUpload() {
     setState('idle')
     setPreviews([null, null, null])
     setFiles([null, null, null])
-    setResult(null); setErrorMsg('')
+    setResult(null); setErrorMsg(''); setCandidates([]); setScanIdentification(null)
     fileRefs.forEach(r => { if (r.current) r.current.value = '' })
   }
 
@@ -601,6 +847,18 @@ export function ScanUpload() {
                 </p>
               </div>
             </div>
+          </motion.div>
+        )}
+
+        {/* CANDIDATES */}
+        {state === 'candidates' && scanIdentification && (
+          <motion.div key="candidates" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <CandidatePicker
+              candidates={candidates}
+              identification={scanIdentification}
+              onSelect={selectCandidate}
+              onReset={reset}
+            />
           </motion.div>
         )}
 

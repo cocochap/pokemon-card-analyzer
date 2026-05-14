@@ -109,6 +109,13 @@ const SEL = {
   aiAnalysis: { select: { investmentScore: true, predictedRoi90d: true, trendDirection: true, bullishSignals: true, bearishSignals: true, keyInsight: true, predictions: { select: { horizonDays: true, predictedPrice: true, lowerBound: true, upperBound: true }, orderBy: { horizonDays: 'asc' } as any } } },
 }
 
+// Lighter select for candidate list
+const CAND_SEL = {
+  id: true, name: true, number: true, rarity: true, imageSmUrl: true, imageLgUrl: true,
+  set: { select: { name: true, externalId: true } },
+  prices: { where: { source: 'cardmarket' }, orderBy: { updatedAt: 'desc' } as any, take: 1, select: { market: true } },
+}
+
 // ── Infer possible sets from number format ─────────────────────
 function numberSetHints(num: string): string[] {
   const n = num.toUpperCase()
@@ -219,6 +226,84 @@ async function findCard(hint: AiResult): Promise<any | null> {
   }
 
   return null
+}
+
+// ── Candidate finder: returns up to 5 ranked candidates ───────
+async function findCandidates(hint: AiResult): Promise<any[]> {
+  const frName   = (hint.cardName    ?? '').trim()
+  const enName   = (hint.englishName ?? '').trim()
+  const numFull  = (hint.cardNumber  ?? '').split('/')[0].trim()
+  const numClean = numFull.replace(/^0+(?=[0-9])/, '')
+
+  const seen = new Map<string, any>() // id → card
+
+  const add = (cards: any[]) => {
+    for (const c of cards) if (!seen.has(c.id)) seen.set(c.id, c)
+  }
+
+  // Strategy 1: externalId exact matches
+  const candidateIds = new Set<string>()
+  if (hint.setId) {
+    candidateIds.add(`${hint.setId}-${numFull}`)
+    candidateIds.add(`${hint.setId}-${numClean}`)
+    if (numClean && numClean !== numFull) candidateIds.add(`${hint.setId}-${numClean.padStart(3, '0')}`)
+  }
+  for (const s of numberSetHints(numFull)) {
+    candidateIds.add(`${s}-${numFull}`)
+    candidateIds.add(`${s}-${numClean}`)
+  }
+  for (const extId of candidateIds) {
+    const r = await prisma.card.findUnique({ where: { externalId: extId }, select: CAND_SEL })
+    if (r) add([r])
+  }
+
+  // Strategy 2: name + number
+  for (const name of [frName, enName].filter(Boolean)) {
+    if (!name || !numFull) continue
+    const rows = await prisma.card.findMany({
+      where: { name: { contains: name, mode: 'insensitive' }, OR: [{ number: numFull }, { number: numClean }] },
+      select: CAND_SEL, take: 10,
+    })
+    add(rows)
+  }
+
+  // Strategy 3: number alone — return all (up to 10), score by name match
+  if (numFull) {
+    const byNum = await prisma.card.findMany({
+      where: { OR: [{ number: numFull }, { number: numClean }] },
+      select: CAND_SEL, take: 10,
+    })
+    add(byNum)
+  }
+
+  // Strategy 4: name alone — top 10, scored by number match
+  const searchName = frName || enName
+  if (searchName) {
+    const byName = await prisma.card.findMany({
+      where: { name: { contains: searchName, mode: 'insensitive' } },
+      select: CAND_SEL, take: 10,
+    })
+    add(byName)
+  }
+
+  // Score & rank all collected candidates
+  const allCandidates = Array.from(seen.values())
+  const scored = allCandidates.map(c => {
+    let s = 0
+    const cn = c.number.split('/')[0].trim()
+    if (cn === numFull || cn === numClean) s += 30
+    else if (numFull && cn.replace(/^[A-Z]+/, '') === numFull.replace(/^[A-Z]+/, '')) s += 10
+    if (hint.setId && c.set.externalId === hint.setId) s += 15
+    const cNameLower = c.name.toLowerCase()
+    if (frName && cNameLower === frName.toLowerCase()) s += 10
+    else if (enName && cNameLower === enName.toLowerCase()) s += 10
+    else if (frName && cNameLower.startsWith(frName.split(' ')[0].toLowerCase())) s += 3
+    else if (enName && cNameLower.startsWith(enName.split(' ')[0].toLowerCase())) s += 3
+    if (Number(c.prices?.[0]?.market ?? 0) > 0) s += 1
+    return { c, s }
+  })
+  scored.sort((a, b) => b.s - a.s)
+  return scored.slice(0, 5).map(({ c }) => c)
 }
 
 // ── pokemontcg.io API fallback ────────────────────────────────
@@ -337,7 +422,7 @@ export async function POST(req: NextRequest) {
     }
     console.log(`[scan] merged from ${imageFiles.length} images: "${hint.englishName}" #${hint.cardNumber} set=${hint.setId}`)
 
-    // 2. DB search
+    // 2. DB search (best match + candidates in parallel)
     let card = await findCard(hint!)
 
     // 3. pokemontcg.io fallback
@@ -355,6 +440,40 @@ export async function POST(req: NextRequest) {
         })
         card = await findCard(hint!)
       } catch { /* ignore */ }
+    }
+
+    // 4b. Find candidates for confirmation step
+    const rawCandidates = await findCandidates(hint!)
+
+    // Build candidates list: ensure best match appears first, dedup by id
+    const candidateIds = new Set<string>()
+    const candidateList: Array<{
+      id: string; name: string; number: string; rarity: string
+      imageUrl: string | null; setName: string; setId: string
+      price: number | null
+    }> = []
+
+    const buildCandidate = (c: any) => ({
+      id: c.id,
+      name: c.name,
+      number: c.number,
+      rarity: c.rarity ?? '',
+      imageUrl: c.imageLgUrl ?? c.imageSmUrl ?? null,
+      setName: c.set?.name ?? '',
+      setId: c.set?.externalId ?? '',
+      price: Number(c.prices?.[0]?.market ?? 0) || null,
+    })
+
+    if (card && !candidateIds.has(card.id)) {
+      candidateIds.add(card.id)
+      candidateList.push(buildCandidate(card))
+    }
+    for (const c of rawCandidates) {
+      if (!candidateIds.has(c.id)) {
+        candidateIds.add(c.id)
+        candidateList.push(buildCandidate(c))
+        if (candidateList.length >= 5) break
+      }
     }
 
     // 5. Build response
@@ -376,6 +495,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       identification: hint,
+      candidates: candidateList,
       dbMatch: card ? {
         id: card.id, name: card.name, number: card.number, rarity: card.rarity,
         imageUrl: card.imageLgUrl ?? card.imageSmUrl,
