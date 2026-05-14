@@ -8,6 +8,7 @@ const links = {
   Produit: [
     { label: 'Scanner une carte', href: '/scan' },
     { label: 'Explorer les cartes', href: '/cards' },
+    { label: 'Coffrets scellés', href: '/sealed' },
     { label: 'Extensions', href: '/sets' },
     { label: 'IA Insights', href: '/ai' },
   ],

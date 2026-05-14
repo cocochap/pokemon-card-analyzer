@@ -28,9 +28,9 @@ export function Navbar() {
     { href: '/',          label: t.nav.market,    icon: Home },
     { href: '/cards',     label: t.nav.cards,     icon: BarChart3 },
     { href: '/sets',      label: t.nav.sets,      icon: TrendingUp },
-    { href: '/sealed',    label: 'Coffrets',      icon: Package },
     { href: '/portfolio', label: t.nav.portfolio, icon: Briefcase },
     { href: '/ai',        label: t.nav.aiInsights,icon: Sparkles, badge: 'AI' },
+    { href: '/sealed',    label: 'Coffrets',      icon: Package },
     { href: '/scan',      label: t.nav.scan,      icon: Camera },
   ]
 
