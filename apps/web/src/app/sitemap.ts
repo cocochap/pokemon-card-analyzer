@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db/prisma'
 
 export const revalidate = 86400 // 24h
 
-const BASE = process.env.NEXT_PUBLIC_APP_URL ?? 'https://pokemon-card-analyzer-web-git-main-cocochaps-projects.vercel.app'
+const BASE = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.pokescard.fr'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date()
