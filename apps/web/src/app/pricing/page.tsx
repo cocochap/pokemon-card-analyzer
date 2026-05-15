@@ -102,8 +102,16 @@ function PlanButton({ planKey, currentTier, isSignedIn }: {
         body: JSON.stringify({ plan: planKey }),
       })
       const data = await res.json()
-      if (data.url) window.location.href = data.url
-    } catch { setLoading(false) }
+      if (data.url) {
+        window.location.href = data.url
+      } else {
+        alert(`Erreur paiement : ${data.error ?? 'URL manquante'}`)
+        setLoading(false)
+      }
+    } catch (e: any) {
+      alert(`Erreur : ${e.message}`)
+      setLoading(false)
+    }
   }
 
   const handlePortal = async () => {
