@@ -101,15 +101,17 @@ function PlanButton({ planKey, currentTier, isSignedIn }: {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan: planKey }),
       })
-      const data = await res.json()
+      const text = await res.text()
+      let data: any = {}
+      try { data = JSON.parse(text) } catch { /* not json */ }
       if (data.url) {
         window.location.href = data.url
       } else {
-        alert(`Erreur paiement : ${data.error ?? 'URL manquante'}`)
+        alert(`Erreur ${res.status}: ${data.error ?? text.slice(0, 200) ?? 'Réponse vide'}`)
         setLoading(false)
       }
     } catch (e: any) {
-      alert(`Erreur : ${e.message}`)
+      alert(`Erreur réseau : ${e.message}`)
       setLoading(false)
     }
   }
