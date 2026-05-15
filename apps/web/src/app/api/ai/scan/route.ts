@@ -341,6 +341,18 @@ function project(p: number, r: number, y: number) {
   return Math.round(p * Math.pow(1 + r / 100, y) * 100) / 100
 }
 
+// Derive a meaningful annual growth rate from investment score when no price history exists
+function rateFromScore(investmentScore: number, rarityScore: number): number {
+  const score = investmentScore || 50
+  if (score >= 90) return 40
+  if (score >= 80) return 28
+  if (score >= 70) return 18
+  if (score >= 60) return 12
+  if (score >= 50) return 7
+  if (score >= 40) return 3
+  return 1
+}
+
 // ── Handler ───────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   if (!process.env.GEMINI_API_KEY) {
@@ -482,7 +494,8 @@ export async function POST(req: NextRequest) {
     const ai         = card?.aiAnalysis ?? null
     const roi1y      = Number(md?.priceChange1y ?? 0)
     const roi90d     = Number(ai?.predictedRoi90d ?? 0) * 4
-    const rate       = roi1y !== 0 ? roi1y : roi90d !== 0 ? roi90d : 8
+    const scoreRate  = rateFromScore(md?.investmentScore ?? ai?.investmentScore ?? 0, md?.rarityScore ?? 0)
+    const rate       = roi1y !== 0 ? roi1y : roi90d !== 0 ? roi90d : scoreRate
     const proj = price > 0 ? {
       y1: { value: project(price, rate, 1) }, y3: { value: project(price, rate, 3) },
       y5: { value: project(price, rate, 5) }, y10: { value: project(price, rate, 10) },

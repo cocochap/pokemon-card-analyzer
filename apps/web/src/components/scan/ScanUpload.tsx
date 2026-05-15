@@ -651,7 +651,9 @@ export function ScanUpload() {
 
       const roi1y  = Number(md?.priceChange1y ?? 0)
       const roi90d = Number(ai?.predictedRoi90d ?? 0) * 4
-      const rate   = roi1y !== 0 ? roi1y : roi90d !== 0 ? roi90d : 8
+      const score  = md?.investmentScore ?? ai?.investmentScore ?? 0
+      const scoreRate = score >= 90 ? 40 : score >= 80 ? 28 : score >= 70 ? 18 : score >= 60 ? 12 : score >= 50 ? 7 : score >= 40 ? 3 : 1
+      const rate   = roi1y !== 0 ? roi1y : roi90d !== 0 ? roi90d : scoreRate
       const proj = price > 0 ? {
         y1: { value: Math.round(price * Math.pow(1 + rate / 100, 1)  * 100) / 100 },
         y3: { value: Math.round(price * Math.pow(1 + rate / 100, 3)  * 100) / 100 },

@@ -6,7 +6,14 @@ const isProtectedRoute = createRouteMatcher([
   '/scan(.*)',
 ])
 
+const isPublicApiRoute = createRouteMatcher([
+  '/api/cron(.*)',
+  '/api/webhooks(.*)',
+])
+
 export default clerkMiddleware(async (auth, req) => {
+  // Cron and webhook routes bypass Clerk entirely
+  if (isPublicApiRoute(req)) return
   if (isProtectedRoute(req)) {
     await auth.protect()
   }
