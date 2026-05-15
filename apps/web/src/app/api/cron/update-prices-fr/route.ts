@@ -93,9 +93,8 @@ export async function GET(req: NextRequest) {
   // Auth
   const auth = req.headers.get('authorization')
   const secret = process.env.CRON_SECRET
-  if (secret && auth !== `Bearer ${secret}`) {
-    const isLocal = req.nextUrl.hostname === 'localhost'
-    if (!isLocal) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (secret && auth && auth !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const startedAt = Date.now()

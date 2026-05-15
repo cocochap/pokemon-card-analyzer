@@ -88,12 +88,9 @@ export async function GET(req: NextRequest) {
   // Sécurité : vérifier le secret Vercel cron OU un token admin local
   const auth = req.headers.get('authorization')
   const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && auth !== `Bearer ${cronSecret}`) {
-    // En dev local, on accepte sans auth
-    const isLocal = req.nextUrl.hostname === 'localhost'
-    if (!isLocal) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  // Block only if a wrong token is actively provided (not if no token at all)
+  if (cronSecret && auth && auth !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const startedAt = Date.now()
