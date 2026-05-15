@@ -18,29 +18,35 @@ export const maxDuration = 60
 
 const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite']
 
-// La DB contient maintenant les noms FRANÇAIS en priorité (via TCGdex FR).
-// Le prompt demande le nom tel qu'il est imprimé sur la carte + son équivalent anglais.
-const PROMPT = `You are reading a Pokémon TCG card. Return three things:
+const PROMPT = `You are an expert Pokémon TCG card reader. Extract ALL of the following from the card image:
 
-1. The card name EXACTLY AS PRINTED on the card (keep the original language — French, English, Japanese, etc.)
-2. The English equivalent of that name (for reference)
-3. The card NUMBER as printed at the bottom (e.g. "001/165", "SV107/SV122", "042")
+1. Card name EXACTLY as printed (keep original language — FR/EN/JP/DE/IT/ES/PT)
+2. English equivalent name (translate if needed)
+3. Full card number at the bottom (e.g. "001/165", "SV107/SV122", "042/100", "042")
+4. Set/expansion name visible on the card (e.g. "Écarlate et Violet - 151", "Sword & Shield")
+5. Set ID (pokemontcg.io format if recognizable: sv1, sv3pt5, swsh10, base1, etc. else empty)
+6. Language code: FR / EN / JP / DE / ES / IT / PT
 
-SUFFIX RULES: Keep suffixes as-is in any language — VMAX, VSTAR, V, ex, GX, EX, Tag Team, etc.
+CRITICAL RULES:
+- Keep suffixes exactly: VMAX, VSTAR, V, ex, GX, EX, Tag Team, BREAK, etc.
+- The card number is always at the bottom — read it carefully including leading zeros
+- If setId is uncertain, leave it empty rather than guessing wrong
 
-Return ONLY this JSON (no markdown, no explanation):
+Return ONLY valid JSON (no markdown, no explanation):
 {
   "cardName": "Dracaufeu VMAX",
   "englishName": "Charizard VMAX",
   "cardNumber": "SV107/SV122",
-  "setId": "TCGdex/pokemontcg.io set ID if visible (e.g. sv1, swsh45sv, base1, A1), else empty string",
+  "setName": "Épée et Bouclier - Astres Radieux",
+  "setId": "swsh10",
   "language": "FR"
 }`
 
 interface AiResult {
-  cardName:    string   // nom tel qu'imprimé sur la carte (FR si carte FR)
-  englishName: string   // équivalent anglais (pour fallback)
+  cardName:    string
+  englishName: string
   cardNumber:  string
+  setName:     string
   setId:       string
   language:    string
 }
@@ -55,9 +61,9 @@ function extractJson(text: string): AiResult | null {
     try {
       const p = fn()
       if (p?.cardName || p?.englishName || p?.cardNumber) {
-        // Normalise : si cardName absent, utilise englishName
         if (!p.cardName && p.englishName) p.cardName = p.englishName
         if (!p.englishName && p.cardName) p.englishName = p.cardName
+        if (!p.setName) p.setName = ''
         return p as AiResult
       }
     } catch { /* next */ }
@@ -306,35 +312,93 @@ async function findCandidates(hint: AiResult): Promise<any[]> {
   return scored.slice(0, 5).map(({ c }) => c)
 }
 
-// ── pokemontcg.io API fallback ────────────────────────────────
-async function ptcgFallback(hint: AiResult): Promise<any | null> {
+// ── pokemontcg.io: search and return raw card + optional DB card ──
+async function searchPtcgioRaw(hint: AiResult): Promise<{ ptcgCard: any; dbCard: any | null } | null> {
   try {
     const headers: Record<string, string> = process.env.POKEMON_TCG_API_KEY
       ? { 'X-Api-Key': process.env.POKEMON_TCG_API_KEY } : {}
-    const name = hint.englishName
+    const name = (hint.englishName || hint.cardName || '').trim()
     const num  = (hint.cardNumber ?? '').split('/')[0].trim()
 
-    const queries = [
-      hint.setId ? `name:"${name}" number:"${num}" set.id:${hint.setId}` : null,
-      `name:"${name}" number:"${num}"`,
-      `name:"${name}"`,
-    ].filter(Boolean) as string[]
+    // Build queries from most to least precise
+    const queries: string[] = []
+    if (hint.setId && num) queries.push(`number:"${num}" set.id:${hint.setId}`)
+    if (hint.setId && name) queries.push(`name:"${name}" set.id:${hint.setId}`)
+    if (name && num) queries.push(`name:"${name}" number:"${num}"`)
+    if (num && num.length >= 2) queries.push(`number:"${num}"`)
+    if (name) queries.push(`name:"${name}"`)
 
     for (const q of queries) {
-      const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(q)}&pageSize=5`, {
-        headers, signal: AbortSignal.timeout(6000),
+      const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(q)}&pageSize=8`, {
+        headers, signal: AbortSignal.timeout(8000),
       })
       if (!res.ok) continue
       const d = await res.json()
-      const cards = d.data ?? []
+      const cards: any[] = d.data ?? []
       if (!cards.length) continue
-      const match = cards.find((c: any) => c.number === num || c.number === num.replace(/^0+/, '')) ?? cards[0]
-      console.log(`[scan] ptcg.io: ${match.id}`)
-      const db = await prisma.card.findUnique({ where: { externalId: match.id }, select: SEL })
-      if (db) return db
+
+      // Pick best match: prefer exact number match
+      const numClean = num.replace(/^0+(?=[0-9])/, '')
+      const match = cards.find(c => c.number === num || c.number === numClean)
+        ?? cards.find(c => c.name.toLowerCase().includes(name.toLowerCase().split(' ')[0]))
+        ?? cards[0]
+
+      console.log(`[scan] ptcg.io raw: ${match.id} (${match.name} #${match.number})`)
+      const dbCard = await prisma.card.findUnique({ where: { externalId: match.id }, select: SEL })
+      return { ptcgCard: match, dbCard }
     }
-  } catch (e: any) { console.warn('[scan] ptcg.io:', e?.message) }
+  } catch (e: any) { console.warn('[scan] ptcg.io search:', e?.message) }
   return null
+}
+
+// ── Import a single card from PTCG.io data into our DB ────────
+async function importCardFromPtcgio(ptcgCard: any): Promise<any | null> {
+  try {
+    const s = ptcgCard.set
+    // Upsert set
+    const set = await prisma.pokemonSet.upsert({
+      where: { externalId: s.id },
+      create: {
+        externalId: s.id,
+        name: s.name,
+        series: s.series ?? 'Unknown',
+        totalCards: s.total ?? 0,
+        printedTotal: s.printedTotal ?? s.total ?? 0,
+        releaseDate: s.releaseDate ? new Date(s.releaseDate) : null,
+        logoUrl: s.images?.logo ?? null,
+        symbolUrl: s.images?.symbol ?? null,
+      },
+      update: { logoUrl: s.images?.logo ?? null },
+      select: { id: true },
+    })
+
+    // Upsert card
+    await prisma.card.upsert({
+      where: { externalId: ptcgCard.id },
+      create: {
+        externalId: ptcgCard.id,
+        name: ptcgCard.name,
+        number: ptcgCard.number,
+        supertype: ptcgCard.supertype ?? 'Pokémon',
+        subtypes: ptcgCard.subtypes ?? [],
+        rarity: ptcgCard.rarity ?? null,
+        imageSmUrl: ptcgCard.images?.small ?? null,
+        imageLgUrl: ptcgCard.images?.large ?? null,
+        set: { connect: { id: set.id } },
+      },
+      update: {
+        imageLgUrl: ptcgCard.images?.large ?? null,
+        imageSmUrl: ptcgCard.images?.small ?? null,
+      },
+    })
+
+    const card = await prisma.card.findUnique({ where: { externalId: ptcgCard.id }, select: SEL })
+    if (card) console.log(`[scan] ✅ imported ${ptcgCard.id} into DB`)
+    return card
+  } catch (e: any) {
+    console.error('[scan] import error:', e?.message)
+    return null
+  }
 }
 
 function project(p: number, r: number, y: number) {
@@ -434,38 +498,40 @@ export async function POST(req: NextRequest) {
     }
     console.log(`[scan] merged from ${imageFiles.length} images: "${hint.englishName}" #${hint.cardNumber} set=${hint.setId}`)
 
-    // 2. DB search (best match + candidates in parallel)
-    let card = await findCard(hint!)
+    // 2. DB search + PTCG.io in parallel for speed
+    const [card0, rawCandidates, ptcgResult] = await Promise.all([
+      findCard(hint!),
+      findCandidates(hint!),
+      // Only hit PTCG.io if we have enough info to get a useful result
+      (hint.englishName || hint.cardName || hint.cardNumber)
+        ? searchPtcgioRaw(hint!)
+        : Promise.resolve(null),
+    ])
 
-    // 3. pokemontcg.io fallback
+    let card = card0
+
+    // 3. If DB missed, check PTCG.io result
     if (!card) {
-      console.log('[scan] trying pokemontcg.io...')
-      card = await ptcgFallback(hint!)
+      if (ptcgResult?.dbCard) {
+        // Card exists in DB under a different search path
+        card = ptcgResult.dbCard
+        console.log(`[scan] ✅ ptcg.io found existing DB card`)
+      } else if (ptcgResult?.ptcgCard) {
+        // Card on PTCG.io but not in DB → auto-import it now
+        console.log(`[scan] importing ${ptcgResult.ptcgCard.id}...`)
+        card = await importCardFromPtcgio(ptcgResult.ptcgCard)
+      }
     }
 
-    // 4. Auto-import set + retry
-    if (!card && hint?.setId) {
-      try {
-        const origin = new URL(req.url).origin
-        await fetch(`${origin}/api/admin/sync-sets?setId=${hint.setId}&limit=1`, {
-          method: 'POST', signal: AbortSignal.timeout(40000),
-        })
-        card = await findCard(hint!)
-      } catch { /* ignore */ }
-    }
-
-    // 4b. Find candidates for confirmation step
-    const rawCandidates = await findCandidates(hint!)
-
-    // Build candidates list: ensure best match appears first, dedup by id
+    // Build candidates list: best match first, then DB candidates, then PTCG.io, then AI-only
     const candidateIds = new Set<string>()
     const candidateList: Array<{
       id: string; name: string; number: string; rarity: string
       imageUrl: string | null; setName: string; setId: string
-      price: number | null
+      price: number | null; source?: string
     }> = []
 
-    const buildCandidate = (c: any) => ({
+    const buildCandidate = (c: any, source?: string) => ({
       id: c.id,
       name: c.name,
       number: c.number,
@@ -474,6 +540,7 @@ export async function POST(req: NextRequest) {
       setName: c.set?.name ?? '',
       setId: c.set?.externalId ?? '',
       price: Number(c.prices?.[0]?.market ?? 0) || null,
+      ...(source ? { source } : {}),
     })
 
     if (card && !candidateIds.has(card.id)) {
@@ -486,6 +553,37 @@ export async function POST(req: NextRequest) {
         candidateList.push(buildCandidate(c))
         if (candidateList.length >= 5) break
       }
+    }
+
+    // If still no candidates but PTCG.io found something (import failed), add as external candidate
+    if (candidateList.length === 0 && ptcgResult?.ptcgCard) {
+      const p = ptcgResult.ptcgCard
+      candidateList.push({
+        id: `ptcgio:${p.id}`,
+        name: p.name,
+        number: p.number,
+        rarity: p.rarity ?? '',
+        imageUrl: p.images?.large ?? p.images?.small ?? null,
+        setName: p.set?.name ?? '',
+        setId: p.set?.id ?? '',
+        price: p.cardmarket?.prices?.averageSellPrice ?? null,
+        source: 'ptcgio',
+      })
+    }
+
+    // Last resort: AI-only candidate so user always sees something
+    if (candidateList.length === 0 && (hint.cardName || hint.englishName)) {
+      candidateList.push({
+        id: `ai:${hint.cardNumber || 'unknown'}`,
+        name: hint.cardName || hint.englishName,
+        number: hint.cardNumber || '?',
+        rarity: '',
+        imageUrl: null,
+        setName: hint.setName || hint.setId || 'Extension inconnue',
+        setId: hint.setId || '',
+        price: null,
+        source: 'ai',
+      })
     }
 
     // 5. Build response

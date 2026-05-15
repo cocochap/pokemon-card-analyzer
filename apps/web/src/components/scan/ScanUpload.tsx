@@ -451,12 +451,26 @@ function CandidatePicker({
                 <p className="text-xs font-semibold text-white leading-tight line-clamp-2">{c.name}</p>
                 <p className="text-[10px] text-white/40 mt-0.5">#{c.number}</p>
                 {c.setName && <p className="text-[10px] text-white/30 truncate">{c.setName}</p>}
-                {c.price != null && (
-                  <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                    style={{ background: 'rgba(255,203,5,0.12)', border: '1px solid rgba(255,203,5,0.25)', color: '#FFCB05' }}>
-                    {c.price.toFixed(2)} €
-                  </span>
-                )}
+                <div className="flex items-center gap-1 mt-1 flex-wrap">
+                  {c.price != null && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                      style={{ background: 'rgba(255,203,5,0.12)', border: '1px solid rgba(255,203,5,0.25)', color: '#FFCB05' }}>
+                      {c.price.toFixed(2)} €
+                    </span>
+                  )}
+                  {(c as any).source === 'ptcgio' && (
+                    <span className="text-[8px] px-1 py-0.5 rounded-full"
+                      style={{ background: 'rgba(59,130,246,0.15)', color: 'rgba(59,130,246,0.9)' }}>
+                      TCGPlayer
+                    </span>
+                  )}
+                  {(c as any).source === 'ai' && (
+                    <span className="text-[8px] px-1 py-0.5 rounded-full"
+                      style={{ background: 'rgba(167,139,250,0.15)', color: '#A78BFA' }}>
+                      IA uniquement
+                    </span>
+                  )}
+                </div>
               </div>
               {/* Checkmark overlay when selected */}
               {selected === c.id && (
@@ -629,6 +643,37 @@ export function ScanUpload() {
 
   const selectCandidate = async (cardId: string) => {
     try {
+      // Handle external candidates (ptcgio: or ai: prefix) — no DB record yet
+      if (cardId.startsWith('ptcgio:') || cardId.startsWith('ai:')) {
+        const candidate = candidates.find(c => c.id === cardId)
+        const ident: Identification = scanIdentification ?? {
+          cardName: candidate?.name ?? '',
+          cardNumber: candidate?.number ?? '',
+          setName: candidate?.setName ?? '',
+          setId: candidate?.setId ?? '',
+          language: 'FR',
+          confidence: 0,
+        }
+        setResult({
+          identification: ident,
+          dbMatch: candidate ? {
+            id: cardId,
+            name: candidate.name,
+            number: candidate.number,
+            rarity: candidate.rarity,
+            imageUrl: candidate.imageUrl,
+            set: { name: candidate.setName, externalId: candidate.setId, releaseDate: null },
+            price: candidate.price ? { market: candidate.price, low: 0, high: 0, currency: 'EUR' } : null,
+            market: null,
+            ai: null,
+            projections: null,
+            annualGrowthRate: 0,
+          } : null,
+        })
+        setState('result')
+        return
+      }
+
       const res = await fetch(`/api/cards/${cardId}`)
       if (!res.ok) throw new Error('Card not found')
       const card = await res.json()
