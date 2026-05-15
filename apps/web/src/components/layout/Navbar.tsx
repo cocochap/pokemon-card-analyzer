@@ -188,7 +188,7 @@ export function Navbar() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.18 }}
-            className="fixed inset-0 top-14 z-40 md:hidden flex flex-col"
+            className="fixed inset-x-0 top-14 bottom-16 z-40 md:hidden flex flex-col"
             style={{ background: '#060918', borderTop: '1px solid rgba(255,255,255,0.06)' }}
           >
             <div className="flex-1 overflow-y-auto px-4 py-6 space-y-1">
@@ -218,7 +218,7 @@ export function Navbar() {
             </div>
 
             {/* Bottom auth actions */}
-            <div className="px-4 pb-8 pt-4 space-y-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="px-4 pb-4 pt-4 space-y-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
               {/* Language */}
               <button onClick={() => setLocale(locale === 'fr' ? 'en' : 'fr')}
                 className="flex items-center gap-2 w-full px-4 py-3 rounded-xl text-sm font-medium transition-colors"
