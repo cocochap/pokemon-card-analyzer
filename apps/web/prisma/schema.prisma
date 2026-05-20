@@ -484,7 +484,7 @@ model Portfolio {
   userId      String   @unique
   name        String   @default("My Collection")
   description String?
-  isPublic    Boolean  @default(false)
+  isPublic    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

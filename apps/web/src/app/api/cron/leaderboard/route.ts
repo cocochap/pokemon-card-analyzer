@@ -14,16 +14,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // ?init=true bypass la règle d'âge pour le premier calcul
+  const skipAgeCheck = req.nextUrl.searchParams.get('init') === 'true'
   const cutoff = subDays(new Date(), MIN_AGE_DAYS)
 
-  // Tous les portfolios publics avec items éligibles (âge >= 7j) + prix CardMarket
+  // Tous les portfolios sauf ceux qui se sont explicitement retirés (isPublic: false)
   const portfolios = await prisma.portfolio.findMany({
-    where: { isPublic: true },
+    where: { isPublic: { not: false } },
     select: {
       id: true,
       userId: true,
       items: {
-        where: { createdAt: { lte: cutoff } },
+        where: skipAgeCheck ? {} : { createdAt: { lte: cutoff } },
         select: {
           quantity: true,
           card: {
