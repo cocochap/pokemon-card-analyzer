@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Archive, BarChart3, Camera, Home, Sparkles, TrendingUp } from 'lucide-react'
+import { BarChart3, Camera, Home, Sparkles, Trophy } from 'lucide-react'
 import { clsx } from 'clsx'
 import { motion } from 'framer-motion'
 import { useLanguage } from '@/lib/i18n/LanguageContext'
@@ -12,12 +12,12 @@ export function MobileBottomNav() {
   const { t } = useLanguage()
 
   const leftTabs = [
-    { href: '/',       label: t.nav.market, icon: Home },
-    { href: '/cards',  label: t.nav.cards,  icon: BarChart3 },
+    { href: '/',            label: t.nav.market,    icon: Home },
+    { href: '/cards',       label: t.nav.cards,     icon: BarChart3 },
   ]
   const rightTabs = [
-    { href: '/sealed', label: 'Coffrets',       icon: Archive },
-    { href: '/ai',     label: t.nav.aiInsights, icon: Sparkles },
+    { href: '/leaderboard', label: 'Classement',    icon: Trophy },
+    { href: '/ai',          label: t.nav.aiInsights, icon: Sparkles },
   ]
 
   function Tab({ href, label, icon: Icon }: { href: string; label: string; icon: typeof Home }) {

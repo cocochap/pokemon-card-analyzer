@@ -25,15 +25,22 @@ interface Entry {
   user: LeaderboardUser
 }
 
-// ── Podium top 3 ──────────────────────────────────────────────────────────────
-function PodiumCard({ entry, height }: { entry: Entry; height: string }) {
-  const colors: Record<number, { accent: string; bg: string; ring: string }> = {
-    1: { accent: '#FFCB05', bg: 'rgba(255,203,5,0.10)', ring: 'rgba(255,203,5,0.35)' },
-    2: { accent: '#C0C0C0', bg: 'rgba(192,192,192,0.08)', ring: 'rgba(192,192,192,0.25)' },
-    3: { accent: '#CD7F32', bg: 'rgba(205,127,50,0.08)', ring: 'rgba(205,127,50,0.25)' },
-  }
-  const c = colors[entry.rank]
+const PODIUM_COLORS: Record<number, { accent: string; bg: string; ring: string }> = {
+  1: { accent: '#FFCB05', bg: 'rgba(255,203,5,0.10)', ring: 'rgba(255,203,5,0.35)' },
+  2: { accent: '#C0C0C0', bg: 'rgba(192,192,192,0.08)', ring: 'rgba(192,192,192,0.25)' },
+  3: { accent: '#CD7F32', bg: 'rgba(205,127,50,0.08)', ring: 'rgba(205,127,50,0.25)' },
+}
+// Hauteurs podium : [mobile, desktop] par rang
+const PODIUM_HEIGHTS: Record<number, [string, string]> = {
+  1: ['120px', '160px'],
+  2: ['96px',  '130px'],
+  3: ['80px',  '110px'],
+}
 
+// ── Podium top 3 ──────────────────────────────────────────────────────────────
+function PodiumCard({ entry }: { entry: Entry }) {
+  const c = PODIUM_COLORS[entry.rank]
+  const [hMobile, hDesktop] = PODIUM_HEIGHTS[entry.rank]
   const Icon = entry.rank === 1 ? Crown : entry.rank === 2 ? Trophy : Medal
 
   return (
@@ -41,42 +48,48 @@ function PodiumCard({ entry, height }: { entry: Entry; height: string }) {
       initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: (3 - entry.rank) * 0.1 + 0.1 }}
-      className="flex flex-col items-center gap-2"
-      style={{ flex: '1' }}
+      className="flex flex-col items-center gap-2 flex-1 min-w-0"
     >
       {/* Avatar */}
-      <div className="relative">
+      <div className="relative shrink-0">
         {entry.user.avatarUrl ? (
           <Image
             src={entry.user.avatarUrl}
             alt={entry.user.displayName}
-            width={56} height={56}
-            className="rounded-full object-cover"
-            style={{ border: `2px solid ${c.ring}`, boxShadow: `0 0 16px ${c.ring}` }}
+            width={48} height={48}
+            className="w-10 h-10 sm:w-14 sm:h-14 rounded-full object-cover"
+            style={{ border: `2px solid ${c.ring}`, boxShadow: `0 0 12px ${c.ring}` }}
           />
         ) : (
-          <div className="w-14 h-14 rounded-full flex items-center justify-center text-xl font-black"
+          <div className="w-10 h-10 sm:w-14 sm:h-14 rounded-full flex items-center justify-center text-base sm:text-xl font-black"
             style={{ background: c.bg, border: `2px solid ${c.ring}`, color: c.accent }}>
             {entry.user.displayName[0]?.toUpperCase()}
           </div>
         )}
-        <div className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center"
+        <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
           style={{ background: c.accent }}>
-          <span className="text-xs font-black text-black">{entry.rank}</span>
+          <span className="text-[10px] font-black text-black">{entry.rank}</span>
         </div>
       </div>
 
       {/* Podium block */}
       <div
-        className="w-full flex flex-col items-center justify-end rounded-t-2xl px-3 pb-4 pt-3 gap-1"
-        style={{ height, background: c.bg, border: `1px solid ${c.ring}` }}
+        className="w-full flex flex-col items-center justify-end rounded-t-xl px-1.5 sm:px-3 pb-3 pt-2 gap-0.5"
+        style={{
+          height: hMobile,
+          background: c.bg,
+          border: `1px solid ${c.ring}`,
+        }}
       >
-        <Icon className="w-5 h-5 mb-1" style={{ color: c.accent }} />
-        <p className="text-sm font-bold text-center truncate w-full text-center" style={{ color: c.accent }}>
+        <style>{`@media (min-width: 640px) { .podium-${entry.rank} { height: ${hDesktop} !important; } }`}</style>
+        <Icon className="w-4 h-4 sm:w-5 sm:h-5 mb-0.5" style={{ color: c.accent }} />
+        <p className="text-[11px] sm:text-sm font-bold text-center w-full truncate leading-tight px-1" style={{ color: c.accent }}>
           {entry.user.displayName}
         </p>
-        <p className="text-base font-black font-mono">{formatCurrency(entry.totalValue)}</p>
-        <p className="text-xs text-white/40">{entry.cardCount} cartes</p>
+        <p className="text-xs sm:text-base font-black font-mono tabular-nums leading-tight">
+          {formatCurrency(entry.totalValue)}
+        </p>
+        <p className="text-[10px] text-white/40">{entry.cardCount} <span className="hidden xs:inline">cartes</span></p>
       </div>
     </motion.div>
   )
@@ -169,13 +182,9 @@ export function LeaderboardTable() {
 
       {/* Podium */}
       {top3.length > 0 && (
-        <div className="flex items-end gap-3 px-2">
+        <div className="flex items-end gap-2 sm:gap-3 px-1 sm:px-2">
           {podiumOrder.map(e => (
-            <PodiumCard
-              key={e.rank}
-              entry={e}
-              height={e.rank === 1 ? '160px' : e.rank === 2 ? '130px' : '110px'}
-            />
+            <PodiumCard key={e.rank} entry={e} />
           ))}
         </div>
       )}

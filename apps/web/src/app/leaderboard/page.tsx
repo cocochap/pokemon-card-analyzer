@@ -14,7 +14,7 @@ export default function LeaderboardPage() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <main className="container max-w-3xl mx-auto px-4 py-10">
+      <main className="container max-w-3xl mx-auto px-4 py-8 pb-mobile-nav md:pb-10">
 
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider mb-4"
