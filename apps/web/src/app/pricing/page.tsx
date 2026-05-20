@@ -76,10 +76,11 @@ const PLANS = [
   },
 ]
 
-function PlanButton({ planKey, currentTier, isSignedIn }: {
+function PlanButton({ planKey, currentTier, isSignedIn, promoCode }: {
   planKey: string
   currentTier: string
   isSignedIn: boolean
+  promoCode?: string
 }) {
   const [loading, setLoading] = useState(false)
 
@@ -99,7 +100,7 @@ function PlanButton({ planKey, currentTier, isSignedIn }: {
       const res = await fetch('/api/payments/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: planKey }),
+        body: JSON.stringify({ plan: planKey, promoCode }),
       })
       const text = await res.text()
       let data: any = {}
@@ -136,7 +137,7 @@ function PlanButton({ planKey, currentTier, isSignedIn }: {
 
   if (!isSignedIn) {
     return (
-      <SignInButton mode="redirect" forceRedirectUrl="/pricing">
+      <SignInButton mode="redirect" forceRedirectUrl={promoCode ? `/pricing?promo=${promoCode}` : '/pricing'}>
         <button className="w-full py-3 rounded-xl text-sm font-bold transition-all hover:brightness-110"
           style={planKey === 'elite'
             ? { background: 'linear-gradient(135deg,#7C3AED,#A78BFA)', color: '#fff' }
@@ -177,6 +178,7 @@ function PricingContent() {
   const success = searchParams.get('success')
   const canceled = searchParams.get('canceled')
   const successPlan = searchParams.get('plan')
+  const promoCode = searchParams.get('promo')?.toUpperCase() || undefined
   const { isSignedIn } = useUser()
 
   const { data: userInfo } = useQuery({
@@ -203,6 +205,14 @@ function PricingContent() {
         <div className="mb-8 p-4 rounded-2xl text-center"
           style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.10)' }}>
           <p className="text-white/50">Paiement annulé. Tu peux réessayer à tout moment.</p>
+        </div>
+      )}
+      {promoCode && !success && (
+        <div className="mb-8 p-4 rounded-2xl text-center"
+          style={{ background: 'rgba(255,203,5,0.08)', border: '1px solid rgba(255,203,5,0.25)' }}>
+          <p className="font-semibold text-pokemon-yellow">
+            🎁 Code <span className="font-mono">{promoCode}</span> appliqué — -10% sur ton premier mois !
+          </p>
         </div>
       )}
 
@@ -274,7 +284,7 @@ function PricingContent() {
                 ))}
               </ul>
 
-              <PlanButton planKey={plan.key} currentTier={currentTier} isSignedIn={!!isSignedIn} />
+              <PlanButton planKey={plan.key} currentTier={currentTier} isSignedIn={!!isSignedIn} promoCode={plan.key !== 'free' ? promoCode : undefined} />
             </div>
           )
         })}

@@ -19,7 +19,7 @@ export default function TermsPage() {
         </Section>
 
         <Section title="2. Description du service">
-          <p>PokeScard est une plateforme en ligne permettant d'analyser des cartes Pokémon TCG par intelligence artificielle, de consulter les prix de marché Cardmarket, et de gérer un portfolio de collection. Le service est proposé en version gratuite et en version Premium.</p>
+          <p>PokeScard est une plateforme en ligne permettant d'analyser des cartes Pokémon TCG par intelligence artificielle, de consulter les prix de marché Cardmarket, et de gérer un portfolio de collection. Le service est proposé en version gratuite, Premium et Elite.</p>
         </Section>
 
         <Section title="3. Compte utilisateur">
@@ -31,13 +31,18 @@ export default function TermsPage() {
           </ul>
         </Section>
 
-        <Section title="4. Abonnement Premium">
+        <Section title="4. Abonnements payants">
+          <p>PokeScard propose deux formules d'abonnement mensuel :</p>
           <ul>
-            <li>L'abonnement Premium est proposé au tarif de <strong>7€ par mois</strong></li>
+            <li><strong>Premium</strong> : <strong>7€ par mois</strong></li>
+            <li><strong>Elite</strong> : <strong>15€ par mois</strong></li>
+          </ul>
+          <ul>
             <li>Le paiement est prélevé automatiquement chaque mois via Stripe</li>
             <li>Vous pouvez annuler votre abonnement à tout moment depuis votre espace client</li>
             <li>L'annulation prend effet à la fin de la période de facturation en cours</li>
             <li>Aucun remboursement n'est effectué pour les périodes déjà facturées, sauf obligation légale</li>
+            <li>Des codes promotionnels peuvent être appliqués au premier mois uniquement</li>
           </ul>
         </Section>
 
