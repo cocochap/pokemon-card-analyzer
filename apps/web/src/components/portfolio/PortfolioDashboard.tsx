@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import {
@@ -12,6 +12,7 @@ import {
   LineChart,
   Loader2,
   Lock,
+  Pencil,
   Plus,
   Trophy,
   TrendingUp,
@@ -22,6 +23,7 @@ import Link from 'next/link'
 import { formatCurrency, formatPercent } from '@/lib/formatters'
 import { api } from '@/lib/api'
 import { useT } from '@/lib/i18n/LanguageContext'
+import { UsernameModal } from '@/components/ui/UsernameModal'
 import { PortfolioChart } from '@/components/charts/PortfolioChart'
 import { PortfolioTable } from '@/components/portfolio/PortfolioTable'
 import { AddCardModal } from '@/components/portfolio/AddCardModal'
@@ -109,8 +111,16 @@ function LeaderboardToggle({ portfolioId, initialPublic }: { portfolioId: string
 export function PortfolioDashboard() {
   const [showAddCard, setShowAddCard] = useState(false)
   const [showImport, setShowImport] = useState(false)
+  const [showUsername, setShowUsername] = useState(false)
+  const [userProfile, setUserProfile] = useState<{ username: string | null; displayName: string | null } | null>(null)
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | '1y' | 'all'>('30d')
   const t = useT()
+
+  useEffect(() => {
+    fetch('/api/user/profile-public')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setUserProfile({ username: d.username, displayName: d.displayName }) })
+  }, [])
 
   const { data: portfolio, isLoading } = useQuery({
     queryKey: ['portfolio'],
@@ -283,9 +293,37 @@ export function PortfolioDashboard() {
       {/* Leaderboard opt-in */}
       <LeaderboardToggle portfolioId={portfolio.id} initialPublic={portfolio.isPublic ?? false} />
 
+      {/* Profil pseudo */}
+      <button
+        onClick={() => setShowUsername(true)}
+        className="w-full flex items-center gap-3 px-4 py-3 glass-card hover:border-white/15 transition-colors text-left"
+      >
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: 'rgba(255,255,255,0.04)' }}>
+          <Pencil className="w-4 h-4 text-white/40" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-white/70">Pseudo classement</p>
+          <p className="text-xs text-white/35 truncate">
+            {userProfile?.username ? `@${userProfile.username}` : 'Aucun pseudo — clique pour en choisir un'}
+          </p>
+        </div>
+      </button>
+
       {/* Modals */}
       <AddCardModal open={showAddCard} onClose={() => setShowAddCard(false)} />
       <ImportCsvModal open={showImport} onClose={() => setShowImport(false)} />
+      <UsernameModal
+        open={showUsername}
+        onClose={() => {
+          setShowUsername(false)
+          fetch('/api/user/profile-public').then(r => r.ok ? r.json() : null).then(d => {
+            if (d) setUserProfile({ username: d.username, displayName: d.displayName })
+          })
+        }}
+        initialUsername={userProfile?.username ?? ''}
+        initialDisplayName={userProfile?.displayName ?? ''}
+      />
     </div>
   )
 }

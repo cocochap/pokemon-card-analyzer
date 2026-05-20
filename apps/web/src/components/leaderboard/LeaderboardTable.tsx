@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Crown, Loader2, Medal, Trophy, Lock } from 'lucide-react'
+import { Crown, Loader2, Medal, Pencil, Trophy, Lock } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
+import { useUser } from '@clerk/nextjs'
 import { formatCurrency } from '@/lib/formatters'
 import { clsx } from 'clsx'
+import { UsernameModal } from '@/components/ui/UsernameModal'
 
 interface LeaderboardUser {
   id: string
@@ -105,16 +107,31 @@ export function LeaderboardTable() {
   const [entries, setEntries] = useState<Entry[]>([])
   const [loading, setLoading] = useState(true)
   const [updatedAt, setUpdatedAt] = useState<string | null>(null)
+  const [showUsernameModal, setShowUsernameModal] = useState(false)
+  const [userProfile, setUserProfile] = useState<{ username: string | null; displayName: string | null } | null>(null)
+  const { isSignedIn } = useUser()
 
-  useEffect(() => {
+  const fetchEntries = () =>
     fetch('/api/leaderboard')
       .then(r => r.json())
-      .then(d => {
-        setEntries(d.entries ?? [])
-        setUpdatedAt(d.updatedAt ?? null)
-      })
+      .then(d => { setEntries(d.entries ?? []); setUpdatedAt(d.updatedAt ?? null) })
       .finally(() => setLoading(false))
+
+  useEffect(() => {
+    fetchEntries()
   }, [])
+
+  // Prompt pseudo si connecté et pas encore de username
+  useEffect(() => {
+    if (!isSignedIn) return
+    fetch('/api/user/profile-public')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return
+        setUserProfile({ username: d.username, displayName: d.displayName })
+        if (!d.username) setShowUsernameModal(true)
+      })
+  }, [isSignedIn])
 
   if (loading) {
     return (
@@ -231,12 +248,35 @@ export function LeaderboardTable() {
       {/* Opt-in */}
       <OptInBanner />
 
+      {/* Modifier profil si déjà un pseudo */}
+      {isSignedIn && userProfile?.username && (
+        <button
+          onClick={() => setShowUsernameModal(true)}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold text-white/40 hover:text-white/70 border border-white/8 hover:border-white/15 transition-colors"
+        >
+          <Pencil className="w-3.5 h-3.5" />
+          Modifier mon pseudo (@{userProfile.username})
+        </button>
+      )}
+
       {/* Last update */}
       {updatedAt && (
         <p className="text-xs text-white/20 text-center">
           Dernière mise à jour : {new Date(updatedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}
         </p>
       )}
+
+      {/* Username modal */}
+      <UsernameModal
+        open={showUsernameModal}
+        onClose={() => {
+          setShowUsernameModal(false)
+          fetchEntries() // rafraîchit les noms après modif
+        }}
+        initialUsername={userProfile?.username ?? ''}
+        initialDisplayName={userProfile?.displayName ?? ''}
+        required={!userProfile?.username}
+      />
     </div>
   )
 }
