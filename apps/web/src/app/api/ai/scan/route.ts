@@ -75,7 +75,20 @@ interface AiResult {
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
 function normalizeName(name: string): string {
-  return name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[''`]/g, '').replace(/\s+/g, ' ').trim()
+  return name.toLowerCase().normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')   // accents
+    .replace(/[''`\-]/g, ' ') // apostrophes + tirets → espace (Dracaufeu-ex = Dracaufeu ex)
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// Transforme un ID pokemontcg.io en ID DB (sv3pt5 → sv03.5, sv9 → sv09, etc.)
+function ptcgioToDbId(id: string): string {
+  const m1 = id.match(/^sv(\d+)pt(\d+)$/i) // sv3pt5 → sv03.5
+  if (m1) return `sv${m1[1].padStart(2, '0')}.${m1[2]}`
+  const m2 = id.match(/^sv(\d+)$/i)         // sv9 → sv09
+  if (m2) return `sv${m2[1].padStart(2, '0')}`
+  return id
 }
 
 function numberVariants(raw: string): string[] {
@@ -119,25 +132,31 @@ function numberSetHints(num: string): string[] {
   return []
 }
 
+// IDs dans le format réel de la DB (pas pokemontcg.io)
 const SET_NAME_MAP: Record<string, string> = {
-  '151': 'sv3pt5', 'flammes obsidiennes': 'sv3', 'obsidian flames': 'sv3',
-  'mascarade crepusculaire': 'sv6', 'twilight masquerade': 'sv6',
-  'forces temporelles': 'sv5', 'temporal forces': 'sv5',
+  // SV — IDs DB (sv03.5, pas sv3pt5)
+  '151': 'sv03.5', 'flammes obsidiennes': 'sv03', 'obsidian flames': 'sv03',
+  'mascarade crepusculaire': 'sv06', 'twilight masquerade': 'sv06',
+  'forces temporelles': 'sv05', 'temporal forces': 'sv05',
+  'destinees de paldea': 'sv04.5', 'paldean fates': 'sv04.5',
+  'faille paradoxe': 'sv04', 'paradox rift': 'sv04',
+  'fable nebuleuse': 'sv06.5', 'shrouded fable': 'sv06.5',
+  'couronne stellaire': 'sv07', 'stellar crown': 'sv07',
+  'etincelles deferlantes': 'sv08', 'surging sparks': 'sv08',
+  'evolutions prismatiques': 'sv08.5', 'prismatic evolutions': 'sv08.5',
+  'aventures ensemble': 'sv09', 'journey together': 'sv09',
+  'rivalites destinees': 'sv10', 'destined rivals': 'sv10',
+  'ecarlate et violet': 'sv01', 'scarlet violet': 'sv01',
+  'evolutions a paldea': 'sv02', 'paldea evolved': 'sv02',
+  // SWSH
   'evolution celeste': 'swsh7', 'evolving skies': 'swsh7',
   'astres radieux': 'swsh10', 'brilliant stars': 'swsh9',
-  'couronne zenith': 'swsh12pt5', 'crown zenith': 'swsh12pt5',
   'origine perdue': 'swsh11', 'lost origin': 'swsh11',
+  'tempete argentee': 'swsh12', 'silver tempest': 'swsh12',
+  'couronne zenith': 'swsh12.5', 'crown zenith': 'swsh12.5',
   'epee et bouclier': 'swsh1', 'sword shield': 'swsh1',
+  // Vintage
   'celebrations': 'cel25', 'base': 'base1', 'jungle': 'jungle', 'fossil': 'fossil',
-  'scarlet violet': 'sv1', 'ecarlate et violet': 'sv1',
-  'paldea evolved': 'sv2', 'ecarlate et violet evolution paldea': 'sv2',
-  'pokemon go': 'pgo', 'paldean fates': 'sv4pt5', 'destinees de paldea': 'sv4pt5',
-  'shrouded fable': 'sv6pt5', 'fable nebuleuse': 'sv6pt5',
-  'stellar crown': 'sv7', 'couronne stellaire': 'sv7',
-  'surging sparks': 'sv8', 'etincelles dechainantes': 'sv8',
-  'prismatic evolutions': 'sv8pt5', 'evolutions prismatiques': 'sv8pt5',
-  'journey together': 'sv9', 'voyage ensemble': 'sv9',
-  'paradox rift': 'sv4', 'faille paradoxe': 'sv4',
 }
 
 // ── DB selects ────────────────────────────────────────────────────────────────
@@ -224,7 +243,14 @@ async function resolveSetId(setName: string, setIdHint: string, total: number | 
     if (dbSet?.externalId) return { setId: dbSet.externalId, candidates: [dbSet.externalId] }
   }
 
-  return { setId: setIdHint || '', candidates: setIdHint ? [setIdHint] : [] }
+  // 3. setIdHint fourni par l'AI (peut être un ID pokemontcg.io, on transforme)
+  if (setIdHint) {
+    const dbId = ptcgioToDbId(setIdHint)
+    const cands = dbId !== setIdHint ? [dbId, setIdHint] : [setIdHint]
+    return { setId: dbId, candidates: cands }
+  }
+
+  return { setId: '', candidates: [] }
 }
 
 // ── Recherche DB — (number, total) comme clé primaire ────────────────────────
@@ -237,14 +263,15 @@ async function findCard(
   const frNorm = normalizeName(frName)
   const allSets = [...new Set([...setCandidates, ...numberSetHints(num)].filter(Boolean))]
 
-  // S1 — externalId exact
-  const extIds = allSets.flatMap(sid => nums.map(n => `${sid}-${n}`))
+  // S1 — externalId exact (essaye les IDs DB transformés ET les IDs pokemontcg.io)
+  const dbIds   = [...new Set([...allSets, ...allSets.map(ptcgioToDbId)].filter(Boolean))]
+  const extIds  = dbIds.flatMap(sid => nums.map(n => `${sid}-${n}`))
   if (extIds.length) {
     const found = await prisma.card.findFirst({ where: { externalId: { in: extIds } }, select: SEL })
     if (found) { console.log(`[scan] ✅ S1 externalId ${found.name}`); return found }
   }
 
-  // S2 — (number, printedTotal) : la clé la plus fiable
+  // S2 — (number, printedTotal) : la clé la plus fiable, indépendante du setId
   if (num && total) {
     const rows = await prisma.card.findMany({
       where: { number: { in: nums }, set: { OR: [{ printedTotal: total }, { totalCards: total }] } },
@@ -254,8 +281,9 @@ async function findCard(
     if (rows.length === 1) { console.log(`[scan] ✅ S2 num+total unique ${rows[0].name}`); return rows[0] }
     if (rows.length > 1) {
       const scored = rows.map(c => ({ c, s: matchScore(c, num, enName, frName, setId, total) })).sort((a, b) => b.s - a.s)
-      console.log(`[scan] S2 num+total: ${rows.length} candidats, best=${scored[0].c.name} score=${scored[0].s}`)
-      if (scored[0].s >= 40) return scored[0].c
+      console.log(`[scan] S2 num+total: ${rows.length} candidats, best="${scored[0].c.name}" score=${scored[0].s}`)
+      // Seuil abaissé : avec num+total on est déjà très confiant (50+35=85 si les deux matchent)
+      if (scored[0].s >= 30) return scored[0].c
     }
   }
 
@@ -424,7 +452,12 @@ async function searchPtcgio(num: string, total: number | null, enName: string, f
           ?? cards.find(c => c.name.toLowerCase().includes(((enName || frName).split(' ')[0] || '').toLowerCase()))
           ?? cards[0]
         console.log(`[scan] ptcgio: ${match.id} (${match.name} #${match.number})`)
-        const dbCard = await prisma.card.findUnique({ where: { externalId: match.id }, select: SEL })
+        // Essayer l'ID pokemontcg.io ET l'ID DB transformé
+        const dbIdTransformed = ptcgioToDbId(match.set?.id ?? '') + '-' + match.number
+        const dbCard = await prisma.card.findFirst({
+          where: { OR: [{ externalId: match.id }, { externalId: dbIdTransformed }] },
+          select: SEL,
+        })
         return { ptcgCard: match, dbCard }
       } catch { /* timeout → try next query */ }
     }
