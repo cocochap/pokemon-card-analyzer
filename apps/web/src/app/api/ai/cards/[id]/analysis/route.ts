@@ -2,43 +2,31 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 import { withCache } from '@/lib/db/redis'
 import { scoreCard, ScoringInput } from '@/lib/ai/scorer'
+import { charTier, RARITY_W, scarcityScore, detectEra, buildTargets, investmentScoreFromProfile } from '@/lib/investment/helpers'
 import { subDays } from 'date-fns'
 
 export const runtime = 'nodejs'
 
+const RARITY_MAP: Record<string, number> = {
+  CROWN_RARE: 10, HYPER_RARE: 9, SPECIAL_ILLUSTRATION_RARE: 9, ILLUSTRATION_RARE: 8,
+  RARE_SECRET: 8, RARE_RAINBOW: 7, RARE_ULTRA: 7, RARE_HOLO_VSTAR: 6, RARE_HOLO_VMAX: 6,
+  RARE_HOLO_V: 5, RARE_HOLO: 5, RARE: 4, UNCOMMON: 3, COMMON: 2,
+}
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
 
-  // Sert le cache DB en priorité (mis à jour par un cron)
   const cached = await withCache(`ai:analysis:${id}`, 300, async () => {
     const card = await prisma.card.findUnique({
       where: { id },
       include: {
-        set: { select: { releaseDate: true } },
+        set: { select: { releaseDate: true, externalId: true, series: true, name: true } },
         aiAnalysis: { include: { predictions: { orderBy: { horizonDays: 'asc' } } } },
         prices: { where: { source: 'cardmarket' }, orderBy: { fetchedAt: 'desc' }, take: 1 },
+        marketData: { select: { priceChange7d: true, priceChange30d: true, priceChange1y: true, allTimeHigh: true, allTimeLow: true, volatility30d: true, rsi14: true, investmentScore: true } },
       },
     })
     if (!card) return null
-
-    // Si une analyse récente existe en base, la servir directement
-    if (card.aiAnalysis?.updatedAt && card.aiAnalysis.updatedAt > subDays(new Date(), 1)) {
-      const currentPrice = Number(card.prices[0]?.market ?? 0)
-      const dbPredictions = card.aiAnalysis.predictions ?? []
-      const roi30d = Number(card.aiAnalysis.predictedRoi30d ?? 0)
-      const vol = Number(card.aiAnalysis.riskLevel ?? 50) / 100
-      // Augment with long-horizon predictions if not in DB
-      const augmented = augmentPredictions(dbPredictions, currentPrice, roi30d, vol)
-      return {
-        ...card.aiAnalysis,
-        currentPrice,
-        predictions: augmented,
-        modelVersion: card.aiAnalysis.modelVersion,
-        updatedAt: card.aiAnalysis.updatedAt,
-      }
-    }
-
-    // Sinon : calcule en temps réel
     return computeAnalysis(card)
   })
 
@@ -47,146 +35,312 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 async function computeAnalysis(card: any) {
-  // Récupère l'historique de prix
+  const now = new Date()
+
+  // ── Historique de prix 90j ────────────────────────────────────────────────
   const history = await prisma.priceHistory.findMany({
-    where: { cardId: card.id, source: 'cardmarket', recordedAt: { gte: subDays(new Date(), 90) } },
+    where: { cardId: card.id, source: 'cardmarket', recordedAt: { gte: subDays(now, 90) } },
     orderBy: { recordedAt: 'asc' },
     select: { price: true, recordedAt: true },
   })
-
-  const prices = history.map((h) => Number(h.price))
+  const prices = history.map(h => Number(h.price))
   const currentPrice = prices.at(-1) ?? Number(card.prices[0]?.market ?? 0)
 
-  const pct = (days: number) => {
-    if (prices.length < days + 1) return 0
-    const past = prices[prices.length - days - 1]
-    return ((currentPrice - past) / (past + 1e-8)) * 100
-  }
+  // ── Ventes réelles (SaleEvent) ────────────────────────────────────────────
+  const salesAll = await prisma.saleEvent.findMany({
+    where: { cardId: card.id, soldAt: { gte: subDays(now, 90) } },
+    orderBy: { soldAt: 'asc' },
+    select: { salePrice: true, soldAt: true, platform: true },
+  })
+  const sales30d = salesAll.filter(s => s.soldAt >= subDays(now, 30))
+  const sales60_90d = salesAll.filter(s => s.soldAt < subDays(now, 30))
 
-  // Volatilité 30j
+  const salesCount30d = sales30d.length
+  const salesCount90d = salesAll.length
+  const avgSale30d = salesCount30d > 0
+    ? sales30d.reduce((s, e) => s + Number(e.salePrice), 0) / salesCount30d : 0
+  const avgSale60_90d = sales60_90d.length > 0
+    ? sales60_90d.reduce((s, e) => s + Number(e.salePrice), 0) / sales60_90d.length : 0
+  // Tendance : prix moyen 30d vs période précédente
+  const saleTrend30d = avgSale30d > 0 && avgSale60_90d > 0
+    ? ((avgSale30d - avgSale60_90d) / avgSale60_90d) * 100 : 0
+
+  // Dernier prix de vente connu
+  const lastSalePrice = salesAll.length > 0 ? Number(salesAll.at(-1)!.salePrice) : 0
+
+  // ── Variations de prix ────────────────────────────────────────────────────
+  const md = card.marketData
+  const pct = (days: number): number => {
+    if (prices.length >= days + 1) {
+      const past = prices[prices.length - days - 1]
+      return past > 0 ? ((currentPrice - past) / past) * 100 : 0
+    }
+    if (days <= 7)  return Number(md?.priceChange7d  ?? 0)
+    if (days <= 30) return Number(md?.priceChange30d ?? 0)
+    return Number(md?.priceChange1y ?? 0)
+  }
+  const change7d  = pct(7)
+  const change30d = pct(30)
+  const change90d = pct(90)
+
+  // Utiliser la tendance des ventes si plus fiable que l'historique de prix
+  const effectiveChange30d = salesCount30d >= 3 ? saleTrend30d : change30d
+
+  // ── Volatilité et RSI ─────────────────────────────────────────────────────
   const returns30 = prices.slice(-30).map((p, i, a) => i === 0 ? 0 : (p - a[i - 1]) / (a[i - 1] + 1e-8))
   const vol30 = returns30.length > 1
     ? Math.sqrt(returns30.reduce((s, r) => s + r * r, 0) / returns30.length) * Math.sqrt(365)
-    : 0.5
+    : (md?.volatility30d ? Number(md.volatility30d) : 0.35)
 
-  // RSI
-  const rsi = computeRSI(prices)
+  const rsi = computeRSI(prices.length >= 15 ? prices : []) ?? (md?.rsi14 ? Number(md.rsi14) : 50)
 
-  // Population PSA
+  // ── Population PSA 10 ─────────────────────────────────────────────────────
   const psaPop = await prisma.psaPopulation.findFirst({
     where: { cardId: card.id, company: 'PSA', grade: 10 },
     select: { population: true },
   })
+  const populationPsa10 = psaPop?.population ?? 999
 
+  // ── Profil structurel ─────────────────────────────────────────────────────
   const setAgeDays = card.set?.releaseDate
-    ? Math.floor((Date.now() - new Date(card.set.releaseDate).getTime()) / 86400000)
-    : 365
+    ? Math.floor((Date.now() - new Date(card.set.releaseDate).getTime()) / 86400000) : 365
 
-  const rarityMap: Record<string, number> = {
-    CROWN_RARE: 10, HYPER_RARE: 9, SPECIAL_ILLUSTRATION_RARE: 9, ILLUSTRATION_RARE: 8,
-    RARE_SECRET: 8, RARE_RAINBOW: 7, RARE_ULTRA: 7, RARE_HOLO_VSTAR: 6, RARE_HOLO_VMAX: 6,
-    RARE_HOLO_V: 5, RARE_HOLO: 5, RARE: 4, UNCOMMON: 3, COMMON: 2,
-  }
+  const rarityW  = RARITY_W[card.rarity ?? ''] ?? 0.05
+  const exId     = card.set?.externalId ?? ''
+  const scarce   = scarcityScore(exId, card.rarity ?? '')
+  const era      = detectEra(exId, card.set?.series ?? null)
+  const cTier    = charTier(card.name)
+  const ath      = md?.allTimeHigh ? Number(md.allTimeHigh) : currentPrice
+  const athDrop  = ath > currentPrice ? +(((ath - currentPrice) / ath) * 100).toFixed(1) : 0
 
+  // ── Scorer momentum ───────────────────────────────────────────────────────
   const inp: ScoringInput = {
-    priceChange7d: pct(7),
-    priceChange30d: pct(30),
-    priceChange90d: pct(90),
+    priceChange7d: change7d,
+    priceChange30d: effectiveChange30d,
+    priceChange90d: change90d,
     volatility30d: vol30,
     rsi14: rsi,
-    volume7d: 0,
-    volumeAvg90d: 0,
-    rarityRank: rarityMap[card.rarity] ?? 3,
-    populationPsa10: psaPop?.population ?? 999,
+    volume7d: salesCount30d > 0 ? Math.round(salesCount30d / 4) : 0,
+    volumeAvg90d: salesCount90d > 0 ? Math.round(salesCount90d / 3) : 0,
+    rarityRank: RARITY_MAP[card.rarity] ?? 3,
+    populationPsa10,
     setAgeDays,
     isVintage: setAgeDays > 7300,
     isFirstEdition: card.variant === 'FIRST_EDITION',
     isShadowless: card.variant === 'SHADOWLESS',
     isPromo: card.variant === 'PROMO',
-    pokemonPopularity: 50,
-    watchlistGrowth7d: 0,
-    socialMentions7d: 0,
-    ebayCount30d: 0,
-    listingsCount: 10,
+    pokemonPopularity: cTier === 'S' ? 90 : cTier === 'A' ? 60 : 30,
+    watchlistGrowth7d: change7d > 10 ? 25 : change7d > 5 ? 12 : 0,
+    socialMentions7d: cTier === 'S' ? 80 : cTier === 'A' ? 30 : 5,
+    ebayCount30d: salesCount30d > 0 ? salesCount30d : (scarce > 0.5 ? 5 : 20),
+    listingsCount: scarce > 0.8 ? 8 : scarce > 0.5 ? 25 : 60,
   }
-
   const result = scoreCard(inp)
 
-  // Prédictions basées sur la tendance avec décroissance temporelle
-  const predictions = buildPredictions(currentPrice, result.predictedRoi30d, vol30)
+  // ── Score d'investissement blendé ─────────────────────────────────────────
+  const profileScore = investmentScoreFromProfile(cTier, rarityW, scarce, era, athDrop, change7d, effectiveChange30d)
+  const hasHistory   = prices.length >= 7 || Math.abs(change7d) > 0.1 || Math.abs(change30d) > 0.1 || salesCount30d >= 3
+  const investmentScore = hasHistory
+    ? Math.round(result.investmentScore * 0.5 + profileScore * 0.5)
+    : profileScore
 
-  const confidence = predictions.reduce((s, p) => s + p.confidence, 0) / predictions.length
+  // ── Targets structurels ───────────────────────────────────────────────────
+  const targets = buildTargets(currentPrice, ath, cTier, rarityW, scarce, era, athDrop)
+
+  // ── Prédictions enrichies ─────────────────────────────────────────────────
+  // roi30d réel : priorité aux ventes > historique > 0
+  const roi30dReal = salesCount30d >= 3
+    ? saleTrend30d / 100
+    : prices.length >= 30
+      ? change30d / 100
+      : Number(md?.priceChange30d ?? 0) / 100
+
+  const predictions = buildPredictions(currentPrice, roi30dReal, vol30, targets, {
+    lastSalePrice,
+    salesCount30d,
+    avgSale30d,
+  })
+
+  // ── Signaux enrichis ──────────────────────────────────────────────────────
+  const bullishSignals = [...result.bullishSignals]
+  const bearishSignals = [...result.bearishSignals]
+
+  // Signaux depuis les ventes réelles
+  if (salesCount30d >= 5 && saleTrend30d > 10) {
+    bullishSignals.unshift(`${salesCount30d} ventes en 30j — prix moyen en hausse de +${saleTrend30d.toFixed(1)}%`)
+  }
+  if (salesCount30d >= 5 && saleTrend30d < -10) {
+    bearishSignals.unshift(`${salesCount30d} ventes en 30j — prix moyen en baisse de ${saleTrend30d.toFixed(1)}%`)
+  }
+  if (avgSale30d > 0 && currentPrice > 0) {
+    const diff = ((avgSale30d - currentPrice) / currentPrice) * 100
+    if (diff > 15) bullishSignals.push(`Prix de vente moyen (${avgSale30d.toFixed(2)}€) > prix affiché de +${diff.toFixed(0)}%`)
+    if (diff < -15) bearishSignals.push(`Prix de vente moyen (${avgSale30d.toFixed(2)}€) en dessous du prix affiché de ${Math.abs(diff).toFixed(0)}%`)
+  }
+  if (era === 'vintage' && !bullishSignals.some(s => s.includes('vintage'))) {
+    bullishSignals.push('Carte vintage — offre fixe, demande collector en croissance constante')
+  }
+  if (targets.conviction === 'FORTE') {
+    bullishSignals.push(`Conviction forte : objectif ${targets.horizon} à ${targets.t1y.toFixed(2)}€ (+${((targets.mult1y - 1) * 100).toFixed(0)}%)`)
+  }
+  if (athDrop > 30) {
+    bullishSignals.push(`${athDrop.toFixed(0)}% sous ATH (${ath.toFixed(2)}€) — potentiel de recovery élevé`)
+  }
+
+  // ── Confidence globale ────────────────────────────────────────────────────
+  const dataQuality = Math.min(1, (prices.length / 30) * 0.5 + (salesCount90d > 0 ? 0.3 : 0) + (populationPsa10 < 999 ? 0.2 : 0))
+  const confidenceScore = +(0.35 + dataQuality * 0.40).toFixed(4)
+
+  // ── Insight enrichi ───────────────────────────────────────────────────────
+  const keyInsight = generateEnrichedInsight({
+    card, investmentScore, cTier, era, targets, currentPrice,
+    change30d: effectiveChange30d, salesCount30d, avgSale30d,
+    athDrop, populationPsa10, bullishSignals, bearishSignals,
+  })
 
   return {
     cardId: card.id,
-    investmentScore: result.investmentScore,
+    investmentScore,
     rarityScore: result.rarityScore,
-    liquidityScore: result.liquidityScore,
+    liquidityScore: salesCount90d > 0
+      ? Math.min(100, 30 + salesCount90d * 4)
+      : result.liquidityScore,
     riskLevel: result.riskLevel,
     trendDirection: result.trendDirection,
-    confidenceScore: +confidence.toFixed(4),
-    bullishSignals: result.bullishSignals,
-    bearishSignals: result.bearishSignals,
-    keyInsight: result.keyInsight,
+    confidenceScore,
+    bullishSignals: bullishSignals.slice(0, 5),
+    bearishSignals: bearishSignals.slice(0, 5),
+    keyInsight,
     predictedRoi30d: result.predictedRoi30d,
     predictedRoi90d: result.predictedRoi90d,
     predictions,
     currentPrice,
-    modelVersion: 'scorer-ts-v1',
+    priceChange7d: +change7d.toFixed(2),
+    priceChange30d: +effectiveChange30d.toFixed(2),
+    salesData: {
+      count30d: salesCount30d,
+      count90d: salesCount90d,
+      avgPrice30d: +avgSale30d.toFixed(2),
+      trend30d: +saleTrend30d.toFixed(2),
+      lastSalePrice: +lastSalePrice.toFixed(2),
+    },
+    targets: {
+      t1y: targets.t1y, t3y: targets.t3y, t5y: targets.t5y,
+      conviction: targets.conviction, horizon: targets.horizon,
+    },
+    modelVersion: 'scorer-ts-v3',
     updatedAt: new Date().toISOString(),
   }
 }
 
-function buildPredictions(currentPrice: number, roi30d: number, vol30: number) {
+// ── Prédictions multi-horizon cohérentes ──────────────────────────────────────
+function buildPredictions(
+  currentPrice: number,
+  roi30d: number,
+  vol30: number,
+  targets: { t1y: number; t3y: number; t5y: number },
+  sales?: { lastSalePrice: number; salesCount30d: number; avgSale30d: number },
+) {
+  if (currentPrice <= 0) return []
+
+  // Taux annuel structurel depuis les targets
+  const annualRate = (targets.t1y / currentPrice) - 1
+
+  // Ancre court-terme : si des ventes existent, on les utilise
+  const shortAnchor = sales && sales.salesCount30d >= 3 && sales.avgSale30d > 0
+    ? sales.avgSale30d : null
+
   const horizons = [
-    { days: 7, decay: 0.9 },
-    { days: 30, decay: 0.7 },
-    { days: 90, decay: 0.5 },
-    { days: 180, decay: 0.35 },
-    { days: 365, decay: 0.2 },
+    { days: 7,   mw: 0.80, sw: 0.20 },
+    { days: 30,  mw: 0.60, sw: 0.40 },
+    { days: 90,  mw: 0.30, sw: 0.70 },
+    { days: 180, mw: 0.10, sw: 0.90 },
+    { days: 365, mw: 0.00, sw: 1.00 },
   ]
-  return horizons.map(({ days, decay }) => {
-    const roi = roi30d * decay * (days / 30)
-    const predicted = currentPrice * (1 + roi)
-    const uncertainty = currentPrice * (0.05 + vol30 * 0.05 * (days / 30))
+
+  return horizons.map(({ days, mw, sw }) => {
+    // Composante momentum : projection annualisée avec décroissance
+    const momentumAnnual = roi30d * 12
+    const momentumRoi = momentumAnnual * (days / 365) * Math.exp(-days / 90)
+
+    // Composante structurelle : interpolation linéaire du taux annuel
+    const structuralRoi = annualRate * (days / 365)
+
+    // Blend selon l'horizon
+    let blendedRoi = Math.abs(roi30d) > 0.005
+      ? momentumRoi * mw + structuralRoi * sw
+      : structuralRoi
+
+    let base = currentPrice * (1 + blendedRoi)
+
+    // Pour 7j et 30j, ancrer sur le prix de vente moyen récent si disponible
+    if (shortAnchor && days <= 30) {
+      const anchorWeight = days === 7 ? 0.6 : 0.4
+      base = base * (1 - anchorWeight) + shortAnchor * (1 + structuralRoi * (days / 365)) * anchorWeight
+    }
+
+    // Incertitude proportionnelle à la volatilité et l'horizon
+    const uncertainty = currentPrice * (0.04 + vol30 * 0.035 * Math.sqrt(days / 30))
+
+    // Confidence décroissante avec l'horizon
+    const baseConf = 0.82 - vol30 * 0.18 - (days / 365) * 0.28
+    const confidence = Math.max(0.22, Math.min(0.82, baseConf))
+
     return {
       horizonDays: days,
-      predictedPrice: Math.max(0.01, +predicted.toFixed(2)),
-      lowerBound: Math.max(0.01, +(predicted - uncertainty).toFixed(2)),
-      upperBound: +(predicted + uncertainty).toFixed(2),
-      confidence: +Math.max(0.2, Math.min(0.9, 1 - vol30 * 0.3 - days / 700)).toFixed(4),
+      predictedPrice: Math.max(0.01, +base.toFixed(2)),
+      lowerBound:     Math.max(0.01, +(base - uncertainty).toFixed(2)),
+      upperBound:     +(base + uncertainty).toFixed(2),
+      confidence:     +confidence.toFixed(4),
     }
   })
 }
 
-function augmentPredictions(dbPredictions: any[], currentPrice: number, roi30d: number, vol: number) {
-  const existing = new Set(dbPredictions.map((p: any) => p.horizonDays))
-  const longHorizons = [
-    { days: 180, decay: 0.35 },
-    { days: 365, decay: 0.2 },
-  ]
-  const extra = longHorizons
-    .filter(({ days }) => !existing.has(days))
-    .map(({ days, decay }) => {
-      const roi = roi30d * decay * (days / 30)
-      const predicted = currentPrice * (1 + roi)
-      const uncertainty = currentPrice * (0.05 + vol * 0.05 * (days / 30))
-      return {
-        horizonDays: days,
-        predictedPrice: Math.max(0.01, +predicted.toFixed(2)),
-        lowerBound: Math.max(0.01, +(predicted - uncertainty).toFixed(2)),
-        upperBound: +(predicted + uncertainty).toFixed(2),
-        confidence: +Math.max(0.2, Math.min(0.9, 1 - vol * 0.3 - days / 700)).toFixed(4),
-      }
-    })
-  return [...dbPredictions, ...extra].sort((a: any, b: any) => a.horizonDays - b.horizonDays)
+// ── Insight enrichi ───────────────────────────────────────────────────────────
+function generateEnrichedInsight(p: {
+  card: any; investmentScore: number; cTier: string; era: string
+  targets: any; currentPrice: number; change30d: number
+  salesCount30d: number; avgSale30d: number; athDrop: number
+  populationPsa10: number; bullishSignals: string[]; bearishSignals: string[]
+}): string {
+  const { investmentScore, cTier, era, targets, currentPrice, change30d,
+    salesCount30d, avgSale30d, athDrop, populationPsa10 } = p
+
+  const name = p.card.name ?? 'Cette carte'
+  const growthPct = ((targets.mult1y - 1) * 100).toFixed(0)
+  const salesInfo = salesCount30d > 0
+    ? ` ${salesCount30d} ventes récentes à ${avgSale30d.toFixed(2)}€ en moyenne.` : ''
+
+  if (investmentScore >= 80) {
+    if (era === 'vintage') {
+      return `${name} est un actif vintage de premier ordre (score ${investmentScore}/100). Offre définitivement limitée, demande collector structurelle. Objectif 1 an : ${targets.t1y.toFixed(2)}€ (+${growthPct}%).${salesInfo}`
+    }
+    if (cTier === 'S' && targets.conviction === 'FORTE') {
+      return `Très forte opportunité (score ${investmentScore}/100). ${name} combine popularité S-tier et rareté élevée. Objectif ${targets.horizon} : +${growthPct}% annuel.${salesInfo}`
+    }
+    return `Opportunité d'achat forte (score ${investmentScore}/100). ${name} — momentum positif${athDrop > 20 ? `, ${athDrop.toFixed(0)}% sous ATH` : ''}. Objectif 1 an : ${targets.t1y.toFixed(2)}€.${salesInfo}`
+  }
+
+  if (investmentScore >= 60) {
+    const perfStr = change30d !== 0 ? ` Performance 30j : ${change30d > 0 ? '+' : ''}${change30d.toFixed(1)}%.` : ''
+    return `Profil au-dessus de la moyenne (score ${investmentScore}/100).${perfStr} Potentiel ${targets.horizon} estimé à ${targets.t1y.toFixed(2)}€.${salesInfo}`
+  }
+
+  if (investmentScore >= 40) {
+    const popStr = populationPsa10 < 200 ? ` Population PSA 10 faible (${populationPsa10}).` : ''
+    return `Profil neutre (score ${investmentScore}/100).${popStr} Adapté aux collectionneurs. Croissance estimée : +${growthPct}% sur 1 an.${salesInfo}`
+  }
+
+  const mainRisk = p.bearishSignals[0] ?? 'Conditions de marché peu favorables actuellement.'
+  return `Profil prudent (score ${investmentScore}/100). ${mainRisk} Cible 1 an conservative : ${targets.t1y.toFixed(2)}€.${salesInfo}`
 }
 
+// ── RSI ───────────────────────────────────────────────────────────────────────
 function computeRSI(prices: number[], period = 14): number {
-  if (prices.length < period + 1) return 50
+  if (!prices?.length || prices.length < period + 1) return 50
   const changes = prices.slice(1).map((p, i) => p - prices[i])
-  const gains = changes.map((c) => Math.max(0, c))
-  const losses = changes.map((c) => Math.max(0, -c))
+  const gains = changes.map(c => Math.max(0, c))
+  const losses = changes.map(c => Math.max(0, -c))
   const avgGain = gains.slice(-period).reduce((s, v) => s + v, 0) / period
   const avgLoss = losses.slice(-period).reduce((s, v) => s + v, 0) / period
   if (avgLoss === 0) return 100
