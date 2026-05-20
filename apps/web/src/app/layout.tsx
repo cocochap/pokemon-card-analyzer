@@ -11,6 +11,8 @@ import { LanguageModal } from '@/components/ui/LanguageModal'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 import { SplashScreen } from '@/components/ui/SplashScreen'
 import { Toaster } from 'react-hot-toast'
+import { Analytics } from '@vercel/analytics/next'
+import { PostHogProvider } from '@/components/providers/PostHogProvider'
 import '@/styles/globals.css'
 
 export const metadata: Metadata = {
@@ -80,6 +82,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <ClerkProvider>
       <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
         <body className="min-h-screen bg-background font-sans antialiased">
+          <PostHogProvider>
           <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} forcedTheme="dark">
             <QueryProvider>
               <TierProvider>
@@ -109,6 +112,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
             </QueryProvider>
           </ThemeProvider>
+          </PostHogProvider>
+          <Analytics />
         </body>
       </html>
     </ClerkProvider>

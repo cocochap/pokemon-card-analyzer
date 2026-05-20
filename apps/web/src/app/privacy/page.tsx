@@ -62,6 +62,8 @@ export default function PrivacyPage() {
             <li><strong>Clerk</strong> : authentification et gestion des comptes</li>
             <li><strong>Stripe</strong> : traitement des paiements</li>
             <li><strong>Vercel / Neon</strong> : hébergement et base de données</li>
+            <li><strong>PostHog</strong> : analyse du comportement utilisateur (événements anonymisés)</li>
+            <li><strong>Vercel Analytics</strong> : statistiques de trafic agrégées et anonymes</li>
           </ul>
           <p>Ces sous-traitants sont engagés contractuellement à protéger vos données.</p>
         </Section>
@@ -78,8 +80,14 @@ export default function PrivacyPage() {
           <p>Pour exercer ces droits, contactez-nous à <strong>contact@pokescard.com</strong>. Nous répondons sous 30 jours.</p>
         </Section>
 
-        <Section title="8. Cookies">
-          <p>Nous utilisons uniquement des cookies strictement nécessaires au fonctionnement du service (session, authentification). Aucun cookie publicitaire ou de tracking tiers n'est utilisé.</p>
+        <Section title="8. Cookies et analytics">
+          <p>Nous utilisons :</p>
+          <ul>
+            <li><strong>Cookies de session</strong> : strictement nécessaires à l'authentification et au fonctionnement du service</li>
+            <li><strong>Vercel Analytics</strong> : mesure d'audience anonyme (pages vues, pays, appareils) — aucune donnée personnelle collectée</li>
+            <li><strong>PostHog</strong> : analyse du comportement utilisateur (actions réalisées sur la plateforme) afin d'améliorer le service — les données sont pseudonymisées</li>
+          </ul>
+          <p>Aucun cookie publicitaire ou de ciblage n'est utilisé.</p>
         </Section>
 
         <Section title="9. Sécurité">
