@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { Camera, Github, Twitter, Zap } from 'lucide-react'
+import { Camera, Zap } from 'lucide-react'
 
 const links = {
   Produit: [
@@ -18,6 +18,7 @@ const links = {
     { label: 'Tarifs', href: '/pricing' },
   ],
   Légal: [
+    { label: 'Mentions légales', href: '/mentions-legales' },
     { label: 'Confidentialité', href: '/privacy' },
     { label: 'Conditions d\'utilisation', href: '/terms' },
     { label: 'Avertissement', href: '/disclaimer' },
@@ -57,13 +58,13 @@ export function Footer() {
 
             {/* Social */}
             <div className="flex items-center gap-2">
-              <a href="#" className="w-9 h-9 flex items-center justify-center rounded-xl transition-colors text-white/40 hover:text-[#FFCB05]"
+              <a href="https://www.tiktok.com/@pokescard" target="_blank" rel="noopener noreferrer"
+                aria-label="TikTok PokeScard"
+                className="w-9 h-9 flex items-center justify-center rounded-xl transition-colors text-white/40 hover:text-[#FFCB05]"
                 style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <Twitter className="w-4 h-4" />
-              </a>
-              <a href="#" className="w-9 h-9 flex items-center justify-center rounded-xl transition-colors text-white/40 hover:text-[#FFCB05]"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <Github className="w-4 h-4" />
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.18 8.18 0 0 0 4.78 1.52V6.76a4.85 4.85 0 0 1-1-.07z"/>
+                </svg>
               </a>
               <Link href="/pricing" className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-colors"
                 style={{ background: 'rgba(255,203,5,0.08)', border: '1px solid rgba(255,203,5,0.20)', color: '#FFCB05' }}>

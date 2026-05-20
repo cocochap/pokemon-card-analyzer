@@ -18,8 +18,8 @@ interface CardHeroProps {
     number: string
     rarity: string
     variant: string
-    imageLgUrl: string | null
-    imageSmUrl: string | null
+    imageLgUrl:  string | null
+    imageSmUrl:  string | null
     illustrator: string | null
     set: { name: string; logoUrl: string | null }
     marketData?: {
@@ -46,6 +46,7 @@ export function CardHero({ card }: CardHeroProps) {
 
   const handleMouseLeave = () => setTilt({ x: 0, y: 0 })
 
+  const imageUrl = card.imageLgUrl ?? card.imageSmUrl
   const md = card.marketData
   const changes = md
     ? [
@@ -85,9 +86,9 @@ export function CardHero({ card }: CardHeroProps) {
                 !loaded && 'aspect-[5/7] bg-white/5 animate-pulse',
               )}
             >
-              {card.imageLgUrl && (
+              {imageUrl && (
                 <Image
-                  src={card.imageLgUrl}
+                  src={imageUrl}
                   alt={getCardName(card as any, locale)}
                   width={600}
                   height={840}
@@ -199,9 +200,9 @@ export function CardHero({ card }: CardHeroProps) {
               className="max-w-md w-full"
               onClick={(e) => e.stopPropagation()}
             >
-              {card.imageLgUrl && (
+              {imageUrl && (
                 <Image
-                  src={card.imageLgUrl}
+                  src={imageUrl}
                   alt={getCardName(card as any, locale)}
                   width={600}
                   height={840}

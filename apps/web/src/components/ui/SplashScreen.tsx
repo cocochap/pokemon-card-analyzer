@@ -147,17 +147,17 @@ export function SplashScreen() {
   const [visible, setVisible] = useState(false)
   const [exiting, setExiting] = useState(false)
 
+  const dismiss = () => {
+    setExiting(true)
+    setTimeout(() => setVisible(false), 700)
+  }
+
   useEffect(() => {
-    // Show only once per session
     if (sessionStorage.getItem('splash_seen')) return
     sessionStorage.setItem('splash_seen', '1')
     setVisible(true)
 
-    const t = setTimeout(() => {
-      setExiting(true)
-      setTimeout(() => setVisible(false), 700)
-    }, 2800)
-
+    const t = setTimeout(dismiss, 2800)
     return () => clearTimeout(t)
   }, [])
 
@@ -244,6 +244,17 @@ export function SplashScreen() {
               transition={{ delay: 1.2, duration: 1.4, ease: 'easeInOut' }}
             />
           </motion.div>
+
+          {/* Skip button */}
+          <motion.button
+            onClick={dismiss}
+            className="absolute bottom-10 right-8 text-xs text-white/25 hover:text-white/60 transition-colors"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.8 }}
+          >
+            Passer →
+          </motion.button>
         </motion.div>
       )}
     </AnimatePresence>

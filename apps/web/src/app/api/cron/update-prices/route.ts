@@ -25,26 +25,20 @@ import { subDays } from 'date-fns'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
-// Sets supportés avec mapping pokemontcg.io ID
+// Sets prioritaires — les plus populaires d'abord pour maximiser les mises à jour dans 50s
 const PTCG_SET_IDS = [
-  // Scarlet & Violet — mis à jour chaque jour
-  'sv1', 'sv2', 'sv3', 'sv3pt5', 'sv4', 'sv4pt5',
-  'sv5', 'sv6', 'sv6pt5', 'sv7', 'sv8', 'sv8pt5',
-  'sv9', 'sv10', 'rsv10pt5', 'zsv10pt5', 'svp',
-  // Sword & Shield — sets populaires avec prix actifs
-  'swsh1', 'swsh2', 'swsh3', 'swsh4', 'swsh5', 'swsh6',
-  'swsh7', 'swsh8', 'swsh9', 'swsh10', 'swsh11', 'swsh12',
-  'swsh12pt5', 'swsh35', 'swsh45', 'swsh45sv', 'swshp',
-  // Sun & Moon populaires
-  'sm1', 'sm2', 'sm3', 'sm3pt5', 'sm4', 'sm5', 'sm6',
-  'sm7', 'sm8', 'sm9', 'sm10', 'sm11', 'sm12', 'smp',
+  // SV (Écarlate & Violet) — sets actifs, priorité absolue
+  'sv3pt5', 'sv8pt5', 'sv9', 'sv8', 'sv7', 'sv6pt5', 'sv6', 'sv5',
+  'sv4pt5', 'sv4', 'sv3', 'sv2', 'sv1', 'svp',
+  // SWSH populaires
+  'swsh12pt5', 'swsh12', 'swsh11', 'swsh10', 'swsh9', 'swsh7',
+  'swsh35', 'swsh45', 'swsh1',
+  // SM populaires
+  'sm12', 'sm11', 'sm1',
   // XY populaires
-  'xy1', 'xy2', 'xy3', 'xy4', 'xy5', 'xy6', 'xy7',
-  'xy8', 'xy9', 'xy10', 'xy11', 'xy12', 'xyp',
-  // Vintage — sets très recherchés
-  'base1', 'base2', 'base3', 'base4', 'base5', 'base6',
-  'neo1', 'neo2', 'neo3', 'neo4',
-  'ex1', 'ex2', 'ex3', 'ex4', 'ex5', 'ex6',
+  'xy12', 'xy1',
+  // Vintage
+  'base1', 'neo1', 'base2',
 ]
 
 interface PtcgCard {
@@ -71,9 +65,11 @@ interface PtcgCard {
 }
 
 async function fetchPtcgSet(setId: string): Promise<PtcgCard[]> {
+  const headers: Record<string, string> = { Accept: 'application/json' }
+  if (process.env.POKEMON_TCG_API_KEY) headers['X-Api-Key'] = process.env.POKEMON_TCG_API_KEY
   const res = await fetch(
     `https://api.pokemontcg.io/v2/cards?q=set.id:${setId}&pageSize=250&select=id,cardmarket,tcgplayer`,
-    { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(20000) }
+    { headers, signal: AbortSignal.timeout(20000) }
   )
   if (!res.ok) return []
   const json = await res.json()
@@ -94,24 +90,54 @@ export async function GET(req: NextRequest) {
   }
 
   const startedAt = Date.now()
+  // Limite stricte 55s pour rester dans le timeout Vercel (60s)
+  const HARD_LIMIT = 55_000
   const stats = { sets: 0, cards: 0, updated: 0, skipped: 0, errors: 0 }
 
-  // Charger toutes les cartes DB en une requête
-  const dbCards = await prisma.card.findMany({
-    select: { id: true, externalId: true, rarity: true },
-  })
-  const cardIndex = new Map(dbCards.map((c) => [c.externalId, c]))
+  // Neon est pré-chauffé par le cron warmup (5h45 UTC).
+  // Lancer les fetches pokemontcg.io et la vérification DB en parallèle.
+  const preFetchIds = PTCG_SET_IDS.slice(0, 8)
 
-  // Traiter chaque set
+  const [dbTest, ...preFetchResults] = await Promise.allSettled([
+    prisma.$queryRaw`SELECT 1` as Promise<any>,
+    ...preFetchIds.map(id => fetchPtcgSet(id)),
+  ])
+
+  if (dbTest.status === 'rejected') {
+    console.error('DB unavailable:', (dbTest as any).reason?.message)
+    return NextResponse.json({ ok: false, error: 'DB unavailable — warmup cron may have failed' }, { status: 503 })
+  }
+  console.log(`DB + ${preFetchIds.length} sets ready in ${Date.now() - startedAt}ms`)
+
+  // Cache des résultats pré-chargés
+  const preFetched = new Map<string, PtcgCard[]>()
+  preFetchIds.forEach((id, i) => {
+    const r = preFetchResults[i]
+    if (r?.status === 'fulfilled') preFetched.set(id, r.value)
+  })
+
+  // Traiter set par set — index DB chargé par set (évite le global findMany qui timeout sur Neon free)
   for (const setId of PTCG_SET_IDS) {
-    if (Date.now() - startedAt > 250_000) {
-      console.log('⏱ Timeout approaching, stopping early')
+    if (Date.now() - startedAt > HARD_LIMIT) {
+      console.log(`⏱ Arrêt à ${Math.round((Date.now() - startedAt) / 1000)}s — ${stats.updated} cartes mises à jour`)
       break
     }
 
     try {
-      const ptcgCards = await fetchPtcgSet(setId)
+      // Utiliser le résultat pré-chargé si disponible, sinon fetch maintenant
+      const ptcgCards = preFetched.get(setId) ?? await fetchPtcgSet(setId)
       if (ptcgCards.length === 0) continue
+
+      // Requête directe par externalId — pas besoin de passer par PokemonSet
+      const ptcgIds = ptcgCards.map(c => c.id)
+      const dbCards = await prisma.card.findMany({
+        where: { externalId: { in: ptcgIds } },
+        select: { id: true, externalId: true, rarity: true },
+      })
+      console.log(`${setId}: ptcgio=${ptcgIds.length} db=${dbCards.length} sample="${ptcgIds[0]}"`)
+      if (!dbCards.length) continue
+
+      const cardIndex = new Map(dbCards.map((c) => [c.externalId, c]))
 
       stats.sets++
       let setUpdated = 0
@@ -138,8 +164,8 @@ export async function GET(req: NextRequest) {
       stats.cards += ptcgCards.length
       console.log(`✅ ${setId}: ${setUpdated}/${ptcgCards.length} cartes mises à jour`)
 
-      // Rate limiting : pokemontcg.io sans API key = ~10 req/s
-      await sleep(400)
+      // Rate limiting : 150ms avec API key, sinon 300ms
+      await sleep(process.env.POKEMON_TCG_API_KEY ? 150 : 300)
     } catch (err) {
       console.error(`❌ Erreur set ${setId}:`, err)
       stats.errors++
@@ -156,7 +182,14 @@ export async function GET(req: NextRequest) {
   const duration = Math.round((Date.now() - startedAt) / 1000)
   console.log(`\n📊 Résumé: ${stats.updated} cartes / ${stats.sets} sets en ${duration}s`)
 
-  return NextResponse.json({ ok: true, duration, ...stats })
+  return NextResponse.json({
+    ok: true, duration, ...stats,
+    diag: {
+      preFetchedSets: [...preFetched.keys()],
+      preFetchedCounts: Object.fromEntries([...preFetched.entries()].map(([k,v]) => [k, v.length])),
+      hardLimitMs: HARD_LIMIT,
+    }
+  })
 }
 
 async function updateCardPricing(

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   AlertCircle, Camera, CheckCircle2, ExternalLink, Info,
@@ -375,7 +375,7 @@ function CandidatePicker({
   const [searchResults, setSearchResults] = useState<Candidate[]>([])
   const [searching, setSearching] = useState(false)
 
-  const handleSearchInput = async (q: string) => {
+  async function handleSearchInput(q: string) {
     setSearchQuery(q)
     if (q.trim().length < 2) { setSearchResults([]); return }
     setSearching(true)
