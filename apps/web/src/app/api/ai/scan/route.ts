@@ -26,17 +26,20 @@ Return ONLY this JSON: {"num":"006","total":"165"}
 - If special format like "SV107/SV122": {"num":"SV107","total":"SV122"}
 - If not found: {"num":"","total":""}`
 
-// Prompt B — nom seul, ultra-focalisé
+// Prompt B — nom seul, toujours les deux langues
 const PROMPT_NAME = `Look at this Pokémon card image (direct photo or marketplace screenshot).
 
 Find the POKÉMON NAME. It appears at the top of the card. Also check any visible listing title or description.
 Include the variant suffix exactly: ex, EX, GX, VMAX, VSTAR, V, Tag Team, BREAK...
 
-Examples: "Charizard ex", "Pikachu VMAX", "Mewtwo GX", "Dracaufeu ex", "Lugia V"
+Return ONLY this JSON:
+{"enName":"Charizard ex","frName":"Dracaufeu ex","lang":"FR"}
 
-Return ONLY this JSON: {"name":"Charizard ex","lang":"FR"}
-- lang: FR/EN/JP/DE/ES/IT/PT (language of the card, not the listing)
-- If not found: {"name":"","lang":"FR"}`
+- enName: ALWAYS the English name (e.g. "Charizard ex", "Pikachu VMAX", "Mewtwo GX")
+- frName: the name as printed on the card if it's French, else same as enName
+- lang: FR/EN/JP/DE/ES/IT/PT (language printed on the card)
+- If the card is English: {"enName":"Charizard ex","frName":"Charizard ex","lang":"EN"}
+- If not found: {"enName":"","frName":"","lang":"FR"}`
 
 // Prompt C — contexte set (seulement si A et B insuffisants)
 const PROMPT_SET = `Look at this Pokémon card image or marketplace screenshot.
@@ -317,9 +320,10 @@ async function findCandidates(num: string, enName: string, frName: string, setId
   if (num && setId) {
     add(await prisma.card.findMany({ where: { number: { in: nums }, set: { externalId: setId } }, select: CAND_SEL, take: 4 }))
   }
-  if (enName || frName) {
+  // Chercher sur les deux noms séparément (EN en priorité, FR en fallback)
+  for (const name of [enName, frName].filter((v, i, a) => v && v !== a[i - 1])) {
     add(await prisma.card.findMany({
-      where: { name: { contains: enName || frName, mode: 'insensitive' } },
+      where: { name: { contains: name, mode: 'insensitive' } },
       select: CAND_SEL, orderBy: { set: { releaseDate: 'desc' } } as any, take: 6,
     }))
   }
@@ -392,7 +396,7 @@ function extractJson(text: string): Record<string, string> | null {
 }
 
 // ── pokemontcg.io ─────────────────────────────────────────────────────────────
-async function searchPtcgio(num: string, total: number | null, enName: string, setId: string): Promise<{ ptcgCard: any; dbCard: any | null } | null> {
+async function searchPtcgio(num: string, total: number | null, enName: string, frName: string, setId: string): Promise<{ ptcgCard: any; dbCard: any | null } | null> {
   try {
     const headers: Record<string, string> = process.env.POKEMON_TCG_API_KEY ? { 'X-Api-Key': process.env.POKEMON_TCG_API_KEY } : {}
     const numClean = num.replace(/^0+(?=[0-9])/, '')
@@ -401,9 +405,14 @@ async function searchPtcgio(num: string, total: number | null, enName: string, s
     // La requête la plus précise : numéro + total
     if (num && total) queries.push(`number:"${numClean}" set.printedTotal:"${total}"`)
     if (num && setId) queries.push(`number:"${numClean}" set.id:${setId}`)
-    if (enName && total) queries.push(`name:"${enName}" set.printedTotal:"${total}"`)
-    if (enName && num) queries.push(`name:"${enName}" number:"${numClean}"`)
-    if (enName && setId) queries.push(`name:"${enName}" set.id:${setId}`)
+    const ptcgName = enName || frName // pokemontcg.io comprend les deux
+    if (ptcgName && total) queries.push(`name:"${ptcgName}" set.printedTotal:"${total}"`)
+    if (ptcgName && num)   queries.push(`name:"${ptcgName}" number:"${numClean}"`)
+    if (ptcgName && setId) queries.push(`name:"${ptcgName}" set.id:${setId}`)
+    // Essayer aussi avec le nom français si différent
+    if (frName && frName !== enName && total) queries.push(`name:"${frName}" set.printedTotal:"${total}"`)
+    if (frName && frName !== enName && num)   queries.push(`name:"${frName}" number:"${numClean}"`)
+
 
     for (const q of queries.slice(0, 4)) {
       try {
@@ -412,7 +421,7 @@ async function searchPtcgio(num: string, total: number | null, enName: string, s
         const cards: any[] = (await res.json()).data ?? []
         if (!cards.length) continue
         const match = cards.find(c => c.number === num || c.number === numClean)
-          ?? cards.find(c => c.name.toLowerCase().includes((enName.split(' ')[0] || '').toLowerCase()))
+          ?? cards.find(c => c.name.toLowerCase().includes(((enName || frName).split(' ')[0] || '').toLowerCase()))
           ?? cards[0]
         console.log(`[scan] ptcgio: ${match.id} (${match.name} #${match.number})`)
         const dbCard = await prisma.card.findUnique({ where: { externalId: match.id }, select: SEL })
@@ -442,14 +451,16 @@ async function importCard(ptcgCard: any): Promise<any | null> {
 }
 
 // ── Extraction AI : 3 prompts focalisés en parallèle ─────────────────────────
-async function extractWithFocusedPrompts(b64: string, mime: string): Promise<{
+async function extractWithFocusedPrompts(buffers: { b64: string; mime: string }[]): Promise<{
   num: string; total: number | null; enName: string; frName: string
   setName: string; setId: string; language: string
 }> {
+  const { b64, mime } = buffers[0]
+
   // Lance les 3 mini-prompts en parallèle
   const [rA, rB, rC] = await Promise.all([
     callGemini(b64, mime, PROMPT_NUMBER, 60),
-    callGemini(b64, mime, PROMPT_NAME, 80),
+    callGemini(b64, mime, PROMPT_NAME, 100),
     callGemini(b64, mime, PROMPT_SET, 80),
   ])
 
@@ -457,25 +468,61 @@ async function extractWithFocusedPrompts(b64: string, mime: string): Promise<{
   const pB = rB.text ? extractJson(rB.text) : null
   const pC = rC.text ? extractJson(rC.text) : null
 
-  const numRaw  = (pA?.num  ?? '').trim()
-  const totRaw  = (pA?.total ?? '').trim()
-  const nameRaw = (pB?.name  ?? '').trim()
-  const lang    = (pB?.lang  ?? 'FR').trim()
-  const setName = (pC?.setName ?? '').trim()
-  const setIdAI = (pC?.setId   ?? '').trim()
+  let numRaw  = (pA?.num     ?? '').trim()
+  let totRaw  = (pA?.total   ?? '').trim()
+  let enName  = (pB?.enName  ?? pB?.name ?? '').trim()
+  let frName  = (pB?.frName  ?? '').trim()
+  const lang  = (pB?.lang    ?? 'FR').trim()
+  let setName = (pC?.setName ?? '').trim()
+  let setIdAI = (pC?.setId   ?? '').trim()
+
+  // Si une deuxième image existe, l'utiliser pour compléter les champs manquants
+  if (buffers.length > 1 && (!numRaw || !enName)) {
+    const { b64: b2, mime: m2 } = buffers[1]
+    const toRun: Promise<any>[] = []
+    if (!numRaw) toRun.push(callGemini(b2, m2, PROMPT_NUMBER, 60))
+    else         toRun.push(Promise.resolve({ text: null }))
+    if (!enName) toRun.push(callGemini(b2, m2, PROMPT_NAME, 100))
+    else         toRun.push(Promise.resolve({ text: null }))
+
+    const [r2A, r2B] = await Promise.all(toRun)
+    if (!numRaw && r2A.text) {
+      const p2A = extractJson(r2A.text)
+      if (p2A?.num)   { numRaw = p2A.num.trim(); totRaw = (p2A.total ?? '').trim() }
+    }
+    if (!enName && r2B.text) {
+      const p2B = extractJson(r2B.text)
+      enName = (p2B?.enName ?? p2B?.name ?? '').trim()
+      frName = (p2B?.frName ?? frName).trim()
+    }
+  }
+
+  // Fallback Groq pour le numéro si Gemini a échoué
+  if (!numRaw && rA.rateLimited) {
+    const groqNum = await callGroq(b64, mime, PROMPT_NUMBER, 60)
+    if (groqNum) {
+      const p = extractJson(groqNum)
+      if (p?.num) { numRaw = p.num.trim(); totRaw = (p.total ?? '').trim() }
+    }
+  }
+
+  // Fallback Groq pour le nom
+  if (!enName) {
+    const groqName = await callGroq(b64, mime, PROMPT_NAME, 100)
+    if (groqName) {
+      const p = extractJson(groqName)
+      enName = (p?.enName ?? p?.name ?? '').trim()
+      frName = (p?.frName ?? frName).trim()
+    }
+  }
+
+  // Si enName manque mais frName existe → utiliser frName comme enName
+  // (l'AI connaît les noms FR→EN, mais si elle n'a pas renvoyé enName on fallback)
+  if (!enName && frName) enName = frName
 
   const total = parseTotal(totRaw) ?? parseTotal(numRaw)
 
-  // Reconstruction du cardNumber complet
-  const cardNumber = numRaw
-    ? (totRaw ? `${numRaw}/${totRaw}` : numRaw)
-    : ''
-
-  // Nom FR vs EN : si la langue est FR, le nom lu est français
-  const frName = lang === 'FR' ? nameRaw : ''
-  const enName = lang !== 'FR' ? nameRaw : ''
-
-  console.log(`[scan] focused: num="${numRaw}" total="${totRaw}" name="${nameRaw}" lang=${lang} set="${setName}" setId="${setIdAI}"`)
+  console.log(`[scan] focused: num="${numRaw}" total="${totRaw}" en="${enName}" fr="${frName}" lang=${lang} set="${setName}" setId="${setIdAI}"`)
 
   return { num: numRaw, total, enName, frName, setName, setId: setIdAI, language: lang }
 }
@@ -552,7 +599,7 @@ export async function POST(req: NextRequest) {
     const { b64, mime } = buffers[0]
 
     // ── Phase 1 : 3 prompts focalisés en parallèle ───────────────
-    const focused = await extractWithFocusedPrompts(b64, mime)
+    const focused = await extractWithFocusedPrompts(buffers)
 
     let { num, total, enName, frName, setName, setId: setIdAI, language } = focused
     let cardNumber = num ? (focused.total !== null ? `${num}/${focused.total}` : num) : ''
@@ -575,11 +622,11 @@ export async function POST(req: NextRequest) {
 
     // Si on a le numéro mais pas le nom → Groq pour le nom
     if (num && !enName && !frName) {
-      const groqName = await callGroq(b64, mime, PROMPT_NAME, 80)
+      const groqName = await callGroq(b64, mime, PROMPT_NAME, 100)
       if (groqName) {
         const p = extractJson(groqName)
-        const n = (p?.name ?? '').trim()
-        if (n) { language === 'FR' ? (frName = n) : (enName = n) }
+        enName = (p?.enName ?? p?.name ?? '').trim()
+        frName = (p?.frName ?? '').trim()
       }
     }
 
@@ -593,7 +640,7 @@ export async function POST(req: NextRequest) {
     const [card0, rawCandidates, ptcgResult] = await Promise.all([
       findCard(num, total, enName, frName, setId, setCandidates),
       findCandidates(num, enName, frName, setId, total),
-      hasInfo ? searchPtcgio(num, total, enName, setId) : Promise.resolve(null),
+      hasInfo ? searchPtcgio(num, total, enName, frName, setId) : Promise.resolve(null),
     ])
 
     // ── Phase 4 : Sélection ───────────────────────────────────────
