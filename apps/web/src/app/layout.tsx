@@ -24,6 +24,8 @@ export const metadata: Metadata = {
   description:
     'Scanner, analyser et suivre vos cartes Pokémon TCG avec l\'IA. Prix Cardmarket en temps réel, analyse d\'investissement, coffrets scellés et portfolio. La référence française du marché Pokémon.',
   keywords: [
+    'pokescard',
+    'pokescard.fr',
     'prix carte pokémon',
     'carte pokémon tcg',
     'scanner carte pokémon',
@@ -39,6 +41,8 @@ export const metadata: Metadata = {
     'pokémon psa',
     'pokémon card price',
     'scan carte pokemon',
+    'deal vinted pokemon',
+    'classement collection pokemon',
   ],
   authors: [{ name: 'PokeScard' }],
   creator: 'PokeScard',
@@ -77,10 +81,43 @@ export const viewport: Viewport = {
   initialScale: 1,
 }
 
+const JSON_LD = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'WebSite',
+      '@id': 'https://www.pokescard.fr/#website',
+      url: 'https://www.pokescard.fr',
+      name: 'PokéScard',
+      alternateName: ['PokeScard', 'pokescard', 'pokescard.fr'],
+      description: 'La référence française pour analyser, valoriser et suivre ses cartes Pokémon TCG.',
+      inLanguage: 'fr-FR',
+      potentialAction: {
+        '@type': 'SearchAction',
+        target: { '@type': 'EntryPoint', urlTemplate: 'https://www.pokescard.fr/cards?q={search_term_string}' },
+        'query-input': 'required name=search_term_string',
+      },
+    },
+    {
+      '@type': 'Organization',
+      '@id': 'https://www.pokescard.fr/#organization',
+      name: 'PokéScard',
+      alternateName: 'pokescard',
+      url: 'https://www.pokescard.fr',
+      logo: { '@type': 'ImageObject', url: 'https://www.pokescard.fr/logo.png' },
+      sameAs: ['https://www.tiktok.com/@pokescard'],
+      contactPoint: { '@type': 'ContactPoint', email: 'contact@pokescard.fr', contactType: 'customer support' },
+    },
+  ],
+}
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <ClerkProvider>
-      <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
+      <html lang="fr" className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
+        <head>
+          <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
+        </head>
         <body className="min-h-screen bg-background font-sans antialiased">
           <PostHogProvider>
           <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} forcedTheme="dark">
