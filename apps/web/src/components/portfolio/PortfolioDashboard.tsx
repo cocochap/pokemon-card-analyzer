@@ -10,7 +10,10 @@ import {
   Crown,
   Download,
   LineChart,
+  Loader2,
+  Lock,
   Plus,
+  Trophy,
   TrendingUp,
   Upload,
 } from 'lucide-react'
@@ -50,6 +53,56 @@ function ExportCsvButton() {
       <Download className="w-4 h-4" />
       Export CSV
     </a>
+  )
+}
+
+function LeaderboardToggle({ portfolioId, initialPublic }: { portfolioId: string; initialPublic: boolean }) {
+  const [isPublic, setIsPublic] = useState(initialPublic)
+  const [loading, setLoading] = useState(false)
+
+  const toggle = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/portfolio/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isPublic: !isPublic }),
+      })
+      if (res.ok) setIsPublic(v => !v)
+    } finally { setLoading(false) }
+  }
+
+  return (
+    <div className="glass-card p-4 flex items-center gap-4">
+      <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+        style={{ background: isPublic ? 'rgba(255,203,5,0.10)' : 'rgba(255,255,255,0.04)' }}>
+        {isPublic ? <Trophy className="w-4 h-4 text-pokemon-yellow" /> : <Lock className="w-4 h-4 text-white/30" />}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-white/80">Participer au classement global</p>
+        <p className="text-xs text-white/40 mt-0.5">
+          {isPublic
+            ? 'Ta collection est publique — valeur calculée chaque nuit (cartes ≥ 7j)'
+            : 'Rends ta collection publique pour apparaître dans le classement'}
+        </p>
+      </div>
+      <button
+        onClick={toggle}
+        disabled={loading}
+        className={clsx(
+          'relative w-11 h-6 rounded-full transition-colors shrink-0',
+          isPublic ? 'bg-pokemon-yellow' : 'bg-white/15',
+        )}
+      >
+        {loading
+          ? <Loader2 className="absolute inset-0 m-auto w-3.5 h-3.5 animate-spin text-black/60" />
+          : <span className={clsx(
+              'absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform',
+              isPublic ? 'translate-x-5' : 'translate-x-0.5',
+            )} />
+        }
+      </button>
+    </div>
   )
 }
 
@@ -226,6 +279,9 @@ export function PortfolioDashboard() {
 
       {/* Holdings Table */}
       <PortfolioTable portfolioId={portfolio.id} />
+
+      {/* Leaderboard opt-in */}
+      <LeaderboardToggle portfolioId={portfolio.id} initialPublic={portfolio.isPublic ?? false} />
 
       {/* Modals */}
       <AddCardModal open={showAddCard} onClose={() => setShowAddCard(false)} />

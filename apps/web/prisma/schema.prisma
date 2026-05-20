@@ -134,8 +134,9 @@ model User {
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
-  portfolio        Portfolio?
-  watchlist        WatchlistItem[]
+  portfolio         Portfolio?
+  watchlist         WatchlistItem[]
+  leaderboardEntry  LeaderboardEntry?
   alerts           Alert[]
   transactions     Transaction[]
   subscriptions    Subscription[]
@@ -487,9 +488,10 @@ model Portfolio {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items        PortfolioItem[]
-  snapshots    PortfolioSnapshot[]
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items            PortfolioItem[]
+  snapshots        PortfolioSnapshot[]
+  leaderboardEntry LeaderboardEntry?
 
   @@index([userId])
 }
@@ -762,4 +764,24 @@ model InvestmentPick {
   @@unique([cardId, period, pickType])
   @@index([period, pickType])
   @@index([cardId])
+}
+
+// ============================================================
+// LEADERBOARD
+// ============================================================
+
+model LeaderboardEntry {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  portfolioId String   @unique
+  rank        Int
+  totalValue  Decimal  @db.Decimal(14, 2)
+  cardCount   Int
+  computedAt  DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@index([rank])
+  @@index([computedAt])
 }

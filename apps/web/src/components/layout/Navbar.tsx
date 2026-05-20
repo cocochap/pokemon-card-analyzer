@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { SignInButton, SignedIn, SignedOut, UserButton } from '@clerk/nextjs'
 import {
   BarChart3, Bell, Briefcase, Camera, Home, Menu, Package, Search,
-  ShoppingBag, Sparkles, TrendingUp, X, Zap,
+  ShoppingBag, Sparkles, Trophy, TrendingUp, X, Zap,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { CommandPalette } from '@/components/ui/CommandPalette'
@@ -30,8 +30,9 @@ export function Navbar() {
     { href: '/sets',      label: t.nav.sets,      icon: TrendingUp },
     { href: '/portfolio', label: t.nav.portfolio, icon: Briefcase },
     { href: '/ai',        label: t.nav.aiInsights,icon: Sparkles, badge: 'AI' },
-    { href: '/deal',      label: 'Deal Vinted',   icon: ShoppingBag, badge: 'NEW' },
-    { href: '/sealed',    label: 'Coffrets',      icon: Package },
+    { href: '/deal',        label: 'Deal Vinted',  icon: ShoppingBag, badge: 'NEW' },
+    { href: '/leaderboard', label: 'Classement',   icon: Trophy },
+    { href: '/sealed',      label: 'Coffrets',     icon: Package },
     { href: '/scan',      label: t.nav.scan,      icon: Camera },
   ]
 
