@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db/prisma'
-import { subDays } from 'date-fns'
+import { computeLeaderboard } from '@/lib/leaderboard'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
-
-const MIN_AGE_DAYS = 7 // anti-cheat: cartes ajoutées depuis au moins 7 jours
 
 export async function GET(req: NextRequest) {
   const auth = req.headers.get('authorization')
@@ -14,69 +11,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // ?init=true bypass la règle d'âge pour le premier calcul
   const skipAgeCheck = req.nextUrl.searchParams.get('init') === 'true'
-  const cutoff = subDays(new Date(), MIN_AGE_DAYS)
+  const result = await computeLeaderboard(skipAgeCheck)
 
-  // Tous les portfolios sauf ceux qui se sont explicitement retirés (isPublic: false)
-  const portfolios = await prisma.portfolio.findMany({
-    where: { isPublic: { not: false } },
-    select: {
-      id: true,
-      userId: true,
-      items: {
-        where: skipAgeCheck ? {} : { createdAt: { lte: cutoff } },
-        select: {
-          quantity: true,
-          card: {
-            select: {
-              prices: {
-                where: { source: 'cardmarket' },
-                orderBy: { fetchedAt: 'desc' },
-                take: 1,
-                select: { market: true },
-              },
-            },
-          },
-        },
-      },
-    },
-  })
-
-  // Calcul de la valeur pour chaque portfolio
-  const entries = portfolios
-    .map(p => {
-      let totalValue = 0
-      let cardCount = 0
-      for (const item of p.items) {
-        const price = Number(item.card.prices[0]?.market ?? 0)
-        if (price > 0) {
-          totalValue += price * item.quantity
-          cardCount += item.quantity
-        }
-      }
-      return { portfolioId: p.id, userId: p.userId, totalValue, cardCount }
-    })
-    .filter(e => e.totalValue > 0)
-    .sort((a, b) => b.totalValue - a.totalValue)
-
-  // Upsert atomique : on remplace toutes les entrées
-  await prisma.$transaction([
-    prisma.leaderboardEntry.deleteMany(),
-    ...entries.map((e, i) =>
-      prisma.leaderboardEntry.create({
-        data: {
-          userId: e.userId,
-          portfolioId: e.portfolioId,
-          rank: i + 1,
-          totalValue: e.totalValue,
-          cardCount: e.cardCount,
-          computedAt: new Date(),
-        },
-      })
-    ),
-  ])
-
-  console.log(`[leaderboard] ${entries.length} portfolios ranked`)
-  return NextResponse.json({ ok: true, count: entries.length, top3: entries.slice(0, 3) })
+  console.log(`[leaderboard] ${result.count} portfolios ranked`)
+  return NextResponse.json({ ok: true, ...result })
 }

@@ -10,6 +10,7 @@ import { prisma } from '@/lib/db/prisma'
 import { fetchDecrypt, fetchCardPrice } from '@/lib/pokecardex/decrypt'
 import { computeInvestmentScore, RARITY_RANK } from '@/lib/pricing/normalize'
 import { flushAllCache } from '@/lib/db/redis'
+import { computeLeaderboard } from '@/lib/leaderboard'
 import { subDays } from 'date-fns'
 
 export const runtime = 'nodejs'
@@ -166,6 +167,14 @@ export async function GET(req: NextRequest) {
 
   // Invalider le cache Redis
   try { await flushAllCache() } catch { }
+
+  // Recalculer le leaderboard avec les nouveaux prix
+  try {
+    const lb = await computeLeaderboard()
+    console.log(`[leaderboard] recalculé après update-prices-fr: ${lb.count} portfolios`)
+  } catch (e: any) {
+    console.error('[leaderboard] erreur recalcul:', e?.message)
+  }
 
   const duration = Math.round((Date.now() - startedAt) / 1000)
   console.log(`📊 Cron FR: ${stats.updated} prix mis à jour / ${stats.sets} sets en ${duration}s`)

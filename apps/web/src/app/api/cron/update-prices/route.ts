@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 import { flushAllCache } from '@/lib/db/redis'
+import { computeLeaderboard } from '@/lib/leaderboard'
 import {
   normalizeCardmarketPrices,
   buildRealisticHistory,
@@ -177,6 +178,14 @@ export async function GET(req: NextRequest) {
     await flushAllCache()
   } catch {
     // Non bloquant
+  }
+
+  // Recalculer le leaderboard avec les nouveaux prix
+  try {
+    const lb = await computeLeaderboard()
+    console.log(`[leaderboard] recalculé après update-prices: ${lb.count} portfolios`)
+  } catch (e: any) {
+    console.error('[leaderboard] erreur recalcul:', e?.message)
   }
 
   const duration = Math.round((Date.now() - startedAt) / 1000)
