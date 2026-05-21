@@ -6,7 +6,7 @@ import {
   AlertCircle, Camera, CheckCircle2, Crop as CropIcon, ExternalLink, Info,
   ImageUp, Plus, RotateCcw, Search, TrendingDown, TrendingUp, Upload, Zap, X,
 } from 'lucide-react'
-import ReactCrop, { centerCrop, makeAspectCrop, type Crop, type PixelCrop } from 'react-image-crop'
+import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop'
 import 'react-image-crop/dist/ReactCrop.css'
 import Link from 'next/link'
 import { useT } from '@/lib/i18n/LanguageContext'
@@ -546,12 +546,10 @@ function ImageCropModal({
 
   function onImageLoad(e: React.SyntheticEvent<HTMLImageElement>) {
     const { width, height } = e.currentTarget
-    // Default crop: 90% centré, ratio carte Pokémon (5:7)
-    const c = centerCrop(
-      makeAspectCrop({ unit: '%', width: 90 }, 5 / 7, width, height),
-      width, height,
-    )
-    setCrop(c)
+    // Cadre qui couvre toute l'image — l'utilisateur réduit manuellement
+    setCrop({ unit: '%', x: 0, y: 0, width: 100, height: 100 })
+    // Initialise completedCrop pour que le bouton soit actif dès le départ
+    setCompletedCrop({ unit: 'px', x: 0, y: 0, width, height })
   }
 
   return (
@@ -580,8 +578,7 @@ function ImageCropModal({
           crop={crop}
           onChange={c => setCrop(c)}
           onComplete={c => setCompletedCrop(c)}
-          aspect={5 / 7}
-          minWidth={60}
+          minWidth={40}
           style={{ maxHeight: '100%', maxWidth: '100%' }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
