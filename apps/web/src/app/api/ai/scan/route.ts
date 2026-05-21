@@ -96,10 +96,10 @@ function normalizeSetCode(code: string): string {
 }
 
 // Parse le champ "collector" retourné par l'AI
-// "006/165" → { num: "006", total: 165, setCode: null }
-// "SVP 173" → { num: "173", total: null, setCode: "svp" }
+// "006/165"  → { num: "006",     total: 165, setCode: null }
+// "SVP 173"  → { num: "SVP173",  total: null, setCode: "svp" }   ← préfixe conservé (pokemontcg.io: "SVP173")
 // "SV107/SV122" → { num: "SV107", total: null, setCode: null }
-// "SWSH001" → { num: "SWSH001", total: null, setCode: "swshp" }
+// "SWSH001"  → { num: "SWSH001", total: null, setCode: "swshp" }
 function parseCollector(collector: string, setCodeHint: string): { num: string; total: number | null; setCode: string | null } {
   const c = (collector ?? '').trim()
   if (!c) return { num: '', total: null, setCode: null }
@@ -113,9 +113,12 @@ function parseCollector(collector: string, setCodeHint: string): { num: string; 
   }
 
   // Format "SET 173" — promo avec espace (ex: "SVP 173")
+  // Pokemontcg.io stocke le numéro sous forme "SVP173" (préfixe+chiffres), pas "173"
   const spaceMatch = c.match(/^([A-Z]{2,6})\s+(\d{1,4})$/i)
   if (spaceMatch) {
-    return { num: spaceMatch[2].padStart(3, '0'), total: null, setCode: normalizeSetCode(spaceMatch[1]) }
+    const prefix = spaceMatch[1].toUpperCase()
+    const digits = spaceMatch[2].padStart(3, '0')
+    return { num: `${prefix}${digits}`, total: null, setCode: normalizeSetCode(spaceMatch[1]) }
   }
 
   // Format "SWSH001" — promo sans espace (lettres + chiffres)
