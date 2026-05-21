@@ -596,7 +596,7 @@ function ImageCropModal({ src, onConfirm, onSkip }: {
 
   const { t, b, l, r } = ins
   // Hauteur disponible pour l'image (viewport - header 52px - footer ~124px - padding 24px)
-  const maxImgH = typeof window !== 'undefined' ? window.innerHeight - 200 : 500
+  const maxImgH = typeof window !== 'undefined' ? window.innerHeight - 160 : 500
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -617,7 +617,7 @@ function ImageCropModal({ src, onConfirm, onSkip }: {
 
       {/* Zone image — centrée entre header et footer */}
       <div className="absolute inset-x-0 flex items-center justify-center"
-        style={{ top: 52, bottom: 124, background: '#0a0e1a' }}>
+        style={{ top: 52, bottom: 82, background: '#0a0e1a' }}>
         {/* Wrapper collé à l'image pour que les overlays % soient corrects */}
         <div className="relative select-none" style={{ lineHeight: 0, touchAction: 'none' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -664,26 +664,25 @@ function ImageCropModal({ src, onConfirm, onSkip }: {
         </div>
       </div>
 
-      {/* Footer — toujours visible en bas */}
-      <div className="absolute inset-x-0 bottom-0 z-10 px-4 pt-3 flex flex-col gap-2"
-        style={{ background:'rgba(5,8,20,0.98)', borderTop:'1px solid rgba(255,255,255,0.08)',
-          paddingBottom:'max(16px, env(safe-area-inset-bottom))' }}>
-        <p className="text-[11px] text-center" style={{ color:'rgba(255,255,255,0.35)' }}>
-          Faites glisser les poignées jaunes pour rogner les bords
-        </p>
-        <div className="flex gap-3">
-          <button onClick={onSkip}
-            className="flex-1 py-3 rounded-xl text-sm font-medium"
-            style={{ background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.1)', color:'rgba(255,255,255,0.6)' }}>
-            Utiliser telle quelle
-          </button>
-          <button onClick={confirm}
-            className="flex-1 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
-            style={{ background:'#FFCB05', color:'#000' }}>
-            <CropIcon className="w-4 h-4" />
-            Valider
-          </button>
-        </div>
+      {/* Footer — boutons seulement, le plus compact possible */}
+      <div className="absolute inset-x-0 bottom-0 z-10 flex gap-3 px-4"
+        style={{
+          paddingTop: 10,
+          paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+          background: 'rgba(5,8,20,0.98)',
+          borderTop: '1px solid rgba(255,255,255,0.08)',
+        }}>
+        <button onClick={onSkip}
+          className="flex-1 rounded-xl text-sm font-medium"
+          style={{ height: 48, background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.1)', color:'rgba(255,255,255,0.6)' }}>
+          Ignorer
+        </button>
+        <button onClick={confirm}
+          className="flex-1 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+          style={{ height: 48, background:'#FFCB05', color:'#000' }}>
+          <CropIcon className="w-4 h-4" />
+          Valider
+        </button>
       </div>
     </motion.div>
   )
