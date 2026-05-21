@@ -574,16 +574,15 @@ function ImageCropModal({
         </button>
       </div>
 
-      {/* Image + crop */}
-      <div className="flex-1 overflow-hidden flex items-center justify-center p-4">
+      {/* Image + crop — min-h-0 pour que flex-1 se rétrécisse correctement */}
+      <div className="flex-1 min-h-0 flex items-center justify-center p-3 overflow-hidden">
         <ReactCrop
           crop={crop}
           onChange={c => setCrop(c)}
           onComplete={c => setCompletedCrop(c)}
           aspect={5 / 7}
           minWidth={60}
-          className="max-h-full"
-          style={{ maxHeight: '100%' }}
+          style={{ maxHeight: '100%', maxWidth: '100%' }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -591,14 +590,19 @@ function ImageCropModal({
             src={src}
             alt="Recadrer"
             onLoad={onImageLoad}
-            style={{ maxHeight: 'calc(100dvh - 180px)', objectFit: 'contain' }}
+            style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain', display: 'block' }}
           />
         </ReactCrop>
       </div>
 
-      {/* Footer */}
-      <div className="px-4 py-4 flex-shrink-0 space-y-2"
-        style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+      {/* Footer — safe area inset pour iPhone */}
+      <div
+        className="px-4 pt-3 pb-4 flex-shrink-0 space-y-2"
+        style={{
+          borderTop: '1px solid rgba(255,255,255,0.08)',
+          paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+        }}
+      >
         <p className="text-[11px] text-white/35 text-center">
           Déplacez et redimensionnez le cadre pour ne garder que la carte
         </p>
