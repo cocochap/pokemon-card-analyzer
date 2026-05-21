@@ -36,6 +36,37 @@ interface DealResult {
   noMarketPrice: boolean
   listingUrl: string | null
   listingPlatform: string | null
+  listingImageUrl: string | null
+}
+
+// ── Card photo (DB image > listing image > placeholder) ──────────────────────
+function CardPhoto({ result, size = 150 }: { result: DealResult; size?: number }) {
+  const imgSrc = result.card?.imageUrl ?? result.listingImageUrl
+  const isListing = !result.card?.imageUrl && !!result.listingImageUrl
+  const h = Math.round(size * 1.4)
+  if (!imgSrc) return (
+    <div className="rounded-xl flex items-center justify-center shrink-0"
+      style={{ width: size, height: h, background: 'rgba(255,255,255,0.04)', border: '1px dashed rgba(255,255,255,0.12)' }}>
+      <ShoppingBag className="w-8 h-8 text-white/15" />
+    </div>
+  )
+  return (
+    <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }}
+      transition={{ type: 'spring', stiffness: 200 }}
+      className="relative shrink-0">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={imgSrc} alt={result.card?.name ?? result.ai.cardName}
+        className="rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)]"
+        style={{ width: size, height: h, objectFit: isListing ? 'contain' : 'cover',
+          border: '1px solid rgba(255,255,255,0.12)', background: '#0a0e1a' }} />
+      {isListing && (
+        <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 text-[9px] px-1.5 py-0.5 rounded-full whitespace-nowrap"
+          style={{ background: 'rgba(0,0,0,0.75)', color: 'rgba(255,255,255,0.45)' }}>
+          photo annonce
+        </span>
+      )}
+    </motion.div>
+  )
 }
 
 // ── Deal score ring ───────────────────────────────────────────────────────────
@@ -379,30 +410,7 @@ export function DealAnalyzer() {
             <div className="glass-card p-4">
               <div className="flex items-start gap-4">
                 {/* Card image — large */}
-                <div className="shrink-0">
-                  {result.card?.imageUrl ? (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ type: 'spring', stiffness: 200 }}
-                      className="relative"
-                      style={{ perspective: 800 }}
-                    >
-                      <Image
-                        src={result.card.imageUrl}
-                        alt={result.card.name}
-                        width={130} height={182}
-                        className="rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.4)]"
-                        style={{ border: '1px solid rgba(255,255,255,0.1)' }}
-                      />
-                    </motion.div>
-                  ) : (
-                    <div className="w-[130px] h-[182px] rounded-xl flex items-center justify-center"
-                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px dashed rgba(255,255,255,0.12)' }}>
-                      <ShoppingBag className="w-8 h-8 text-white/15" />
-                    </div>
-                  )}
-                </div>
+                <CardPhoto result={result} size={150} />
 
                 {/* Card info */}
                 <div className="min-w-0 flex-1 space-y-2 pt-1">

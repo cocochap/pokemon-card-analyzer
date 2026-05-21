@@ -845,6 +845,7 @@ export async function POST(req: NextRequest) {
       noMarketPrice: marketPrice === 0,
       listingUrl,
       listingPlatform: listingUrl ? detectPlatform(listingUrl) : null,
+      listingImageUrl: listingMeta?.imageUrls?.[0] ?? null,
     })
   } catch (err: any) {
     console.error('[deal] fatal:', err?.message)
