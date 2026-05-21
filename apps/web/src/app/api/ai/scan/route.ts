@@ -12,27 +12,30 @@ export const maxDuration = 60
 
 // ── Prompts ───────────────────────────────────────────────────────────────────
 
-// Prompt principal : numéro seul — la chose la plus fiable sur une carte
-const PROMPT_NUMBER = `Look at this Pokémon card image (or marketplace screenshot).
+// Prompt unique — extrait tout ce dont on a besoin pour identifier la carte
+const PROMPT_IDENTIFY = `You are identifying a Pokémon TCG card from this image.
 
-Find the COLLECTOR NUMBER at the bottom of the card, or in any visible text.
-Format is always "XXX/YYY" like "006/165" or "SV107/SV122".
+Look at the BOTTOM of the card. You will see either:
+- A regular card: "006/165" (number/total)
+- A promo card: "SVP 173" or "SWSH001" (set code + number, no slash)
+- A special card: "SV107/SV122" (prefixed number/total)
 
-Return ONLY: {"num":"006","total":"165"}
-- num: left part (keep leading zeros)
-- total: right part (digits only — if "SV107/SV122" return total:"SV122")
-- Not found: {"num":"","total":""}`
+Also look at the TOP for the Pokémon name.
 
-// Prompt nom — utilisé uniquement pour disambiguer quand num+total donnent plusieurs résultats
-const PROMPT_NAME = `Look at this Pokémon card image (or marketplace screenshot).
+Return ONLY this JSON:
+{
+  "collector": "006/165",
+  "setCode": "",
+  "frName": "Dracaufeu ex",
+  "enName": "Charizard ex"
+}
 
-Find the Pokémon name at the TOP of the card (or in the listing title).
-Always include the variant: ex, EX, GX, VMAX, VSTAR, V, BREAK...
-
-Return ONLY: {"enName":"Charizard ex","frName":"Dracaufeu ex","lang":"FR"}
-- enName: always English (Charizard ex, Pikachu VMAX...)
-- frName: name as printed if French, else same as enName
-- Not found: {"enName":"","frName":"","lang":"FR"}`
+Rules:
+- collector: the FULL text at the bottom exactly as shown ("006/165", "SVP 173", "SV107/SV122", "SWSH001")
+- setCode: the set abbreviation if visible near the number ("SVP", "SWSH", "SMP", "XYP", etc.) — leave "" if not visible separately
+- frName: Pokémon name as printed on card (French if FR card)
+- enName: English name always (Eevee, Charizard ex, Pikachu VMAX...)
+- Use "" for any field not found`
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
 function normalizeName(name: string): string {
@@ -81,6 +84,52 @@ function ptcgioToDbId(id: string): string {
   return id
 }
 
+// Normalise le set code extrait par l'AI ("SVP" → "svp", "SWSH" → "swshp", etc.)
+function normalizeSetCode(code: string): string {
+  const c = code.toLowerCase().trim()
+  if (c === 'svp' || c === 'sv-p') return 'svp'
+  if (c === 'swsh' || c === 'swshp') return 'swshp'
+  if (c === 'smp' || c === 'sm-p') return 'smp'
+  if (c === 'xyp' || c === 'xy-p') return 'xyp'
+  if (c === 'bwp' || c === 'bw-p') return 'bwp'
+  return c
+}
+
+// Parse le champ "collector" retourné par l'AI
+// "006/165" → { num: "006", total: 165, setCode: null }
+// "SVP 173" → { num: "173", total: null, setCode: "svp" }
+// "SV107/SV122" → { num: "SV107", total: null, setCode: null }
+// "SWSH001" → { num: "SWSH001", total: null, setCode: "swshp" }
+function parseCollector(collector: string, setCodeHint: string): { num: string; total: number | null; setCode: string | null } {
+  const c = (collector ?? '').trim()
+  if (!c) return { num: '', total: null, setCode: null }
+
+  // Format "XXX/YYY" — carte normale
+  if (c.includes('/')) {
+    const [left, right] = c.split('/')
+    const num   = left.trim()
+    const total = parseTotal(right.trim())
+    return { num, total, setCode: null }
+  }
+
+  // Format "SET 173" — promo avec espace (ex: "SVP 173")
+  const spaceMatch = c.match(/^([A-Z]{2,6})\s+(\d{1,4})$/i)
+  if (spaceMatch) {
+    return { num: spaceMatch[2].padStart(3, '0'), total: null, setCode: normalizeSetCode(spaceMatch[1]) }
+  }
+
+  // Format "SWSH001" — promo sans espace (lettres + chiffres)
+  const promoMatch = c.match(/^([A-Z]{2,5})(\d{2,4})$/i)
+  if (promoMatch) {
+    const digits = promoMatch[2]
+    return { num: `${promoMatch[1].toUpperCase()}${digits}`, total: null, setCode: normalizeSetCode(promoMatch[1]) }
+  }
+
+  // Nombre seul
+  const setCode = setCodeHint ? normalizeSetCode(setCodeHint) : null
+  return { num: c, total: null, setCode }
+}
+
 // ── DB selects ────────────────────────────────────────────────────────────────
 const SEL = {
   id: true, name: true, number: true, rarity: true, imageSmUrl: true, imageLgUrl: true,
@@ -119,33 +168,50 @@ function matchScore(card: any, num: string, enName: string, frName: string, tota
   return s
 }
 
-// ── Lookup DB par numéro + total ──────────────────────────────────────────────
-async function findByNumberAndTotal(
-  num: string, total: number | null,
+// ── Lookup DB ─────────────────────────────────────────────────────────────────
+async function findCard(
+  num: string, total: number | null, setCode: string | null,
   enName: string, frName: string,
 ): Promise<any | null> {
-  if (!num) return null
-  const nums = numberVariants(num)
+  if (!num && !enName && !frName) return null
+  const nums = num ? numberVariants(num) : []
 
-  // Stratégie 1 : numéro + total (la plus fiable — presque toujours unique)
-  if (total) {
+  // S0 : externalId direct (promo = setCode + num)  ← NOUVEAU
+  if (num && setCode) {
+    const extIds = [
+      `${setCode}-${num}`,
+      `${setCode}-${num.replace(/^0+(?=[0-9])/, '')}`,
+      `${setCode}-${num.replace(/^0+(?=[0-9])/, '').padStart(3, '0')}`,
+    ]
+    const found = await prisma.card.findFirst({ where: { externalId: { in: extIds } }, select: SEL })
+    if (found) { console.log(`[scan] ✅ S0 externalId direct "${found.name}"`); return found }
+  }
+
+  // S1 : numéro + total (carte standard — quasi-unique)
+  if (num && total) {
     const rows = await prisma.card.findMany({
       where: { number: { in: nums }, set: { OR: [{ printedTotal: total }, { totalCards: total }] } },
-      select: SEL,
-      orderBy: { set: { releaseDate: 'desc' } } as any,
-      take: 10,
+      select: SEL, orderBy: { set: { releaseDate: 'desc' } } as any, take: 10,
     })
-    if (rows.length === 1) { console.log(`[scan] ✅ num+total unique "${rows[0].name}"`); return rows[0] }
+    if (rows.length === 1) { console.log(`[scan] ✅ S1 unique "${rows[0].name}"`); return rows[0] }
     if (rows.length > 1) {
-      // Plusieurs sets avec le même total — scorer par nom si disponible
       const scored = rows.map(c => ({ c, s: matchScore(c, num, enName, frName, total) })).sort((a, b) => b.s - a.s)
-      console.log(`[scan] num+total ${rows.length} résultats, best="${scored[0].c.name}" score=${scored[0].s}`)
-      return scored[0].c // retourne le meilleur même sans seuil
+      console.log(`[scan] S1 ${rows.length} résultats, best="${scored[0].c.name}" score=${scored[0].s}`)
+      return scored[0].c
     }
   }
 
-  // Stratégie 2 : numéro + nom (premier mot) si on a le nom
-  if (enName || frName) {
+  // S2 : numéro + setCode (même logique mais via set.externalId)
+  if (num && setCode) {
+    const row = await prisma.card.findFirst({
+      where: { number: { in: nums }, set: { externalId: setCode } },
+      select: SEL,
+    })
+    if (row) { console.log(`[scan] ✅ S2 num+setCode "${row.name}"`); return row }
+  }
+
+  // S3 : numéro + nom (premier mot)
+  if (num && (enName || frName)) {
     const firstWords = [frName, enName].filter(Boolean).map(n => n.split(' ')[0]).filter((v, i, a) => v.length >= 3 && a.indexOf(v) === i)
     for (const word of firstWords) {
       const rows = await prisma.card.findMany({
@@ -154,25 +220,41 @@ async function findByNumberAndTotal(
       })
       if (rows.length > 0) {
         const scored = rows.map(c => ({ c, s: matchScore(c, num, enName, frName, total) })).sort((a, b) => b.s - a.s)
-        console.log(`[scan] ✅ num+nom "${scored[0].c.name}" score=${scored[0].s}`)
+        console.log(`[scan] ✅ S3 "${scored[0].c.name}" score=${scored[0].s}`)
         return scored[0].c
       }
     }
   }
 
-  // Stratégie 3 : numéro seul (dernier recours DB) — trier par date
-  const byNum = await prisma.card.findMany({
-    where: { number: { in: nums } },
-    select: SEL,
-    orderBy: { set: { releaseDate: 'desc' } } as any,
-    take: 20,
-  })
-  if (byNum.length === 1) { console.log(`[scan] ✅ num seul unique "${byNum[0].name}"`); return byNum[0] }
-  if (byNum.length > 1 && (enName || frName)) {
-    const scored = byNum.map(c => ({ c, s: matchScore(c, num, enName, frName, total) })).sort((a, b) => b.s - a.s)
-    if (scored[0].s >= 30) { console.log(`[scan] ✅ num seul+score "${scored[0].c.name}" score=${scored[0].s}`); return scored[0].c }
+  // S4 : numéro seul — scorer par nom + date
+  if (num) {
+    const byNum = await prisma.card.findMany({
+      where: { number: { in: nums } },
+      select: SEL, orderBy: { set: { releaseDate: 'desc' } } as any, take: 20,
+    })
+    if (byNum.length === 1) { console.log(`[scan] ✅ S4 unique "${byNum[0].name}"`); return byNum[0] }
+    if (byNum.length > 1) {
+      const scored = byNum.map(c => ({ c, s: matchScore(c, num, enName, frName, total) })).sort((a, b) => b.s - a.s)
+      if (scored[0].s >= 20) { console.log(`[scan] ✅ S4 "${scored[0].c.name}" score=${scored[0].s}`); return scored[0].c }
+      return byNum[0] // plus récente par défaut
+    }
   }
-  if (byNum.length > 1) return byNum[0] // plus récente
+
+  // S5 : nom seul (sans numéro)
+  if (!num && (enName || frName)) {
+    const firstWord = (frName || enName).split(' ')[0]
+    if (firstWord.length >= 3) {
+      const rows = await prisma.card.findMany({
+        where: { name: { contains: firstWord, mode: 'insensitive' } },
+        select: SEL, orderBy: { set: { releaseDate: 'desc' } } as any, take: 10,
+      })
+      if (rows.length > 0) {
+        const scored = rows.map(c => ({ c, s: matchScore(c, '', enName, frName, null) })).sort((a, b) => b.s - a.s)
+        console.log(`[scan] ✅ S5 nom seul "${scored[0].c.name}"`)
+        return scored[0].c
+      }
+    }
+  }
 
   return null
 }
@@ -324,57 +406,28 @@ export async function POST(req: NextRequest) {
     })))
     const { b64, mime } = buffers[0]
 
-    // ── Étape 1 : extraire le numéro ─────────────────────────────
+    // ── Étape 1 : identifier la carte (un seul appel AI) ─────────
     const t0 = Date.now()
-    const numText = await raceAI(b64, mime, PROMPT_NUMBER, 80)
-    const pNum    = parseJson(numText)
-    const num     = (pNum?.num ?? '').trim()
-    const total   = parseTotal((pNum?.total ?? '').trim())
-    console.log(`[scan] num="${num}" total=${total} (${Date.now() - t0}ms)`)
+    const aiText  = await raceAI(b64, mime, PROMPT_IDENTIFY, 150)
+    const parsed  = parseJson(aiText)
+    const { num, total, setCode } = parseCollector(parsed?.collector ?? '', parsed?.setCode ?? '')
+    const enName  = (parsed?.enName ?? '').trim()
+    const frName  = (parsed?.frName ?? '').trim()
+    console.log(`[scan] AI ${Date.now() - t0}ms collector="${parsed?.collector}" num="${num}" total=${total} setCode="${setCode}" en="${enName}" fr="${frName}"`)
 
-    // ── Étape 2 : chercher en DB avec num+total ───────────────────
-    // En parallèle, si on n'a pas le num, extraire le nom aussi
-    const t1 = Date.now()
-    const namePromise = !num
-      ? raceAI(b64, mime, PROMPT_NAME, 100)
-      : Promise.resolve(null)
+    // ── Étape 2 : chercher en DB ──────────────────────────────────
+    let card = await findCard(num, total, setCode, enName, frName)
 
-    let card = await findByNumberAndTotal(num, total, '', '')
-    console.log(`[scan] DB1 ${Date.now() - t1}ms card="${card?.name ?? 'none'}"`)
-
-    // ── Étape 3 : si plusieurs cartes possibles, récupérer le nom ─
-    let enName = '', frName = ''
-    if (!card || (num && total)) {
-      // Vérifier si le numéro seul donne plusieurs résultats → besoin du nom
-      const nums = numberVariants(num)
-      const ambiguous = num && total
-        ? (await prisma.card.count({ where: { number: { in: nums }, set: { OR: [{ printedTotal: total }, { totalCards: total }] } } })) > 1
-        : num ? (await prisma.card.count({ where: { number: { in: nums } } })) > 1
-        : true
-
-      if (ambiguous || !card) {
-        const nameText = await (namePromise ?? raceAI(b64, mime, PROMPT_NAME, 100))
-        const pName    = parseJson(nameText)
-        enName = (pName?.enName ?? pName?.name ?? '').trim()
-        frName = (pName?.frName ?? '').trim()
-        if (!enName && frName) enName = frName
-        console.log(`[scan] nom: en="${enName}" fr="${frName}"`)
-
-        if (ambiguous && num) {
-          card = await findByNumberAndTotal(num, total, enName, frName)
-        } else if (!card && (enName || frName)) {
-          card = await findByNumberAndTotal(num, total, enName, frName)
-        }
+    // ── Étape 3 : fallback pokemontcg.io si toujours rien ────────
+    if (!card && num) {
+      const dbScore = card ? matchScore(card, num, enName, frName, total) : 0
+      if (dbScore < 30) {
+        console.log('[scan] fallback ptcgio')
+        card = await searchPtcgio(num, total, enName, frName)
       }
     }
 
-    // ── Étape 4 : fallback pokemontcg.io si toujours rien ────────
-    if (!card && num) {
-      console.log('[scan] fallback ptcgio')
-      card = await searchPtcgio(num, total, enName, frName)
-    }
-
-    // ── Étape 5 : construire la réponse ──────────────────────────
+    // ── Étape 4 : construire la réponse ──────────────────────────
     const cardNumber = num && total !== null ? `${num}/${total}` : num
 
     // Candidats pour la sélection manuelle
