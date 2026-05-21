@@ -1,11 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  AlertCircle, Camera, CheckCircle2, ExternalLink, Info,
+  AlertCircle, Camera, CheckCircle2, Crop as CropIcon, ExternalLink, Info,
   ImageUp, Plus, RotateCcw, Search, TrendingDown, TrendingUp, Upload, Zap, X,
 } from 'lucide-react'
+import ReactCrop, { centerCrop, makeAspectCrop, type Crop, type PixelCrop } from 'react-image-crop'
+import 'react-image-crop/dist/ReactCrop.css'
 import Link from 'next/link'
 import { useT } from '@/lib/i18n/LanguageContext'
 
@@ -530,6 +532,96 @@ function CandidatePicker({
   )
 }
 
+/* ── Image crop modal ────────────────────────────────────────── */
+function ImageCropModal({
+  src, onConfirm, onSkip,
+}: {
+  src: string
+  onConfirm: (crop: PixelCrop, imgEl: HTMLImageElement) => void
+  onSkip: () => void
+}) {
+  const imgRef = useRef<HTMLImageElement>(null)
+  const [crop, setCrop] = useState<Crop>()
+  const [completedCrop, setCompletedCrop] = useState<PixelCrop>()
+
+  function onImageLoad(e: React.SyntheticEvent<HTMLImageElement>) {
+    const { width, height } = e.currentTarget
+    // Default crop: 90% centré, ratio carte Pokémon (5:7)
+    const c = centerCrop(
+      makeAspectCrop({ unit: '%', width: 90 }, 5 / 7, width, height),
+      width, height,
+    )
+    setCrop(c)
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex flex-col"
+      style={{ background: 'rgba(5,8,20,0.97)' }}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 flex-shrink-0"
+        style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="flex items-center gap-2 text-sm font-semibold text-white">
+          <CropIcon className="w-4 h-4 text-pokemon-yellow" />
+          Recadrer la photo
+        </div>
+        <button onClick={onSkip}
+          className="text-xs text-white/40 hover:text-white/70 transition-colors px-3 py-1.5 rounded-lg"
+          style={{ background: 'rgba(255,255,255,0.06)' }}>
+          Ignorer
+        </button>
+      </div>
+
+      {/* Image + crop */}
+      <div className="flex-1 overflow-hidden flex items-center justify-center p-4">
+        <ReactCrop
+          crop={crop}
+          onChange={c => setCrop(c)}
+          onComplete={c => setCompletedCrop(c)}
+          aspect={5 / 7}
+          minWidth={60}
+          className="max-h-full"
+          style={{ maxHeight: '100%' }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            ref={imgRef}
+            src={src}
+            alt="Recadrer"
+            onLoad={onImageLoad}
+            style={{ maxHeight: 'calc(100dvh - 180px)', objectFit: 'contain' }}
+          />
+        </ReactCrop>
+      </div>
+
+      {/* Footer */}
+      <div className="px-4 py-4 flex-shrink-0 space-y-2"
+        style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+        <p className="text-[11px] text-white/35 text-center">
+          Déplacez et redimensionnez le cadre pour ne garder que la carte
+        </p>
+        <div className="flex gap-3">
+          <button onClick={onSkip}
+            className="flex-1 py-3 rounded-xl text-sm font-medium transition-colors"
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)' }}>
+            Utiliser telle quelle
+          </button>
+          <button
+            onClick={() => { if (completedCrop && imgRef.current) onConfirm(completedCrop, imgRef.current) }}
+            disabled={!completedCrop}
+            className="flex-1 btn-primary py-3 rounded-xl text-sm font-bold justify-center disabled:opacity-40"
+          >
+            <CropIcon className="w-4 h-4" />
+            Recadrer
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
 /* ── Photo slot ──────────────────────────────────────────────── */
 function PhotoSlot({
   index, preview, required, onAdd, onRemove,
@@ -594,6 +686,11 @@ export function ScanUpload() {
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [scanIdentification, setScanIdentification] = useState<Identification | null>(null)
 
+  // Crop state
+  const [cropSrc, setCropSrc]   = useState<string | null>(null)
+  const [cropSlot, setCropSlot] = useState(0)
+  const pendingFileRef          = useRef<File | null>(null)
+
   const fileRefs = [
     useRef<HTMLInputElement>(null),
     useRef<HTMLInputElement>(null),
@@ -603,13 +700,45 @@ export function ScanUpload() {
 
   const filledCount = files.filter(Boolean).length
   const hasFiles = filledCount > 0
-  const isPreviewState = hasFiles && state === 'idle'
 
+  // Appliquer la carte recadrée sur canvas et l'enregistrer dans le slot
+  const applyCrop = useCallback((pixelCrop: PixelCrop, imgEl: HTMLImageElement) => {
+    const canvas = document.createElement('canvas')
+    const scaleX = imgEl.naturalWidth  / imgEl.width
+    const scaleY = imgEl.naturalHeight / imgEl.height
+    canvas.width  = pixelCrop.width  * scaleX
+    canvas.height = pixelCrop.height * scaleY
+    const ctx = canvas.getContext('2d')!
+    ctx.drawImage(
+      imgEl,
+      pixelCrop.x * scaleX, pixelCrop.y * scaleY,
+      pixelCrop.width * scaleX, pixelCrop.height * scaleY,
+      0, 0, canvas.width, canvas.height,
+    )
+    canvas.toBlob(blob => {
+      if (!blob) return
+      const croppedFile = new File([blob], pendingFileRef.current?.name ?? 'cropped.jpg', { type: 'image/jpeg' })
+      const url = URL.createObjectURL(blob)
+      setFiles(f => { const n = [...f]; n[cropSlot] = croppedFile; return n })
+      setPreviews(p => { const n = [...p]; n[cropSlot] = url; return n })
+      setCropSrc(null)
+    }, 'image/jpeg', 0.92)
+  }, [cropSlot])
+
+  // Ignorer le recadrage — utiliser l'image originale
+  const skipCrop = useCallback(() => {
+    if (!pendingFileRef.current || !cropSrc) return
+    setFiles(f => { const n = [...f]; n[cropSlot] = pendingFileRef.current!; return n })
+    setPreviews(p => { const n = [...p]; n[cropSlot] = cropSrc; return n })
+    setCropSrc(null)
+  }, [cropSlot, cropSrc])
+
+  // Quand un fichier est sélectionné : ouvrir le modal de recadrage
   const processFile = useCallback((file: File, slot: number) => {
     if (!file.type.startsWith('image/')) return
-    setFiles(f => { const n = [...f]; n[slot] = file; return n })
-    setPreviews(p => { const n = [...p]; n[slot] = URL.createObjectURL(file); return n })
-    setState('idle')
+    pendingFileRef.current = file
+    setCropSlot(slot)
+    setCropSrc(URL.createObjectURL(file))
   }, [])
 
   const addToSlot = (slot: number) => {
@@ -794,6 +923,18 @@ export function ScanUpload() {
 
   return (
     <div className="w-full max-w-md mx-auto space-y-4">
+
+      {/* Crop modal — rendu hors du flux principal */}
+      <AnimatePresence>
+        {cropSrc && (
+          <ImageCropModal
+            src={cropSrc}
+            onConfirm={applyCrop}
+            onSkip={skipCrop}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Hidden file inputs */}
       {[0, 1, 2].map(i => (
         <input key={i} ref={fileRefs[i]} type="file" accept="image/*" className="hidden"
