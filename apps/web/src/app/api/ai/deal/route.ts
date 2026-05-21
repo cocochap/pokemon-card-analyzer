@@ -383,6 +383,42 @@ function parseVintedSlug(url: string): Partial<DealAiResult> | null {
   } catch { return null }
 }
 
+// ── Parsing IA du titre (text-only, Groq ~0.5s) ──────────────────────────────
+async function parseCardTitleWithAI(title: string): Promise<{ frName: string; enName: string; number: string; setName: string } | null> {
+  if (!process.env.GROQ_API_KEY || !title) return null
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+      body: JSON.stringify({
+        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+        messages: [{ role: 'user', content: `Tu es un expert Pokémon TCG. Extrait les infos de ce titre d'annonce marketplace.
+
+Titre: "${title.slice(0, 250)}"
+
+Réponds UNIQUEMENT avec ce JSON:
+{"frName":"Dracaufeu ex","enName":"Charizard ex","number":"006/165","setName":"151"}
+
+Règles:
+- frName: nom français de la carte (Dracaufeu, Évoli, Mew, etc.) avec suffixe ex/V/VMAX/GX
+- enName: nom ANGLAIS toujours (Charizard, Eevee, Mew, etc.) avec même suffixe
+- number: numéro EXACT visible dans le titre ("205/165", "SVP173", "SWSH001", "TG29/TG30") sinon ""
+- setName: nom du set si mentionné ("151", "Faille Paradoxe", "Flammes Obsidiennes") sinon ""
+- Si "full art", "SAR", "art spéciale" dans le titre, c'est une carte avec numéro > total du set` }],
+        max_tokens: 100, temperature: 0,
+      }),
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!res.ok) return null
+    const text = (await res.json())?.choices?.[0]?.message?.content ?? ''
+    const m = text.match(/\{[^{}]+\}/)
+    if (!m) return null
+    const p = JSON.parse(m[0])
+    if (!p.enName && !p.frName) return null
+    return p
+  } catch { return null }
+}
+
 // Select minimal pour le deal — pas d'aiAnalysis pour éviter les erreurs Prisma
 const DEAL_SEL = {
   id: true, name: true, number: true, rarity: true, imageSmUrl: true, imageLgUrl: true,
@@ -709,117 +745,111 @@ export async function POST(req: NextRequest) {
     }
 
     if (listingUrl && listingMeta) {
-      // Télécharger jusqu'à 4 photos en parallèle et tester chacune avec PROMPT_IDENTIFY
-      const photos = listingMeta.imageUrls.slice(0, 4)
-      if (photos.length > 0) {
-        const photoAttempts = await Promise.allSettled(
-          photos.map(async (imgUrl) => {
-            const dl = await downloadImageAsBase64(imgUrl)
-            if (!dl) return null
-            // Race Gemini + Groq sur cette photo
-            let raw: string | null = null
-            try {
-              raw = await Promise.any([
-                callGemini(dl.b64, dl.mime, PROMPT_IDENTIFY),
-                callGroq(dl.b64, dl.mime, PROMPT_IDENTIFY),
-              ].map(p => p.then(t => {
-                if (!t) throw 0
-                const parsed = extractAllJsonObjects(t)[0]
-                if (!parsed?.collector && !parsed?.enName && !parsed?.frName) throw 0
-                return t
-              })))
-            } catch { raw = await callGemini(dl.b64, dl.mime, PROMPT_IDENTIFY) }
-            if (!raw) return null
-            const parsed = extractAllJsonObjects(raw)[0]
-            if (!parsed) return null
-            const { num, total, setCode } = parseCollector(parsed.collector ?? '', parsed.setCode ?? '')
-            const enName = (parsed.enName ?? '').trim()
-            const frName = (parsed.frName ?? '').trim()
-            if (!num && !enName && !frName) return null
-            const found = await findCardFromIdentify(num, total, setCode, enName, frName)
-            return { card: found, parsed, num, total, enName, frName }
-          })
-        )
+      const photos = listingMeta.imageUrls.slice(0, 3)
+      const title  = listingMeta.title
+      const isFullArt = /full.?art|art.?spéciale|art.?rare|\bSAR\b|\bSIR\b|illustration.?rare/i.test(title)
 
-        // Prendre le premier résultat qui a trouvé une carte
-        for (const attempt of photoAttempts) {
-          if (attempt.status === 'fulfilled' && attempt.value?.card) {
-            const { card: foundCard, parsed, num, total, enName, frName } = attempt.value
-            card = foundCard
-            aiInfo.cardName     = frName || enName || card?.name || ''
-            aiInfo.englishName  = enName || frName || card?.name || ''
-            aiInfo.cardNumber   = num && total ? `${num}/${total}` : num
-            aiInfo.condition    = listingMeta.condition
-            aiInfo.listingPrice = listingMeta.price
-            aiInfo.listingTitle = listingMeta.title
-            fromUrl = true
-            break
-          }
-        }
+      // ── Tout en parallèle : parsing IA du titre + analyse des photos ──
+      const allTasks = await Promise.allSettled([
 
-        // Fallback : si aucune photo n'a trouvé de carte, tenter avec les noms extraits
-        if (!card) {
-          for (const attempt of photoAttempts) {
-            if (attempt.status === 'fulfilled' && attempt.value) {
-              const { num, total, enName, frName } = attempt.value
-              if (enName || frName) {
-                card = await findCardFromIdentify(num, total, null, enName, frName)
-                if (card) {
-                  aiInfo.cardName = frName || enName; aiInfo.englishName = enName || frName
-                  aiInfo.cardNumber = num && total ? `${num}/${total}` : num
-                  aiInfo.condition = listingMeta.condition; aiInfo.listingPrice = listingMeta.price
-                  aiInfo.listingTitle = listingMeta.title; fromUrl = true
-                  break
+        // Tâche 0 : Groq lit le TITRE (texte uniquement, ~0.5s) → plus fiable que regex
+        (async () => {
+          const tp = await parseCardTitleWithAI(title)
+          if (!tp) return null
+          const { num, total, setCode } = parseCollector(tp.number ?? '', '')
+          const titleSetId = detectSetFromTitle(title) ?? detectSetFromTitle(tp.setName ?? '')
+          const found = await findCardFromIdentify(num, total, setCode ?? titleSetId, tp.enName ?? '', tp.frName ?? '')
+          // Si name+set mais pas de numéro → tenter avec isFullArt
+          if (!found && (tp.enName || tp.frName) && titleSetId) {
+            const firstWord = (tp.enName || tp.frName).split(' ')[0]
+            if (firstWord.length >= 3) {
+              const cands = await prisma.card.findMany({
+                where: { name: { contains: firstWord, mode: 'insensitive' }, set: { externalId: titleSetId } },
+                select: DEAL_SEL, orderBy: { set: { releaseDate: 'desc' } } as any, take: 10,
+              })
+              if (cands.length > 0) {
+                return {
+                  card: isFullArt
+                    ? cands.sort((a, b) => (parseInt(b.number)||0) - (parseInt(a.number)||0))[0]
+                    : cands[0],
+                  num, enName: tp.enName, frName: tp.frName,
                 }
               }
             }
           }
+          return found ? { card: found, num, enName: tp.enName ?? '', frName: tp.frName ?? '' } : null
+        })(),
+
+        // Tâches 1-N : PROMPT_IDENTIFY sur chaque photo de l'annonce
+        ...photos.map(async (imgUrl) => {
+          const dl = await downloadImageAsBase64(imgUrl)
+          if (!dl) return null
+          let raw: string | null = null
+          try {
+            raw = await Promise.any([
+              callGemini(dl.b64, dl.mime, PROMPT_IDENTIFY),
+              callGroq(dl.b64, dl.mime, PROMPT_IDENTIFY),
+            ].map(p => p.then(t => {
+              if (!t) throw 0
+              const parsed = extractAllJsonObjects(t)[0]
+              if (!parsed?.collector && !parsed?.enName && !parsed?.frName) throw 0
+              return t
+            })))
+          } catch { raw = await callGemini(dl.b64, dl.mime, PROMPT_IDENTIFY) }
+          if (!raw) return null
+          const parsed = extractAllJsonObjects(raw)[0]
+          if (!parsed) return null
+          const { num, total, setCode } = parseCollector(parsed.collector ?? '', parsed.setCode ?? '')
+          const enName = (parsed.enName ?? '').trim()
+          const frName = (parsed.frName ?? '').trim()
+          if (!num && !enName && !frName) return null
+          const found = await findCardFromIdentify(num, total, setCode, enName, frName)
+          // Si nom trouvé mais pas de carte via numéro, essayer sans setCode
+          const finalCard = found ?? (enName || frName ? await findCardFromIdentify('', null, null, enName, frName) : null)
+          return finalCard ? { card: finalCard, num, enName, frName } : null
+        }),
+      ])
+
+      // ── Prendre le premier résultat valide ────────────────────────
+      for (const task of allTasks) {
+        if (task.status === 'fulfilled' && task.value?.card) {
+          const { card: foundCard, num, enName, frName } = task.value
+          card = foundCard
+          aiInfo.cardName    = frName || enName || card.name
+          aiInfo.englishName = enName || frName || card.name
+          aiInfo.cardNumber  = num || ''
+          aiInfo.condition   = listingMeta.condition
+          aiInfo.listingPrice = listingMeta.price
+          aiInfo.listingTitle = title
+          fromUrl = true
+          break
         }
       }
 
-      // Fallback titre : extraire infos du titre de l'annonce
-      if (!card && listingMeta.title) {
-        const title = listingMeta.title
-        const isFullArt = /full.?art|art.?spéciale|art.?rare|SAR\b|SIR\b|illustration.?rare/i.test(title)
-
-        // Chercher numéro/total dans le titre (ex: "Dracaufeu ex 006/165 151")
-        // Accepte jusqu'à 4 chiffres pour les secret rares (ex: 205/165)
+      // ── Dernier recours : regex sur le titre ──────────────────────
+      if (!card && title) {
         const numM = title.match(/\b(\d{1,4})\/(\d{2,3})\b/)
-        const numOnly = title.match(/\b([A-Z]{2,5}\d{2,4})\b/)
-        const rawNum = numM ? numM[1] : numOnly ? numOnly[0] : ''
+        const rawNum = numM ? numM[1] : title.match(/\b([A-Z]{2,5}\d{2,4})\b/)?.[0] ?? ''
         const rawTotal = numM ? parseInt(numM[2]) : null
-
-        // Extraire le nom Pokémon (avant le premier chiffre isolé)
         const nameM = title.match(/^([^\d/]+?)(?:\s+\d|\s+SVP|\s+SWSH|\/|$)/i)
-        const titleName = (nameM?.[1] ?? '').replace(/[™®]/g, '').trim()
-          .replace(/\s+(full.?art|SAR|SIR|art.?spéciale|holo|reverse|FR|EN|JP|NM|EX|GX|nm)\s*$/i, '').trim()
-
-        // Détecter le set depuis le titre
+        const titleName = (nameM?.[1] ?? '').replace(/[™®]/g,'').trim()
+          .replace(/\s+(full.?art|SAR|SIR|holo|reverse|FR|EN|JP|NM)\s*$/i,'').trim()
         const titleSetId = detectSetFromTitle(title)
-
         if (rawNum || titleName) {
           const { num, total, setCode } = parseCollector(numM ? `${rawNum}/${numM[2]}` : rawNum, '')
           card = await findCardFromIdentify(num, rawTotal ?? total, setCode ?? titleSetId, titleName, titleName)
-
-          // Si carte non trouvée avec le numéro, essayer nom+set
           if (!card && titleName && titleSetId) {
             const firstWord = titleName.split(' ')[0]
             if (firstWord.length >= 3) {
-              const candidates = await prisma.card.findMany({
+              const cands = await prisma.card.findMany({
                 where: { name: { contains: firstWord, mode: 'insensitive' }, set: { externalId: titleSetId } },
-                select: DEAL_SEL,
-                orderBy: { set: { releaseDate: 'desc' } } as any,
-                take: 10,
+                select: DEAL_SEL, orderBy: { set: { releaseDate: 'desc' } } as any, take: 10,
               })
-              if (candidates.length > 0) {
-                // "full art" / SAR → carte avec le plus grand numéro (secret rare)
-                card = isFullArt
-                  ? candidates.sort((a, b) => (parseInt(b.number) || 0) - (parseInt(a.number) || 0))[0]
-                  : candidates[0]
-              }
+              if (cands.length > 0) card = isFullArt
+                ? cands.sort((a,b) => (parseInt(b.number)||0) - (parseInt(a.number)||0))[0]
+                : cands[0]
             }
           }
-
           if (card) {
             aiInfo.cardName = card.name; aiInfo.englishName = card.name
             aiInfo.cardNumber = rawNum && rawTotal ? `${rawNum}/${rawTotal}` : rawNum
@@ -829,7 +859,6 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Remplir les infos meta même si pas de carte
       if (!aiInfo.listingPrice) aiInfo.listingPrice = listingMeta.price
       if (!aiInfo.listingTitle) aiInfo.listingTitle = listingMeta.title
       if (!aiInfo.condition)   aiInfo.condition = listingMeta.condition
