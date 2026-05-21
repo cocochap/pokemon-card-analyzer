@@ -575,14 +575,15 @@ function InlineCropper({ src, onConfirm, onSkip }: {
 
   return (
     <div className="space-y-3">
-      {/* Titre + bouton ignorer */}
-      <div className="flex items-center justify-between">
-        <span className="flex items-center gap-2 text-sm font-semibold text-white">
-          <CropIcon className="w-4 h-4 text-pokemon-yellow" /> Recadrer la photo
-        </span>
-        <button onClick={onSkip} className="text-xs px-3 py-1.5 rounded-lg"
-          style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)' }}>
+      {/* Header : Ignorer à gauche, Valider à droite */}
+      <div className="flex items-center gap-3">
+        <button onClick={onSkip} className="py-2.5 px-4 rounded-xl text-sm font-medium flex-1"
+          style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)' }}>
           Ignorer
+        </button>
+        <button onClick={confirm} className="py-2.5 px-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 flex-1"
+          style={{ background: '#FFCB05', color: '#000' }}>
+          <CropIcon className="w-4 h-4" /> Valider
         </button>
       </div>
 
@@ -620,17 +621,6 @@ function InlineCropper({ src, onConfirm, onSkip }: {
         </div>
       </div>
 
-      {/* Boutons dans le flux — toujours visibles, pas de fixed/absolute */}
-      <div className="flex gap-3">
-        <button onClick={onSkip} className="flex-1 py-3 rounded-xl text-sm font-medium"
-          style={{ background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.1)', color:'rgba(255,255,255,0.6)' }}>
-          Utiliser telle quelle
-        </button>
-        <button onClick={confirm} className="flex-1 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
-          style={{ background:'#FFCB05', color:'#000' }}>
-          <CropIcon className="w-4 h-4" /> Valider
-        </button>
-      </div>
     </div>
   )
 }
