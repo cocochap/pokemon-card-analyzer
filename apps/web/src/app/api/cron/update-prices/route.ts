@@ -65,6 +65,15 @@ interface PtcgCard {
   }
 }
 
+// Convertit les IDs pokemontcg.io en IDs DB (sv3pt5 → sv03.5, sv8pt5 → sv08.5)
+function ptcgioToDbId(id: string): string {
+  const m1 = id.match(/^sv(\d+)pt(\d+)$/i)
+  if (m1) return `sv${m1[1].padStart(2, '0')}.${m1[2]}`
+  const m2 = id.match(/^sv(\d+)$/i)
+  if (m2) return `sv${m2[1].padStart(2, '0')}`
+  return id
+}
+
 async function fetchPtcgSet(setId: string): Promise<PtcgCard[]> {
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (process.env.POKEMON_TCG_API_KEY) headers['X-Api-Key'] = process.env.POKEMON_TCG_API_KEY
@@ -129,13 +138,21 @@ export async function GET(req: NextRequest) {
       const ptcgCards = preFetched.get(setId) ?? await fetchPtcgSet(setId)
       if (ptcgCards.length === 0) continue
 
-      // Requête directe par externalId — pas besoin de passer par PokemonSet
-      const ptcgIds = ptcgCards.map(c => c.id)
+      // Convertir les IDs pokemontcg.io → format DB (sv3pt5-006 → sv03.5-006)
+      const ptcgByDbId = new Map<string, PtcgCard>()
+      for (const c of ptcgCards) {
+        const [rawSet, ...rest] = c.id.split('-')
+        const dbCardId = `${ptcgioToDbId(rawSet)}-${rest.join('-')}`
+        ptcgByDbId.set(dbCardId, c)
+        // Garder aussi l'ID original au cas où il serait stocké tel quel
+        ptcgByDbId.set(c.id, c)
+      }
+      const dbIds = [...ptcgByDbId.keys()]
       const dbCards = await prisma.card.findMany({
-        where: { externalId: { in: ptcgIds } },
+        where: { externalId: { in: dbIds } },
         select: { id: true, externalId: true, rarity: true },
       })
-      console.log(`${setId}: ptcgio=${ptcgIds.length} db=${dbCards.length} sample="${ptcgIds[0]}"`)
+      console.log(`${setId}: ptcgio=${ptcgCards.length} db=${dbCards.length} sample="${dbIds[0]}"`)
       if (!dbCards.length) continue
 
       const cardIndex = new Map(dbCards.map((c) => [c.externalId, c]))
@@ -143,8 +160,8 @@ export async function GET(req: NextRequest) {
       stats.sets++
       let setUpdated = 0
 
-      for (const ptcg of ptcgCards) {
-        const dbCard = cardIndex.get(ptcg.id)
+      for (const [dbExtId, ptcg] of ptcgByDbId) {
+        const dbCard = cardIndex.get(dbExtId)
         if (!dbCard) { stats.skipped++; continue }
 
         const cm = ptcg.cardmarket?.prices
