@@ -458,6 +458,37 @@ async function findCard(ai: DealAiResult): Promise<any | null> {
   return null
 }
 
+// ── Mapping noms sets → IDs DB ────────────────────────────────────────────────
+const SET_TITLE_MAP: Array<[RegExp, string]> = [
+  // SV (FR + EN)
+  [/\b151\b|MEW\b/i, 'sv03.5'],
+  [/flammes.?obsidiennes|obsidian.?flames/i, 'sv03'],
+  [/faille.?paradoxe|paradox.?rift/i, 'sv04'],
+  [/destin.es.?de.?pald.a|paldean.?fates/i, 'sv04.5'],
+  [/forces.?temporelles|temporal.?forces/i, 'sv05'],
+  [/mascarade.?cr.pusculaire|twilight.?masquerade/i, 'sv06'],
+  [/voile.?du.?pass.|shrouded.?fable/i, 'sv06.5'],
+  [/couronne.?stellaire|stellar.?crown/i, 'sv07'],
+  [/.tincelles.?d.ferlantes|surging.?sparks/i, 'sv08'],
+  [/.volutions.?prismatiques|prismatic.?evolutions/i, 'sv08.5'],
+  [/.carlate.?.?violet.?de.?base|scarlet.?violet.?base/i, 'sv01'],
+  [/.volutions.?.?pald.a|paldea.?evolved/i, 'sv02'],
+  // SWSH (FR + EN)
+  [/couronne.?de.?glace|chilling.?reign/i, 'swsh06'],
+  [/ruleset.?origins|origines.?perdues/i, 'swsh11'],
+  [/.pe.?tonitruante|blazing.?volt|vivid.?voltage/i, 'swsh04'],
+  [/ombres.?perdues|lost.?origin/i, 'swsh11'],
+  // Vintage
+  [/base.?set|1.re.?.dition|first.?edition/i, 'base1'],
+]
+
+function detectSetFromTitle(title: string): string | null {
+  for (const [rx, id] of SET_TITLE_MAP) {
+    if (rx.test(title)) return id
+  }
+  return null
+}
+
 // ── Listing URL helpers ───────────────────────────────────────────────────────
 
 function detectPlatform(url: string): string {
@@ -749,17 +780,46 @@ export async function POST(req: NextRequest) {
       // Fallback titre : extraire infos du titre de l'annonce
       if (!card && listingMeta.title) {
         const title = listingMeta.title
+        const isFullArt = /full.?art|art.?spéciale|art.?rare|SAR\b|SIR\b|illustration.?rare/i.test(title)
+
         // Chercher numéro/total dans le titre (ex: "Dracaufeu ex 006/165 151")
-        const numM = title.match(/\b(\d{1,3})\/(\d{2,3})\b/)
+        // Accepte jusqu'à 4 chiffres pour les secret rares (ex: 205/165)
+        const numM = title.match(/\b(\d{1,4})\/(\d{2,3})\b/)
         const numOnly = title.match(/\b([A-Z]{2,5}\d{2,4})\b/)
         const rawNum = numM ? numM[1] : numOnly ? numOnly[0] : ''
         const rawTotal = numM ? parseInt(numM[2]) : null
-        // Extraire le nom (tout avant le numéro ou entre guillemets)
-        const nameM = title.match(/^([^\d]+?)(?:\s+\d|\s+SVP|\s+SWSH|$)/i)
-        const titleName = (nameM?.[1] ?? '').replace(/[™®]/g,'').trim()
+
+        // Extraire le nom Pokémon (avant le premier chiffre isolé)
+        const nameM = title.match(/^([^\d/]+?)(?:\s+\d|\s+SVP|\s+SWSH|\/|$)/i)
+        const titleName = (nameM?.[1] ?? '').replace(/[™®]/g, '').trim()
+          .replace(/\s+(full.?art|SAR|SIR|art.?spéciale|holo|reverse|FR|EN|JP|NM|EX|GX|nm)\s*$/i, '').trim()
+
+        // Détecter le set depuis le titre
+        const titleSetId = detectSetFromTitle(title)
+
         if (rawNum || titleName) {
           const { num, total, setCode } = parseCollector(numM ? `${rawNum}/${numM[2]}` : rawNum, '')
-          card = await findCardFromIdentify(num, rawTotal ?? total, setCode, titleName, titleName)
+          card = await findCardFromIdentify(num, rawTotal ?? total, setCode ?? titleSetId, titleName, titleName)
+
+          // Si carte non trouvée avec le numéro, essayer nom+set
+          if (!card && titleName && titleSetId) {
+            const firstWord = titleName.split(' ')[0]
+            if (firstWord.length >= 3) {
+              const candidates = await prisma.card.findMany({
+                where: { name: { contains: firstWord, mode: 'insensitive' }, set: { externalId: titleSetId } },
+                select: DEAL_SEL,
+                orderBy: { set: { releaseDate: 'desc' } } as any,
+                take: 10,
+              })
+              if (candidates.length > 0) {
+                // "full art" / SAR → carte avec le plus grand numéro (secret rare)
+                card = isFullArt
+                  ? candidates.sort((a, b) => (parseInt(b.number) || 0) - (parseInt(a.number) || 0))[0]
+                  : candidates[0]
+              }
+            }
+          }
+
           if (card) {
             aiInfo.cardName = card.name; aiInfo.englishName = card.name
             aiInfo.cardNumber = rawNum && rawTotal ? `${rawNum}/${rawTotal}` : rawNum
