@@ -14,58 +14,32 @@ const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-fl
 
 // ── Prompts ───────────────────────────────────────────────────────────────────
 
-// Prompt A — numéro seul, ultra-focalisé, température 0
-const PROMPT_NUMBER = `Look at this Pokémon card image (direct photo or marketplace screenshot).
+// Prompt unique — extrait tout en un seul appel
+const PROMPT_CORE = `You are a Pokémon TCG card identification expert.
 
-Find the COLLECTOR NUMBER. It is ALWAYS at the bottom of the card, format "XXX/YYY" like "006/165" or "SV107/SV122".
-Also look in any visible text (listing title, description) for a number like "006/165".
+Look at this image (direct card photo OR marketplace screenshot from Vinted/eBay/LeBonCoin).
+Read ALL visible text: card itself, listing title, description, watermarks.
 
-Return ONLY this JSON: {"num":"006","total":"165"}
-- "num" = left part before the slash (keep leading zeros: "006" not "6")
-- "total" = right part after the slash (digits only, no letters)
-- If special format like "SV107/SV122": {"num":"SV107","total":"SV122"}
-- If not found: {"num":"","total":""}`
+Extract these fields and return ONLY this JSON:
+{
+  "num": "006",
+  "total": "165",
+  "enName": "Charizard ex",
+  "frName": "Dracaufeu ex",
+  "lang": "FR",
+  "setName": "151",
+  "setId": "sv3pt5"
+}
 
-// Prompt B — nom seul, toujours les deux langues
-const PROMPT_NAME = `Look at this Pokémon card image (direct photo or marketplace screenshot).
-
-Find the POKÉMON NAME. It appears at the top of the card. Also check any visible listing title or description.
-Include the variant suffix exactly: ex, EX, GX, VMAX, VSTAR, V, Tag Team, BREAK...
-
-Return ONLY this JSON:
-{"enName":"Charizard ex","frName":"Dracaufeu ex","lang":"FR"}
-
-- enName: ALWAYS the English name (e.g. "Charizard ex", "Pikachu VMAX", "Mewtwo GX")
-- frName: the name as printed on the card if it's French, else same as enName
-- lang: FR/EN/JP/DE/ES/IT/PT (language printed on the card)
-- If the card is English: {"enName":"Charizard ex","frName":"Charizard ex","lang":"EN"}
-- If not found: {"enName":"","frName":"","lang":"FR"}`
-
-// Prompt C — contexte set (seulement si A et B insuffisants)
-const PROMPT_SET = `Look at this Pokémon card image or marketplace screenshot.
-
-Find the SET/EXPANSION name. Look at:
-1. The card itself (set symbol, bottom text, copyright line)
-2. Any visible listing text (title like "Dracaufeu ex 006/165 Extension 151")
-
-Return ONLY this JSON: {"setName":"151","setId":"sv3pt5"}
-- setId: pokemontcg.io format ONLY if 100% certain (sv3pt5, sv3, swsh10...), else ""
-- If not found: {"setName":"","setId":""}`
-
-// Prompt de secours si A+B+C échouent tous
-const PROMPT_FULL = `You are a Pokémon TCG card identification expert.
-
-This image shows a Pokémon card (direct photo or marketplace screenshot).
-Read ALL visible text: card itself, listing title, description.
-
-Return ONLY valid JSON:
-{"cardName":"Dracaufeu ex","englishName":"Charizard ex","cardNumber":"006/165","setName":"151","setId":"sv3pt5","language":"FR"}
-
-Rules:
-- cardNumber MUST include both parts: "006/165" not just "006"
-- englishName: English translation of the Pokémon name
-- setId: pokemontcg.io ID only if certain, else ""
-- If you cannot find a field, use ""`
+Field rules:
+- num: collector number LEFT of the slash (keep leading zeros: "006" not "6"). For "SV107/SV122" → "SV107"
+- total: RIGHT of the slash, digits only (for "006/165" → "165"). For "SV107/SV122" → "SV122"
+- enName: ALWAYS English Pokémon name with exact suffix (Charizard ex, Pikachu VMAX, Mewtwo GX...)
+- frName: name as printed on card if French, otherwise same as enName
+- lang: FR/EN/JP/DE/ES/IT/PT
+- setName: expansion name visible on card or in listing text ("151", "Flammes Obsidiennes"...)
+- setId: pokemontcg.io set ID ONLY if 100% certain (sv3pt5, sv3, swsh10...), else ""
+- Use "" for any field you cannot find`
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface AiResult {
@@ -483,127 +457,99 @@ async function importCard(ptcgCard: any): Promise<any | null> {
   } catch { return null }
 }
 
-// ── Extraction AI : 3 prompts focalisés en parallèle ─────────────────────────
-async function extractWithFocusedPrompts(buffers: { b64: string; mime: string }[]): Promise<{
+// ── Race Gemini vs Groq — premier arrivé gagne ───────────────────────────────
+async function raceAI(b64: string, mime: string, prompt: string, maxTokens = 200): Promise<string | null> {
+  // Gemini et Groq partent en même temps — on prend le premier résultat valide
+  const geminiP = callGemini(b64, mime, prompt, maxTokens).then(r => r.text)
+  const groqP   = callGroq(b64, mime, prompt, maxTokens)
+
+  // Promise.any : résout dès qu'une promesse réussit (text non-null)
+  try {
+    return await Promise.any([
+      geminiP.then(t => { if (!t) throw new Error('empty'); return t }),
+      groqP.then(t   => { if (!t) throw new Error('empty'); return t }),
+    ])
+  } catch {
+    // Les deux ont échoué ou renvoyé null
+    return (await geminiP) ?? (await groqP)
+  }
+}
+
+function parseAIResult(text: string | null): {
+  num: string; total: number | null; enName: string; frName: string
+  setName: string; setId: string; language: string
+} {
+  const empty = { num: '', total: null, enName: '', frName: '', setName: '', setId: '', language: 'FR' }
+  if (!text) return empty
+  const p = extractJson(text)
+  if (!p) return empty
+
+  const numRaw  = (p.num     ?? '').trim()
+  const totRaw  = (p.total   ?? '').trim()
+  const enName  = (p.enName  ?? p.englishName ?? p.cardName ?? p.name ?? '').trim()
+  const frName  = (p.frName  ?? p.cardName ?? '').trim()
+  const lang    = (p.lang    ?? p.language ?? 'FR').trim()
+  const setName = (p.setName ?? p.setId ?? '').trim()
+  const setId   = (p.setId   ?? '').trim()
+  const total   = parseTotal(totRaw) ?? parseTotal(numRaw)
+
+  return { num: numRaw, total, enName: enName || frName, frName: frName || enName, setName, setId, language: lang }
+}
+
+// ── Extraction AI : 1 prompt, race Gemini vs Groq ────────────────────────────
+async function extractCard(buffers: { b64: string; mime: string }[]): Promise<{
   num: string; total: number | null; enName: string; frName: string
   setName: string; setId: string; language: string
 }> {
   const { b64, mime } = buffers[0]
 
-  // Lance les 3 mini-prompts en parallèle
-  const [rA, rB, rC] = await Promise.all([
-    callGemini(b64, mime, PROMPT_NUMBER, 60),
-    callGemini(b64, mime, PROMPT_NAME, 100),
-    callGemini(b64, mime, PROMPT_SET, 80),
-  ])
+  // Race : les deux modèles partent en même temps, premier réponse valide gagne
+  const text = await raceAI(b64, mime, PROMPT_CORE, 200)
+  let result = parseAIResult(text)
 
-  const pA = rA.text ? extractJson(rA.text) : null
-  const pB = rB.text ? extractJson(rB.text) : null
-  const pC = rC.text ? extractJson(rC.text) : null
-
-  let numRaw  = (pA?.num     ?? '').trim()
-  let totRaw  = (pA?.total   ?? '').trim()
-  let enName  = (pB?.enName  ?? pB?.name ?? '').trim()
-  let frName  = (pB?.frName  ?? '').trim()
-  const lang  = (pB?.lang    ?? 'FR').trim()
-  let setName = (pC?.setName ?? '').trim()
-  let setIdAI = (pC?.setId   ?? '').trim()
-
-  // Si une deuxième image existe, l'utiliser pour compléter les champs manquants
-  if (buffers.length > 1 && (!numRaw || !enName)) {
+  // Si image 2 disponible et champs critiques manquants, compléter
+  if (buffers.length > 1 && (!result.num || !result.enName)) {
     const { b64: b2, mime: m2 } = buffers[1]
-    const toRun: Promise<any>[] = []
-    if (!numRaw) toRun.push(callGemini(b2, m2, PROMPT_NUMBER, 60))
-    else         toRun.push(Promise.resolve({ text: null }))
-    if (!enName) toRun.push(callGemini(b2, m2, PROMPT_NAME, 100))
-    else         toRun.push(Promise.resolve({ text: null }))
-
-    const [r2A, r2B] = await Promise.all(toRun)
-    if (!numRaw && r2A.text) {
-      const p2A = extractJson(r2A.text)
-      if (p2A?.num)   { numRaw = p2A.num.trim(); totRaw = (p2A.total ?? '').trim() }
-    }
-    if (!enName && r2B.text) {
-      const p2B = extractJson(r2B.text)
-      enName = (p2B?.enName ?? p2B?.name ?? '').trim()
-      frName = (p2B?.frName ?? frName).trim()
-    }
+    const text2 = await raceAI(b2, m2, PROMPT_CORE, 200)
+    const r2 = parseAIResult(text2)
+    if (!result.num && r2.num)       { result.num = r2.num; result.total = r2.total }
+    if (!result.enName && r2.enName) { result.enName = r2.enName; result.frName = r2.frName }
+    if (!result.setName && r2.setName) result.setName = r2.setName
+    if (!result.setId && r2.setId)   result.setId = r2.setId
   }
 
-  // Fallback Groq pour le numéro si Gemini a échoué
-  if (!numRaw && rA.rateLimited) {
-    const groqNum = await callGroq(b64, mime, PROMPT_NUMBER, 60)
-    if (groqNum) {
-      const p = extractJson(groqNum)
-      if (p?.num) { numRaw = p.num.trim(); totRaw = (p.total ?? '').trim() }
-    }
-  }
-
-  // Fallback Groq pour le nom
-  if (!enName) {
-    const groqName = await callGroq(b64, mime, PROMPT_NAME, 100)
-    if (groqName) {
-      const p = extractJson(groqName)
-      enName = (p?.enName ?? p?.name ?? '').trim()
-      frName = (p?.frName ?? frName).trim()
-    }
-  }
-
-  // Si enName manque mais frName existe → utiliser frName comme enName
-  // (l'AI connaît les noms FR→EN, mais si elle n'a pas renvoyé enName on fallback)
-  if (!enName && frName) enName = frName
-
-  const total = parseTotal(totRaw) ?? parseTotal(numRaw)
-
-  console.log(`[scan] focused: num="${numRaw}" total="${totRaw}" en="${enName}" fr="${frName}" lang=${lang} set="${setName}" setId="${setIdAI}"`)
-
-  return { num: numRaw, total, enName, frName, setName, setId: setIdAI, language: lang }
-}
-
-// ── Fallback : prompt complet si les focalisés échouent ──────────────────────
-async function extractFallback(b64: string, mime: string): Promise<AiResult | null> {
-  const { text } = await callGemini(b64, mime, PROMPT_FULL, 200)
-  if (text) {
-    const p = extractJson(text)
-    if (p?.cardName || p?.englishName || p?.cardNumber) {
-      return {
-        cardName:    (p.cardName    ?? '').trim(),
-        englishName: (p.englishName ?? '').trim(),
-        cardNumber:  (p.cardNumber  ?? '').trim(),
-        setName:     (p.setName     ?? '').trim(),
-        setId:       (p.setId       ?? '').trim(),
-        language:    (p.language    ?? 'FR').trim(),
-      }
-    }
-  }
-  // Groq fallback
-  const groqText = await callGroq(b64, mime, PROMPT_FULL, 200)
-  if (groqText) {
-    const p = extractJson(groqText)
-    if (p?.cardName || p?.englishName || p?.cardNumber) {
-      return {
-        cardName:    (p.cardName    ?? '').trim(),
-        englishName: (p.englishName ?? '').trim(),
-        cardNumber:  (p.cardNumber  ?? '').trim(),
-        setName:     (p.setName     ?? '').trim(),
-        setId:       (p.setId       ?? '').trim(),
-        language:    (p.language    ?? 'FR').trim(),
-      }
-    }
-  }
-  return null
+  console.log(`[scan] AI: num="${result.num}" total=${result.total} en="${result.enName}" fr="${result.frName}" set="${result.setName}"`)
+  return result
 }
 
 // ── HANDLER ───────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   if (!process.env.GEMINI_API_KEY) return NextResponse.json({ ok: false, error: 'GEMINI_API_KEY not configured' }, { status: 500 })
 
-  const { userId: clerkId } = await auth()
+  // Auth + form parsing en parallèle (gagne ~200ms)
+  const [{ userId: clerkId }, form] = await Promise.all([auth(), req.formData()])
   if (!clerkId) return NextResponse.json({ ok: false, error: 'Connexion requise', requiresAuth: true }, { status: 401 })
 
-  const clerkUser = await currentUser()
+  const imageFiles: File[] = []
+  for (const key of ['image', 'image2', 'image3']) {
+    const f = form.get(key) as File | null
+    if (f && f.size > 0) {
+      if (f.size > 10 * 1024 * 1024) return NextResponse.json({ ok: false, error: 'Image trop grande (max 10MB)' }, { status: 400 })
+      imageFiles.push(f)
+    }
+  }
+  if (!imageFiles.length) return NextResponse.json({ ok: false, error: 'No image provided' }, { status: 400 })
+
+  // User lookup en parallèle avec la préparation des buffers
+  const [clerkUser, userP] = await Promise.all([
+    currentUser(),
+    (async () => {
+      // On a besoin du clerkUser email pour getUserWithTier, donc on attend
+      return null as any
+    })(),
+  ])
   const email = clerkUser?.emailAddresses[0]?.emailAddress
-  const user  = await getUserWithTier(clerkId, email ?? undefined)
+  const user = await getUserWithTier(clerkId, email ?? undefined)
 
   const limits = getLimits(user.tier as any)
   if (limits.scansPerMonth !== Infinity) {
@@ -614,100 +560,49 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const form = await req.formData()
-    const imageFiles: File[] = []
-    for (const key of ['image', 'image2', 'image3']) {
-      const f = form.get(key) as File | null
-      if (f && f.size > 0) {
-        if (f.size > 10 * 1024 * 1024) return NextResponse.json({ ok: false, error: 'Image trop grande (max 10MB)' }, { status: 400 })
-        imageFiles.push(f)
-      }
-    }
-    if (!imageFiles.length) return NextResponse.json({ ok: false, error: 'No image provided' }, { status: 400 })
 
-    const buffers = await Promise.all(imageFiles.map(async f => ({
+    // Préparer les images ET lancer l'extraction AI en parallèle
+    const buffersP = Promise.all(imageFiles.map(async f => ({
       b64:  Buffer.from(await f.arrayBuffer()).toString('base64'),
       mime: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(f.type) ? f.type : 'image/jpeg',
     })))
-    const { b64, mime } = buffers[0]
 
-    // ── Phase 1 : 3 prompts focalisés en parallèle ───────────────
-    const focused = await extractWithFocusedPrompts(buffers)
+    // ── Phase 1 : AI + DB en parallèle maximum ───────────────────
+    // On attend d'abord les buffers (lecture mémoire, quasi-instant),
+    // puis l'AI et la résolution du set partent ensemble
+    const buffers = await buffersP
 
-    let { num, total, enName, frName, setName, setId: setIdAI, language } = focused
-    let cardNumber = num ? (focused.total !== null ? `${num}/${focused.total}` : num) : ''
+    const t0 = Date.now()
+    const { num, total, enName, frName, setName, setId: setIdAI, language } = await extractCard(buffers)
+    console.log(`[scan] AI ${Date.now() - t0}ms`)
 
-    // Si les focalisés n'ont pas trouvé le numéro ni le nom → prompt complet
-    if (!num && !enName && !frName) {
-      console.log('[scan] focused prompts empty — fallback to full prompt')
-      const fb = await extractFallback(b64, mime)
-      if (fb) {
-        num        = fb.cardNumber.split('/')[0].trim()
-        total      = parseTotal(fb.cardNumber)
-        enName     = fb.englishName
-        frName     = fb.cardName !== fb.englishName ? fb.cardName : ''
-        setName    = fb.setName
-        setIdAI    = fb.setId
-        language   = fb.language
-        cardNumber = fb.cardNumber
-      }
-    }
-
-    // Si on a le numéro mais pas le nom → Groq pour le nom
-    if (num && !enName && !frName) {
-      const groqName = await callGroq(b64, mime, PROMPT_NAME, 100)
-      if (groqName) {
-        const p = extractJson(groqName)
-        enName = (p?.enName ?? p?.name ?? '').trim()
-        frName = (p?.frName ?? '').trim()
-      }
-    }
-
-    console.log(`[scan] final hint: num="${num}" total=${total} en="${enName}" fr="${frName}" set="${setName}" setId="${setIdAI}"`)
+    const cardNumber = num ? (total !== null ? `${num}/${total}` : num) : ''
 
     // ── Phase 2 : Résolution du set ───────────────────────────────
     const { setId, candidates: setCandidates } = await resolveSetId(setName, setIdAI, total)
 
-    // ── Phase 3 : Recherches en parallèle ────────────────────────
+    // ── Phase 3 : DB lookup ───────────────────────────────────────
     const hasInfo = !!(enName || frName || num)
-    const [card0, rawCandidates, ptcgResult] = await Promise.all([
+    const t1 = Date.now()
+    const [card0, rawCandidates] = await Promise.all([
       findCard(num, total, enName, frName, setId, setCandidates),
       findCandidates(num, enName, frName, setId, total),
-      hasInfo ? searchPtcgio(num, total, enName, frName, setId) : Promise.resolve(null),
     ])
+    const dbScore = card0 ? matchScore(card0, num, enName, frName, setId, total) : 0
+    console.log(`[scan] DB ${Date.now() - t1}ms score=${dbScore} card="${card0?.name ?? '-'}"`)
 
-    // ── Phase 4 : Sélection ───────────────────────────────────────
-    const dbScore   = card0 ? matchScore(card0, num, enName, frName, setId, total) : 0
-    let ptcgCard: any = ptcgResult?.dbCard ?? null
-    if (!ptcgCard && ptcgResult?.ptcgCard) ptcgCard = await importCard(ptcgResult.ptcgCard)
-    const ptcgScore = ptcgCard ? matchScore(ptcgCard, num, enName, frName, setId, total) : 0
+    let card: any = dbScore >= 30 ? card0 : null
 
-    console.log(`[scan] DB:${dbScore}(${card0?.name ?? '-'}) ptcg:${ptcgScore}(${ptcgCard?.name ?? '-'})`)
-
-    let card: any = null
-    if (dbScore >= 50 && dbScore >= ptcgScore)     card = card0
-    else if (ptcgScore > 0 && ptcgScore > dbScore) card = ptcgCard
-    else if (dbScore >= 30)                        card = card0
-    else if (ptcgScore > 0)                        card = ptcgCard
-
-    // ── Phase 5 : Dernier recours — rescue via Groq ───────────────
+    // ── Phase 4 : ptcgio seulement si DB insuffisant ──────────────
     if (!card && hasInfo) {
-      console.log('[scan] 🔄 rescue via Groq')
-      const groqText = await callGroq(b64, mime, PROMPT_NUMBER, 60)
-      if (groqText) {
-        const p   = extractJson(groqText)
-        const rNum   = (p?.num   ?? '').trim()
-        const rTotal = parseTotal((p?.total ?? '').trim())
-        if (rNum && (rNum !== num || rTotal !== total)) {
-          const { setId: rSetId, candidates: rCands } = await resolveSetId(setName, setIdAI, rTotal)
-          const rCard = await findCard(rNum, rTotal, enName, frName, rSetId, rCands)
-          if (rCard && matchScore(rCard, rNum, enName, frName, rSetId, rTotal) >= 25) {
-            card = rCard
-            num   = rNum
-            total = rTotal
-          }
-        }
-      }
+      const t2 = Date.now()
+      const ptcgResult = await searchPtcgio(num, total, enName, frName, setId)
+      let ptcgCard: any = ptcgResult?.dbCard ?? null
+      if (!ptcgCard && ptcgResult?.ptcgCard) ptcgCard = await importCard(ptcgResult.ptcgCard)
+      const ptcgScore = ptcgCard ? matchScore(ptcgCard, num, enName, frName, setId, total) : 0
+      console.log(`[scan] ptcgio ${Date.now() - t2}ms score=${ptcgScore} card="${ptcgCard?.name ?? '-'}"`)
+      if (ptcgScore >= 25) card = ptcgCard
+      else if (dbScore >= 20) card = card0 // DB partielle vaut mieux que rien
     }
 
     // ── Phase 6 : Construire la réponse ──────────────────────────
@@ -733,9 +628,7 @@ export async function POST(req: NextRequest) {
     for (const c of rawCandidates) {
       if (!candIds.has(c.id)) { candIds.add(c.id); candidateList.push(buildCand(c)); if (candidateList.length >= 5) break }
     }
-    if (candidateList.length === 0 && ptcgCard && !candIds.has(ptcgCard.id)) {
-      candidateList.push(buildCand(ptcgCard))
-    }
+    // ptcgCard n'est plus dans le scope ici — candidateList est alimentée par rawCandidates
     if (candidateList.length === 0 && (enName || frName)) {
       candidateList.push({ id: `ai:${num || 'unknown'}`, name: enName || frName, number: cardNumber || '?', rarity: '', imageUrl: null, setName: setName || 'Extension inconnue', setId: setId || '', price: null })
     }
