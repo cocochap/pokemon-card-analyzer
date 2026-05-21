@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   AlertCircle, Camera, CheckCircle2, ExternalLink, Info,
-  ImageUp, Plus, RotateCcw, TrendingDown, TrendingUp, Upload, Zap, X,
+  ImageUp, Plus, RotateCcw, Search, TrendingDown, TrendingUp, Upload, Zap, X,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useT } from '@/lib/i18n/LanguageContext'
@@ -193,7 +193,10 @@ function ChangeBadge({ value, label }: { value: number; label: string }) {
 }
 
 /* ── Result panel ────────────────────────────────────────────── */
-function ResultPanel({ result, previews, onReset, s }: { result: ScanResult; previews: string[]; onReset: () => void; s: any }) {
+function ResultPanel({ result, previews, onReset, onShowCandidates, hasCandidates, s }: {
+  result: ScanResult; previews: string[]; onReset: () => void
+  onShowCandidates?: () => void; hasCandidates?: boolean; s: any
+}) {
   const { identification: id, dbMatch: db } = result
 
   const displayName = db?.name ?? id.resolvedName ?? id.cardName
@@ -356,6 +359,17 @@ function ResultPanel({ result, previews, onReset, s }: { result: ScanResult; pre
           {!db && <span className="ml-1 text-sm">{s.scanAgain}</span>}
         </button>
       </div>
+
+      {/* Bouton "Mauvaise carte ?" si auto-sélectionnée */}
+      {hasCandidates && onShowCandidates && (
+        <button
+          onClick={onShowCandidates}
+          className="w-full text-xs text-white/35 hover:text-white/60 transition-colors py-1 flex items-center justify-center gap-1.5"
+        >
+          <Search className="w-3 h-3" />
+          Mauvaise carte ? Voir les autres résultats
+        </button>
+      )}
     </motion.div>
   )
 }
@@ -626,14 +640,26 @@ export function ScanUpload() {
       if (!res.ok || !data.ok) throw new Error(data.error ?? 'Scan failed')
 
       const apiCandidates: Candidate[] = data.candidates ?? []
-      setScanIdentification(data.identification ?? null)
+      const identification: Identification = {
+        ...(data.identification ?? {}),
+        confidence: data.confidence ?? 0,
+      }
+      setScanIdentification(identification)
       setCandidates(apiCandidates)
 
-      if (apiCandidates.length >= 1) {
+      // Auto-select si la confiance est élevée et qu'on a un dbMatch complet
+      if (data.autoSelect && data.dbMatch) {
+        setResult({ identification, dbMatch: data.dbMatch })
+        setState('result')
+      } else if (apiCandidates.length >= 1) {
         setState('candidates')
       } else {
         setState('error')
-        setErrorMsg('Carte non reconnue. Essayez avec une photo plus nette.')
+        setErrorMsg(
+          data.identification?.cardName
+            ? `"${data.identification.cardName}" identifié mais introuvable en base. Essayez de sélectionner manuellement.`
+            : 'Carte non reconnue. Essayez avec une photo plus nette.'
+        )
       }
     } catch (e: any) {
       setErrorMsg(e.message ?? 'Unknown error')
@@ -912,7 +938,14 @@ export function ScanUpload() {
         {/* RESULT */}
         {state === 'result' && result && activePreviews.length > 0 && (
           <motion.div key="result" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <ResultPanel result={result} previews={activePreviews} onReset={reset} s={s} />
+            <ResultPanel
+              result={result}
+              previews={activePreviews}
+              onReset={reset}
+              onShowCandidates={candidates.length > 1 ? () => setState('candidates') : undefined}
+              hasCandidates={candidates.length > 1}
+              s={s}
+            />
           </motion.div>
         )}
 

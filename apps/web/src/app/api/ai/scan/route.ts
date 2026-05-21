@@ -663,8 +663,15 @@ export async function POST(req: NextRequest) {
     await incrementScanUsage(user.id)
     ph.capture({ distinctId: clerkId, event: 'card_scanned', properties: { card_name: card?.name ?? enName, card_found: !!card, tier: user.tier } })
 
+    // Confiance basée sur le matchScore (0-100)
+    const finalScore = card ? matchScore(card, num, enName, frName, setId, total) : 0
+    const confidence = card ? Math.min(98, Math.round(40 + finalScore * 0.55)) : 0
+    const autoSelect = confidence >= 75 && !!card
+
     return NextResponse.json({
       ok: true,
+      confidence,
+      autoSelect,
       identification: hint,
       candidates: candidateList,
       dbMatch: card ? {
