@@ -91,8 +91,8 @@ export async function GET(req: NextRequest) {
   }
 
   const startedAt = Date.now()
-  // Limite stricte 55s pour rester dans le timeout Vercel (60s)
-  const HARD_LIMIT = 55_000
+  // maxDuration = 300s — on s'arrête à 270s pour laisser du temps à la réponse
+  const HARD_LIMIT = 270_000
   const stats = { sets: 0, cards: 0, updated: 0, skipped: 0, errors: 0 }
 
   // Neon est pré-chauffé par le cron warmup (5h45 UTC).
