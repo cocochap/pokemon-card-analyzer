@@ -229,6 +229,32 @@ async function findCard(
     }
   }
 
+  // S3b : nom seul → filtrer les résultats dont les chiffres du numéro correspondent
+  // Couvre le cas où l'AI retourne "173" au lieu de "SVP173"
+  if (num && (enName || frName)) {
+    const digits = num.replace(/^[A-Za-z]+/, '').replace(/^0+(?=\d)/, '') // "SVP173"→"173", "006"→"6"
+    if (digits.length >= 1) {
+      const firstWords = [frName, enName]
+        .filter(Boolean).map(n => n.split(' ')[0])
+        .filter((v, i, a) => v.length >= 3 && a.indexOf(v) === i)
+      for (const word of firstWords) {
+        const byName = await prisma.card.findMany({
+          where: { name: { contains: word, mode: 'insensitive' } },
+          select: SEL, orderBy: { set: { releaseDate: 'desc' } } as any, take: 40,
+        })
+        const matching = byName.filter(c => {
+          const cn = (c.number ?? '').replace(/^[A-Za-z]+/, '').replace(/^0+(?=\d)/, '')
+          return cn === digits
+        })
+        if (matching.length > 0) {
+          const scored = matching.map(c => ({ c, s: matchScore(c, num, enName, frName, total) })).sort((a, b) => b.s - a.s)
+          console.log(`[scan] ✅ S3b "${scored[0].c.name}" (nom+chiffres)`)
+          return scored[0].c
+        }
+      }
+    }
+  }
+
   // S4 : numéro seul — scorer par nom + date
   if (num) {
     const byNum = await prisma.card.findMany({
@@ -239,7 +265,10 @@ async function findCard(
     if (byNum.length > 1) {
       const scored = byNum.map(c => ({ c, s: matchScore(c, num, enName, frName, total) })).sort((a, b) => b.s - a.s)
       if (scored[0].s >= 20) { console.log(`[scan] ✅ S4 "${scored[0].c.name}" score=${scored[0].s}`); return scored[0].c }
-      return byNum[0] // plus récente par défaut
+      // Avec un nom dispo mais mauvais score → ne pas retourner une mauvaise carte par défaut
+      if (!enName && !frName) { console.log(`[scan] S4 sans nom, fallback date "${byNum[0].name}"`); return byNum[0] }
+      console.log(`[scan] S4 score trop bas (${scored[0].s}), laisse ptcgio tenter`)
+      return null
     }
   }
 
@@ -349,7 +378,7 @@ async function callGroq(b64: string, mime: string, prompt: string, maxTokens = 1
   } catch { return null }
 }
 
-// Race : tous les modèles en même temps, premier réponse valide gagne
+// Race : tous les modèles en même temps — accepte la première réponse avec du contenu utile
 async function raceAI(b64: string, mime: string, prompt: string, maxTokens = 150): Promise<string | null> {
   const calls = [
     callGeminiModel('gemini-2.5-flash', b64, mime, prompt, maxTokens),
@@ -357,8 +386,22 @@ async function raceAI(b64: string, mime: string, prompt: string, maxTokens = 150
     callGroq(b64, mime, prompt, maxTokens),
   ]
   try {
-    return await Promise.any(calls.map(p => p.then(t => { if (!t) throw 0; return t })))
-  } catch { return null }
+    return await Promise.any(calls.map(p => p.then(t => {
+      if (!t) throw 0
+      // Rejeter les réponses sans données utiles (JSON vide, champs tous vides)
+      const parsed = parseJson(t)
+      if (!parsed) throw 0
+      if (!parsed.collector && !parsed.enName && !parsed.frName) throw 0
+      return t
+    })))
+  } catch {
+    // Dernier recours : n'importe quelle réponse non-nulle
+    const settled = await Promise.allSettled(calls)
+    for (const r of settled) {
+      if (r.status === 'fulfilled' && r.value) return r.value
+    }
+    return null
+  }
 }
 
 function parseJson(text: string | null): Record<string, string> | null {
