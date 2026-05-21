@@ -264,7 +264,6 @@ async function fetchListingPage(url: string): Promise<ListingMeta | null> {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
         'Cache-Control': 'no-cache',
       },
       signal: AbortSignal.timeout(8000),
@@ -273,22 +272,29 @@ async function fetchListingPage(url: string): Promise<ListingMeta | null> {
     const html = await res.text()
     const platform = detectPlatform(url)
 
-    // ── Images : og:image + og:image:secure_url ──────────────────
+    // ── Images : plusieurs stratégies pour récupérer les photos HD ──
     const imageUrls: string[] = []
-    const imgRx = /<meta[^>]*property=["']og:image(?::secure_url)?["'][^>]*content=["']([^"']+)["']/gi
-    let m: RegExpExecArray | null
-    while ((m = imgRx.exec(html)) !== null) {
-      const u = m[1]
-      if (u && !imageUrls.includes(u)) imageUrls.push(u)
-    }
-    // Also try reverse attribute order
-    const imgRx2 = /<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image(?::secure_url)?["']/gi
-    while ((m = imgRx2.exec(html)) !== null) {
-      const u = m[1]
-      if (u && !imageUrls.includes(u)) imageUrls.push(u)
-    }
+    const addImg = (u: string) => { if (u && u.startsWith('http') && !imageUrls.includes(u)) imageUrls.push(u) }
 
-    // ── Prix : JSON-LD → meta → patterns HTML ────────────────────
+    // 1. JSON Vinted embarqué — photos HD (full_size_url ou url dans tableau "photos")
+    const photoJsonMatches = [...html.matchAll(/"full_size_url"\s*:\s*"([^"]+)"/g)]
+    for (const m of photoJsonMatches) addImg(m[1].replace(/\\/g, ''))
+
+    const highResMatches = [...html.matchAll(/"url"\s*:\s*"(https:\/\/images\d*\.vinted\.[^"]+)"/g)]
+    for (const m of highResMatches) addImg(m[1].replace(/\\/g, ''))
+
+    // 2. og:image (thumbnail — fallback si pas de HD)
+    const ogImgMatches = [...html.matchAll(/<meta[^>]*property=["']og:image(?::secure_url)?["'][^>]*content=["']([^"']+)["']/gi),
+                          ...html.matchAll(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image(?::secure_url)?["']/gi)]
+    for (const m of ogImgMatches) addImg(m[1])
+
+    // 3. eBay / LeBonCoin images
+    const ebayMatches = [...html.matchAll(/https:\/\/i\.ebayimg\.com\/images\/g\/[^"'\s]+/g)]
+    for (const m of ebayMatches) addImg(m[0])
+    const lbcMatches = [...html.matchAll(/https:\/\/img\.leboncoin\.fr\/api\/[^"'\s]+/g)]
+    for (const m of lbcMatches) addImg(m[0])
+
+    // ── Prix : JSON-LD → patterns embarqués → meta ───────────────
     let price = 0
     const ldScripts = [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)]
     for (const s of ldScripts) {
@@ -304,7 +310,8 @@ async function fetchListingPage(url: string): Promise<ListingMeta | null> {
         /"price"\s*:\s*"?([\d.]+)"?(?:\s*,\s*"currency")/,
         /content=["']([\d.,]+)["'][^>]*itemprop=["']price["']/i,
         /<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([\d.,]+)/i,
-        /["']amount["']\s*:\s*"([\d.]+)"/,
+        /"amount"\s*:\s*"([\d.]+)"/,
+        /"prix"\s*:\s*"?([\d.]+)/,
       ]) {
         const pm = html.match(pat)
         if (pm) { price = parseFloat(pm[1].replace(',', '.')); break }
@@ -313,13 +320,12 @@ async function fetchListingPage(url: string): Promise<ListingMeta | null> {
 
     // ── Frais de port ─────────────────────────────────────────────
     let shipping = 0
-    const shipPatterns = [
+    for (const pat of [
       /"service_fee_amount"\s*:\s*"([\d.]+)"/,
-      /frais[^<]{0,40}?(\d+[.,]\d{2})\s*€/i,
-      /livraison[^<]{0,40}?(\d+[.,]\d{2})\s*€/i,
-      /shipping[^<]{0,40}?([\d.]+)/i,
-    ]
-    for (const pat of shipPatterns) {
+      /"buyer_protection_fee"\s*:\s*[\s\S]{0,30}"amount"\s*:\s*"([\d.]+)"/,
+      /frais[^<]{0,60}?(\d+[.,]\d{2})\s*€/i,
+      /livraison[^<]{0,60}?(\d+[.,]\d{2})\s*€/i,
+    ]) {
       const sm = html.match(pat)
       if (sm) { shipping = parseFloat(sm[1].replace(',', '.')); break }
     }
@@ -328,14 +334,14 @@ async function fetchListingPage(url: string): Promise<ListingMeta | null> {
     const titleM = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']*)["']/i)
       ?? html.match(/<meta[^>]*content=["']([^"']*)["'][^>]*property=["']og:title["']/i)
       ?? html.match(/<title[^>]*>([^<]+)<\/title>/i)
-    const title = titleM?.[1]?.trim() ?? ''
+    const title = (titleM?.[1] ?? '').replace(/\s*[\|–-]\s*Vinted.*$/i, '').trim()
 
-    // ── Condition (Vinted) ─────────────────────────────────────────
+    // ── Condition ─────────────────────────────────────────────────
     let condition = ''
     for (const pat of [
       /Neuf avec étiquette|Neuf sans étiquette|Très bon état|Bon état|Satisfaisant/i,
+      /"status"\s*:\s*["']([^"']+)["']/i,
       /"condition"\s*:\s*["']([^"']+)["']/i,
-      /Condition[^:]*:\s*([^\n<]+)/i,
     ]) {
       const cm = html.match(pat)
       if (cm) { condition = normalizeCondition(cm[0]); break }
@@ -661,86 +667,127 @@ export async function POST(req: NextRequest) {
     if (!listingUrl && (!file || file.size === 0))
       return NextResponse.json({ ok: false, error: 'Fournis un lien d\'annonce ou un screenshot.' }, { status: 400 })
 
-    let b64 = '', mime = 'image/jpeg'
     let listingMeta: ListingMeta | null = null
     let fromUrl = false
-
-    // ── Mode URL : fetch page + photo de la carte ─────────────────
-    if (listingUrl) {
-      listingMeta = await fetchListingPage(listingUrl)
-
-      if (listingMeta && listingMeta.imageUrls.length > 0) {
-        // Télécharger la photo de la carte depuis l'annonce
-        for (const imgUrl of listingMeta.imageUrls.slice(0, 3)) {
-          const dl = await downloadImageAsBase64(imgUrl)
-          if (dl) { b64 = dl.b64; mime = dl.mime; fromUrl = true; break }
-        }
-      }
-    }
-
-    // ── Mode screenshot (fallback ou upload direct) ───────────────
-    if (!b64 && file && file.size > 0) {
-      if (file.size > 10 * 1024 * 1024)
-        return NextResponse.json({ ok: false, error: 'Image trop grande (max 10MB)' }, { status: 400 })
-      mime = ['image/jpeg','image/png','image/webp','image/gif'].includes(file.type) ? file.type : 'image/jpeg'
-      b64 = Buffer.from(await file.arrayBuffer()).toString('base64')
-    }
-
-    if (!b64)
-      return NextResponse.json({ ok: false, error: 'Impossible de charger la photo de l\'annonce. Essaie d\'uploader un screenshot.' }, { status: 422 })
-
-    // ── Identification IA ─────────────────────────────────────────
     let card: any | null = null
     let aiInfo = { cardName: '', englishName: '', cardNumber: '', setName: '', condition: '', listingPrice: 0, currency: 'EUR', listingTitle: '' }
 
-    if (fromUrl) {
-      // Photo propre de la carte → PROMPT_IDENTIFY (même que le scan de carte)
-      const calls = [
-        callGemini(b64, mime, PROMPT_IDENTIFY),
-        callGroq(b64, mime, PROMPT_IDENTIFY),
-      ]
-      let rawText: string | null = null
-      try {
-        rawText = await Promise.any(calls.map(p => p.then(t => {
-          if (!t) throw 0
-          // Validation minimale : doit contenir "collector" ou un nom
-          if (!t.includes('collector') && !t.includes('Name')) throw 0
-          return t
-        })))
-      } catch { rawText = await callGemini(b64, mime, PROMPT_IDENTIFY) }
+    // ── Mode URL : fetch page + identification depuis les photos ──
+    if (listingUrl) {
+      listingMeta = await fetchListingPage(listingUrl)
+    }
 
-      if (rawText) {
-        const parsed = extractAllJsonObjects(rawText)[0] ?? null
-        if (parsed) {
-          const { num, total, setCode } = parseCollector(parsed.collector ?? '', parsed.setCode ?? '')
-          const enName = (parsed.enName ?? '').trim()
-          const frName = (parsed.frName ?? '').trim()
+    if (listingUrl && listingMeta) {
+      // Télécharger jusqu'à 4 photos en parallèle et tester chacune avec PROMPT_IDENTIFY
+      const photos = listingMeta.imageUrls.slice(0, 4)
+      if (photos.length > 0) {
+        const photoAttempts = await Promise.allSettled(
+          photos.map(async (imgUrl) => {
+            const dl = await downloadImageAsBase64(imgUrl)
+            if (!dl) return null
+            // Race Gemini + Groq sur cette photo
+            let raw: string | null = null
+            try {
+              raw = await Promise.any([
+                callGemini(dl.b64, dl.mime, PROMPT_IDENTIFY),
+                callGroq(dl.b64, dl.mime, PROMPT_IDENTIFY),
+              ].map(p => p.then(t => {
+                if (!t) throw 0
+                const parsed = extractAllJsonObjects(t)[0]
+                if (!parsed?.collector && !parsed?.enName && !parsed?.frName) throw 0
+                return t
+              })))
+            } catch { raw = await callGemini(dl.b64, dl.mime, PROMPT_IDENTIFY) }
+            if (!raw) return null
+            const parsed = extractAllJsonObjects(raw)[0]
+            if (!parsed) return null
+            const { num, total, setCode } = parseCollector(parsed.collector ?? '', parsed.setCode ?? '')
+            const enName = (parsed.enName ?? '').trim()
+            const frName = (parsed.frName ?? '').trim()
+            if (!num && !enName && !frName) return null
+            const found = await findCardFromIdentify(num, total, setCode, enName, frName)
+            return { card: found, parsed, num, total, enName, frName }
+          })
+        )
 
-          card = await findCardFromIdentify(num, total, setCode, enName, frName)
+        // Prendre le premier résultat qui a trouvé une carte
+        for (const attempt of photoAttempts) {
+          if (attempt.status === 'fulfilled' && attempt.value?.card) {
+            const { card: foundCard, parsed, num, total, enName, frName } = attempt.value
+            card = foundCard
+            aiInfo.cardName     = frName || enName || card?.name || ''
+            aiInfo.englishName  = enName || frName || card?.name || ''
+            aiInfo.cardNumber   = num && total ? `${num}/${total}` : num
+            aiInfo.condition    = listingMeta.condition
+            aiInfo.listingPrice = listingMeta.price
+            aiInfo.listingTitle = listingMeta.title
+            fromUrl = true
+            break
+          }
+        }
 
-          aiInfo.cardName     = frName || enName || card?.name || ''
-          aiInfo.englishName  = enName || frName || card?.name || ''
-          aiInfo.cardNumber   = num && total ? `${num}/${total}` : num
-          aiInfo.condition    = listingMeta?.condition ?? ''
-          aiInfo.listingPrice = listingMeta?.price ?? 0
-          aiInfo.listingTitle = listingMeta?.title ?? ''
+        // Fallback : si aucune photo n'a trouvé de carte, tenter avec les noms extraits
+        if (!card) {
+          for (const attempt of photoAttempts) {
+            if (attempt.status === 'fulfilled' && attempt.value) {
+              const { num, total, enName, frName } = attempt.value
+              if (enName || frName) {
+                card = await findCardFromIdentify(num, total, null, enName, frName)
+                if (card) {
+                  aiInfo.cardName = frName || enName; aiInfo.englishName = enName || frName
+                  aiInfo.cardNumber = num && total ? `${num}/${total}` : num
+                  aiInfo.condition = listingMeta.condition; aiInfo.listingPrice = listingMeta.price
+                  aiInfo.listingTitle = listingMeta.title; fromUrl = true
+                  break
+                }
+              }
+            }
+          }
         }
       }
 
-      // Si prix non trouvé dans HTML, essaie le slug
-      if (!aiInfo.listingPrice && listingUrl) {
-        const slug = parseVintedSlug(listingUrl)
-        if (slug?.cardNumber && !aiInfo.cardNumber) aiInfo.cardNumber = slug.cardNumber
+      // Fallback titre : extraire infos du titre de l'annonce
+      if (!card && listingMeta.title) {
+        const title = listingMeta.title
+        // Chercher numéro/total dans le titre (ex: "Dracaufeu ex 006/165 151")
+        const numM = title.match(/\b(\d{1,3})\/(\d{2,3})\b/)
+        const numOnly = title.match(/\b([A-Z]{2,5}\d{2,4})\b/)
+        const rawNum = numM ? numM[1] : numOnly ? numOnly[0] : ''
+        const rawTotal = numM ? parseInt(numM[2]) : null
+        // Extraire le nom (tout avant le numéro ou entre guillemets)
+        const nameM = title.match(/^([^\d]+?)(?:\s+\d|\s+SVP|\s+SWSH|$)/i)
+        const titleName = (nameM?.[1] ?? '').replace(/[™®]/g,'').trim()
+        if (rawNum || titleName) {
+          const { num, total, setCode } = parseCollector(numM ? `${rawNum}/${numM[2]}` : rawNum, '')
+          card = await findCardFromIdentify(num, rawTotal ?? total, setCode, titleName, titleName)
+          if (card) {
+            aiInfo.cardName = card.name; aiInfo.englishName = card.name
+            aiInfo.cardNumber = rawNum && rawTotal ? `${rawNum}/${rawTotal}` : rawNum
+            aiInfo.condition = listingMeta.condition; aiInfo.listingPrice = listingMeta.price
+            aiInfo.listingTitle = title; fromUrl = true
+          }
+        }
       }
-    } else {
-      // Screenshot → PROMPT_DEAL (lit tout le texte de l'annonce)
+
+      // Remplir les infos meta même si pas de carte
+      if (!aiInfo.listingPrice) aiInfo.listingPrice = listingMeta.price
+      if (!aiInfo.listingTitle) aiInfo.listingTitle = listingMeta.title
+      if (!aiInfo.condition)   aiInfo.condition = listingMeta.condition
+    }
+
+    // ── Mode screenshot (si pas encore identifié via URL) ────────
+    if (!fromUrl && file && file.size > 0) {
+      if (file.size > 10 * 1024 * 1024)
+        return NextResponse.json({ ok: false, error: 'Image trop grande (max 10MB)' }, { status: 400 })
+      const mime = ['image/jpeg','image/png','image/webp','image/gif'].includes(file.type) ? file.type : 'image/jpeg'
+      const b64  = Buffer.from(await file.arrayBuffer()).toString('base64')
+
       const rawText = await callGemini(b64, mime, PROMPT_DEAL) ?? await callGroq(b64, mime, PROMPT_DEAL)
       if (!rawText) return NextResponse.json({ ok: false, error: 'Impossible d\'analyser l\'image. Réessaie avec une photo plus nette.' }, { status: 422 })
 
       const ai = extractJson(rawText)
       if (!ai) return NextResponse.json({ ok: false, error: 'Impossible d\'extraire les infos. Assure-toi que la carte et le prix sont visibles.' }, { status: 422 })
 
-      // Enrichir avec URL si fournie
       if (listingMeta) {
         if (!ai.listingPrice && listingMeta.price) ai.listingPrice = listingMeta.price
         if (!ai.listingTitle && listingMeta.title) ai.listingTitle = listingMeta.title
@@ -748,15 +795,15 @@ export async function POST(req: NextRequest) {
       }
       if (listingUrl) {
         const slug = parseVintedSlug(listingUrl)
-        if (slug) {
-          if (!ai.cardNumber && slug.cardNumber) ai.cardNumber = slug.cardNumber
-          if (!ai.listingTitle && slug.listingTitle) ai.listingTitle = slug.listingTitle
-        }
+        if (slug?.cardNumber && !ai.cardNumber) ai.cardNumber = slug.cardNumber
+        if (slug?.listingTitle && !ai.listingTitle) ai.listingTitle = slug.listingTitle
       }
-
       card = await findCard(ai)
       aiInfo = ai
     }
+
+    if (!fromUrl && !card && !aiInfo.listingPrice)
+      return NextResponse.json({ ok: false, error: 'Fournis un lien d\'annonce ou un screenshot.' }, { status: 422 })
 
     // ── Prix marché ───────────────────────────────────────────────
     let marketPrice = card ? Number(card.prices?.[0]?.market ?? 0) : 0
