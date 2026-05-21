@@ -164,10 +164,13 @@ function matchScore(card: any, num: string, enName: string, frName: string, setI
 
   if (enNorm && cardNorm === enNorm)                                    s += 40
   else if (frNorm && cardNorm === frNorm)                               s += 40
-  else if (frNorm && cardNorm.includes(frNorm.split(' ')[0]))           s += 15  // "dracaufeu ex" includes "dracaufeu"
+  else if (frNorm && cardNorm.includes(frNorm.split(' ')[0]))           s += 15
   else if (enNorm && cardNorm.includes(enNorm.split(' ')[0]))           s += 10
 
   if (setId && sid === setId)                                           s += 30
+
+  // Bonus : préférer les cartes qui ont une image
+  if (card.imageLgUrl || card.imageSmUrl)                               s += 8
 
   return s
 }
