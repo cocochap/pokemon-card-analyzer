@@ -530,161 +530,108 @@ function CandidatePicker({
   )
 }
 
-/* ── Image crop modal (custom, sans librairie) ───────────────── */
-function ImageCropModal({ src, onConfirm, onSkip }: {
+/* ── Cropper inline (pas de modal fixed — toujours dans le flux) ─ */
+function InlineCropper({ src, onConfirm, onSkip }: {
   src: string
   onConfirm: (blob: Blob) => void
   onSkip: () => void
 }) {
-  const imgRef  = useRef<HTMLImageElement>(null)
+  const imgRef = useRef<HTMLImageElement>(null)
   const [loaded, setLoaded] = useState(false)
-  // Rognage exprimé en % depuis chaque bord (0 = bord de l'image)
   const [ins, setIns] = useState({ t: 0, b: 0, l: 0, r: 0 })
   const drag = useRef<{ edge: 't'|'b'|'l'|'r'; startPx: number; initPct: number; sizePx: number } | null>(null)
 
-  function handlePointerDown(edge: 't'|'b'|'l'|'r', e: React.PointerEvent<HTMLDivElement>) {
+  function down(edge: 't'|'b'|'l'|'r', e: React.PointerEvent<HTMLDivElement>) {
     e.currentTarget.setPointerCapture(e.pointerId)
     const rect = imgRef.current!.getBoundingClientRect()
     const isV = edge === 't' || edge === 'b'
-    drag.current = {
-      edge,
-      startPx:  isV ? e.clientY : e.clientX,
-      initPct:  ins[edge],
-      sizePx:   isV ? rect.height : rect.width,
-    }
+    drag.current = { edge, startPx: isV ? e.clientY : e.clientX, initPct: ins[edge], sizePx: isV ? rect.height : rect.width }
   }
-
-  function handlePointerMove(edge: 't'|'b'|'l'|'r', e: React.PointerEvent<HTMLDivElement>) {
-    const d = drag.current
-    if (!d || d.edge !== edge) return
+  function move(edge: 't'|'b'|'l'|'r', e: React.PointerEvent<HTMLDivElement>) {
+    const d = drag.current; if (!d || d.edge !== edge) return
     const isV = edge === 't' || edge === 'b'
-    const delta = ((isV ? e.clientY : e.clientX) - d.startPx) / d.sizePx * 100
-    // top/left : se déplace dans le sens du pointeur
-    // bottom/right : se déplace en sens inverse
+    const pct = ((isV ? e.clientY : e.clientX) - d.startPx) / d.sizePx * 100
     const sign = (edge === 'b' || edge === 'r') ? -1 : 1
-    const opp: 't'|'b'|'l'|'r' = edge === 't' ? 'b' : edge === 'b' ? 't' : edge === 'l' ? 'r' : 'l'
-    setIns(prev => ({
-      ...prev,
-      [edge]: Math.max(0, Math.min(d.initPct + sign * delta, 94 - prev[opp])),
-    }))
+    const opp = ({ t:'b', b:'t', l:'r', r:'l' } as const)[edge]
+    setIns(p => ({ ...p, [edge]: Math.max(0, Math.min(d.initPct + sign * pct, 94 - p[opp])) }))
   }
-
-  function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
-    e.currentTarget.releasePointerCapture(e.pointerId)
-    drag.current = null
+  function up(e: React.PointerEvent<HTMLDivElement>) {
+    drag.current = null; e.currentTarget.releasePointerCapture(e.pointerId)
   }
-
-  function handlers(edge: 't'|'b'|'l'|'r') {
-    return {
-      onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => handlePointerDown(edge, e),
-      onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => handlePointerMove(edge, e),
-      onPointerUp:   handlePointerUp,
-    }
+  function h(edge: 't'|'b'|'l'|'r') {
+    return { onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => down(edge, e), onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => move(edge, e), onPointerUp: up }
   }
-
   function confirm() {
     const img = imgRef.current!
-    const c = document.createElement('canvas')
-    const sx = Math.round(img.naturalWidth  * ins.l / 100)
-    const sy = Math.round(img.naturalHeight * ins.t / 100)
+    const cv = document.createElement('canvas')
+    const sx = Math.round(img.naturalWidth  * ins.l / 100), sy = Math.round(img.naturalHeight * ins.t / 100)
     const sw = Math.round(img.naturalWidth  * (100 - ins.l - ins.r) / 100)
     const sh = Math.round(img.naturalHeight * (100 - ins.t - ins.b) / 100)
-    c.width = sw; c.height = sh
-    c.getContext('2d')!.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
-    c.toBlob(b => b && onConfirm(b), 'image/jpeg', 0.93)
+    cv.width = sw; cv.height = sh
+    cv.getContext('2d')!.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
+    cv.toBlob(b => b && onConfirm(b), 'image/jpeg', 0.93)
   }
-
   const { t, b, l, r } = ins
-  // Hauteur disponible pour l'image (viewport - header 52px - footer ~124px - padding 24px)
-  const maxImgH = typeof window !== 'undefined' ? window.innerHeight - 160 : 500
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 overflow-hidden" style={{ background: '#050814' }}>
-
-      {/* Header */}
-      <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4"
-        style={{ height: 52, background: 'rgba(5,8,20,0.98)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-        <div className="flex items-center gap-2 text-sm font-semibold text-white">
-          <CropIcon className="w-4 h-4 text-pokemon-yellow" />
-          Recadrer la photo
-        </div>
-        <button onClick={onSkip} className="text-sm px-3 py-1.5 rounded-lg"
-          style={{ background:'rgba(255,255,255,0.07)', color:'rgba(255,255,255,0.5)' }}>
+    <div className="space-y-3">
+      {/* Titre + bouton ignorer */}
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-2 text-sm font-semibold text-white">
+          <CropIcon className="w-4 h-4 text-pokemon-yellow" /> Recadrer la photo
+        </span>
+        <button onClick={onSkip} className="text-xs px-3 py-1.5 rounded-lg"
+          style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)' }}>
           Ignorer
         </button>
       </div>
 
-      {/* Zone image — centrée entre header et footer */}
-      <div className="absolute inset-x-0 flex items-center justify-center"
-        style={{ top: 52, bottom: 82, background: '#0a0e1a' }}>
-        {/* Wrapper collé à l'image pour que les overlays % soient corrects */}
-        <div className="relative select-none" style={{ lineHeight: 0, touchAction: 'none' }}>
+      {/* Image + poignées — wrapper inline-block pour que les % collent à l'image */}
+      <div style={{ display: 'flex', justifyContent: 'center', background: '#0a0e1a', borderRadius: 12, overflow: 'hidden', minHeight: 120 }}>
+        <div style={{ position: 'relative', lineHeight: 0, touchAction: 'none' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img ref={imgRef} src={src} alt="" draggable={false}
-            onLoad={() => setLoaded(true)}
-            style={{ display: 'block', maxWidth: '100%', maxHeight: maxImgH, userSelect: 'none' }} />
-
+          <img ref={imgRef} src={src} alt="" draggable={false} onLoad={() => setLoaded(true)}
+            style={{ display: 'block', maxWidth: '100%', maxHeight: '56vh', userSelect: 'none' }} />
           {loaded && <>
-            {/* Zones sombres hors crop */}
-            <div style={{ position:'absolute', inset:0, top:0, height:`${t}%`, background:'rgba(0,0,0,0.65)', pointerEvents:'none' }} />
+            {/* Zones sombres hors recadrage */}
+            <div style={{ position:'absolute', top:0, left:0, right:0, height:`${t}%`, background:'rgba(0,0,0,0.65)', pointerEvents:'none' }} />
             <div style={{ position:'absolute', bottom:0, left:0, right:0, height:`${b}%`, background:'rgba(0,0,0,0.65)', pointerEvents:'none' }} />
             <div style={{ position:'absolute', top:`${t}%`, bottom:`${b}%`, left:0, width:`${l}%`, background:'rgba(0,0,0,0.65)', pointerEvents:'none' }} />
             <div style={{ position:'absolute', top:`${t}%`, bottom:`${b}%`, right:0, width:`${r}%`, background:'rgba(0,0,0,0.65)', pointerEvents:'none' }} />
-
-            {/* Bordure crop */}
+            {/* Bordure jaune */}
             <div style={{ position:'absolute', top:`${t}%`, left:`${l}%`, right:`${r}%`, bottom:`${b}%`, border:'2px solid rgba(255,203,5,0.9)', pointerEvents:'none' }} />
-
-            {/* Poignées — larges pour le tactile */}
-            {/* Haut */}
-            <div {...handlers('t')} style={{ position:'absolute', top:`${t}%`, left:`${l}%`, right:`${r}%`,
-              height: 28, transform:'translateY(-50%)', cursor:'ns-resize', touchAction:'none', zIndex:20,
-              display:'flex', alignItems:'center', justifyContent:'center' }}>
+            {/* Poignée haut */}
+            <div {...h('t')} style={{ position:'absolute', top:`${t}%`, left:`${l}%`, right:`${r}%`, height:36, transform:'translateY(-50%)', cursor:'ns-resize', touchAction:'none', zIndex:10, display:'flex', alignItems:'center', justifyContent:'center' }}>
               <div style={{ width:48, height:6, background:'#FFCB05', borderRadius:3 }} />
             </div>
-            {/* Bas */}
-            <div {...handlers('b')} style={{ position:'absolute', bottom:`${b}%`, left:`${l}%`, right:`${r}%`,
-              height: 28, transform:'translateY(50%)', cursor:'ns-resize', touchAction:'none', zIndex:20,
-              display:'flex', alignItems:'center', justifyContent:'center' }}>
+            {/* Poignée bas */}
+            <div {...h('b')} style={{ position:'absolute', bottom:`${b}%`, left:`${l}%`, right:`${r}%`, height:36, transform:'translateY(50%)', cursor:'ns-resize', touchAction:'none', zIndex:10, display:'flex', alignItems:'center', justifyContent:'center' }}>
               <div style={{ width:48, height:6, background:'#FFCB05', borderRadius:3 }} />
             </div>
-            {/* Gauche */}
-            <div {...handlers('l')} style={{ position:'absolute', left:`${l}%`, top:`${t}%`, bottom:`${b}%`,
-              width: 28, transform:'translateX(-50%)', cursor:'ew-resize', touchAction:'none', zIndex:20,
-              display:'flex', alignItems:'center', justifyContent:'center' }}>
+            {/* Poignée gauche */}
+            <div {...h('l')} style={{ position:'absolute', left:`${l}%`, top:`${t}%`, bottom:`${b}%`, width:36, transform:'translateX(-50%)', cursor:'ew-resize', touchAction:'none', zIndex:10, display:'flex', alignItems:'center', justifyContent:'center' }}>
               <div style={{ width:6, height:48, background:'#FFCB05', borderRadius:3 }} />
             </div>
-            {/* Droite */}
-            <div {...handlers('r')} style={{ position:'absolute', right:`${r}%`, top:`${t}%`, bottom:`${b}%`,
-              width: 28, transform:'translateX(50%)', cursor:'ew-resize', touchAction:'none', zIndex:20,
-              display:'flex', alignItems:'center', justifyContent:'center' }}>
+            {/* Poignée droite */}
+            <div {...h('r')} style={{ position:'absolute', right:`${r}%`, top:`${t}%`, bottom:`${b}%`, width:36, transform:'translateX(50%)', cursor:'ew-resize', touchAction:'none', zIndex:10, display:'flex', alignItems:'center', justifyContent:'center' }}>
               <div style={{ width:6, height:48, background:'#FFCB05', borderRadius:3 }} />
             </div>
           </>}
         </div>
       </div>
 
-      {/* Footer — boutons seulement, le plus compact possible */}
-      <div className="absolute inset-x-0 bottom-0 z-10 flex gap-3 px-4"
-        style={{
-          paddingTop: 10,
-          paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
-          background: 'rgba(5,8,20,0.98)',
-          borderTop: '1px solid rgba(255,255,255,0.08)',
-        }}>
-        <button onClick={onSkip}
-          className="flex-1 rounded-xl text-sm font-medium"
-          style={{ height: 48, background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.1)', color:'rgba(255,255,255,0.6)' }}>
-          Ignorer
+      {/* Boutons dans le flux — toujours visibles, pas de fixed/absolute */}
+      <div className="flex gap-3">
+        <button onClick={onSkip} className="flex-1 py-3 rounded-xl text-sm font-medium"
+          style={{ background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.1)', color:'rgba(255,255,255,0.6)' }}>
+          Utiliser telle quelle
         </button>
-        <button onClick={confirm}
-          className="flex-1 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
-          style={{ height: 48, background:'#FFCB05', color:'#000' }}>
-          <CropIcon className="w-4 h-4" />
-          Valider
+        <button onClick={confirm} className="flex-1 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+          style={{ background:'#FFCB05', color:'#000' }}>
+          <CropIcon className="w-4 h-4" /> Valider
         </button>
       </div>
-    </motion.div>
+    </div>
   )
 }
 
@@ -975,17 +922,6 @@ export function ScanUpload() {
   return (
     <div className="w-full max-w-md mx-auto space-y-4">
 
-      {/* Crop modal — rendu hors du flux principal */}
-      <AnimatePresence>
-        {cropSrc && (
-          <ImageCropModal
-            src={cropSrc}
-            onConfirm={applyCrop}
-            onSkip={skipCrop}
-          />
-        )}
-      </AnimatePresence>
-
       {/* Hidden file inputs */}
       {[0, 1, 2].map(i => (
         <input key={i} ref={fileRefs[i]} type="file" accept="image/*" className="hidden"
@@ -994,7 +930,12 @@ export function ScanUpload() {
       <input ref={fileRefs[3]} type="file" accept="image/*" capture="environment" className="hidden"
         onChange={e => { const f = e.target.files?.[0]; if (f) processFile(f, 0) }} />
 
-      <AnimatePresence mode="wait">
+      {/* Cropper inline — remplace tout le reste quand une photo est à recadrer */}
+      {cropSrc && (
+        <InlineCropper src={cropSrc} onConfirm={applyCrop} onSkip={skipCrop} />
+      )}
+
+      {!cropSrc && <AnimatePresence mode="wait">
 
         {/* IDLE / PREVIEW — not scanning, not result */}
         {(state === 'idle' || state === 'error') && (
@@ -1141,7 +1082,7 @@ export function ScanUpload() {
           </motion.div>
         )}
 
-      </AnimatePresence>
+      </AnimatePresence>}
     </div>
   )
 }
