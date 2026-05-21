@@ -555,12 +555,12 @@ function ImageCropModal({
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex flex-col"
-      style={{ background: 'rgba(5,8,20,0.97)' }}
+      className="fixed inset-0 z-50 overflow-hidden"
+      style={{ background: '#050814' }}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 flex-shrink-0"
-        style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+      {/* Header — position absolue, hauteur fixe */}
+      <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4"
+        style={{ height: 52, background: 'rgba(5,8,20,0.98)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
         <div className="flex items-center gap-2 text-sm font-semibold text-white">
           <CropIcon className="w-4 h-4 text-pokemon-yellow" />
           Recadrer la photo
@@ -572,8 +572,9 @@ function ImageCropModal({
         </button>
       </div>
 
-      {/* Image + crop — min-h-0 pour que flex-1 se rétrécisse correctement */}
-      <div className="flex-1 min-h-0 flex items-center justify-center p-3 overflow-hidden">
+      {/* Zone image — entre le header et le footer, taille explicite */}
+      <div className="absolute inset-x-0 flex items-center justify-center overflow-hidden"
+        style={{ top: 52, bottom: 148 }}>
         <ReactCrop
           crop={crop}
           onChange={c => setCrop(c)}
@@ -587,27 +588,26 @@ function ImageCropModal({
             src={src}
             alt="Recadrer"
             onLoad={onImageLoad}
-            style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain', display: 'block' }}
+            style={{ maxHeight: '100%', maxWidth: '100%', display: 'block', objectFit: 'contain' }}
           />
         </ReactCrop>
       </div>
 
-      {/* Footer — safe area inset pour iPhone */}
-      <div
-        className="px-4 pt-3 pb-4 flex-shrink-0 space-y-2"
+      {/* Footer — position absolue en bas, toujours visible */}
+      <div className="absolute inset-x-0 bottom-0 z-10 px-4 pt-3 space-y-2"
         style={{
+          background: 'rgba(5,8,20,0.98)',
           borderTop: '1px solid rgba(255,255,255,0.08)',
-          paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
-        }}
-      >
+          paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+        }}>
         <p className="text-[11px] text-white/35 text-center">
-          Déplacez et redimensionnez le cadre pour ne garder que la carte
+          Glissez les bords du cadre pour recadrer
         </p>
         <div className="flex gap-3">
           <button onClick={onSkip}
-            className="flex-1 py-3 rounded-xl text-sm font-medium transition-colors"
+            className="flex-1 py-3 rounded-xl text-sm font-medium"
             style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)' }}>
-            Utiliser telle quelle
+            Ignorer
           </button>
           <button
             onClick={() => { if (completedCrop && imgRef.current) onConfirm(completedCrop, imgRef.current) }}
@@ -615,7 +615,7 @@ function ImageCropModal({
             className="flex-1 btn-primary py-3 rounded-xl text-sm font-bold justify-center disabled:opacity-40"
           >
             <CropIcon className="w-4 h-4" />
-            Recadrer
+            Valider
           </button>
         </div>
       </div>
