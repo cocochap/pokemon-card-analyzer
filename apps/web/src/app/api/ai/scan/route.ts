@@ -338,29 +338,35 @@ async function findCandidates(num: string, enName: string, frName: string, setId
 }
 
 // ── AI calls ──────────────────────────────────────────────────────────────────
-async function callGemini(b64: string, mime: string, prompt: string, maxTokens = 300): Promise<{ text: string | null; rateLimited: boolean }> {
+
+// Appel d'un seul modèle Gemini — timeout 8s
+async function callGeminiModel(model: string, b64: string, mime: string, prompt: string, maxTokens: number): Promise<string | null> {
   const safeMime = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'].includes(mime) ? mime : 'image/jpeg'
-  let anyRateLimit = false
-  for (const model of GEMINI_MODELS) {
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
-        {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ inline_data: { mime_type: safeMime, data: b64 } }, { text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens } }),
-          signal: AbortSignal.timeout(20000),
-        }
-      )
-      if (res.status === 429) { anyRateLimit = true; continue }
-      if (!res.ok) continue
-      const json = await res.json()
-      const candidate = json?.candidates?.[0]
-      if (candidate?.finishReason === 'SAFETY') continue
-      const text = candidate?.content?.parts?.[0]?.text ?? ''
-      if (text) return { text, rateLimited: false }
-    } catch { /* continue */ }
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ inline_data: { mime_type: safeMime, data: b64 } }, { text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens } }),
+        signal: AbortSignal.timeout(8000), // 8s max par modèle
+      }
+    )
+    if (res.status === 429 || !res.ok) return null
+    const json = await res.json()
+    const candidate = json?.candidates?.[0]
+    if (candidate?.finishReason === 'SAFETY') return null
+    return candidate?.content?.parts?.[0]?.text || null
+  } catch { return null }
+}
+
+// Tous les modèles Gemini en race simultanée — premier résultat valide gagne
+async function callGemini(b64: string, mime: string, prompt: string, maxTokens = 200): Promise<string | null> {
+  const calls = GEMINI_MODELS.map(m => callGeminiModel(m, b64, mime, prompt, maxTokens))
+  try {
+    return await Promise.any(calls.map(p => p.then(t => { if (!t) throw 0; return t })))
+  } catch {
+    return null
   }
-  return { text: null, rateLimited: anyRateLimit }
 }
 
 async function callGroq(b64: string, mime: string, prompt: string, maxTokens = 200): Promise<string | null> {
@@ -375,7 +381,7 @@ async function callGroq(b64: string, mime: string, prompt: string, maxTokens = 2
         messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: `data:${safeMime};base64,${b64}` } }, { type: 'text', text: prompt }] }],
         max_tokens: maxTokens, temperature: 0.1,
       }),
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(8000),
     })
     if (!res.ok) return null
     return (await res.json())?.choices?.[0]?.message?.content ?? null
@@ -457,21 +463,16 @@ async function importCard(ptcgCard: any): Promise<any | null> {
   } catch { return null }
 }
 
-// ── Race Gemini vs Groq — premier arrivé gagne ───────────────────────────────
+// ── Race : tous les modèles Gemini + Groq simultanément ─────────────────────
 async function raceAI(b64: string, mime: string, prompt: string, maxTokens = 200): Promise<string | null> {
-  // Gemini et Groq partent en même temps — on prend le premier résultat valide
-  const geminiP = callGemini(b64, mime, prompt, maxTokens).then(r => r.text)
-  const groqP   = callGroq(b64, mime, prompt, maxTokens)
-
-  // Promise.any : résout dès qu'une promesse réussit (text non-null)
+  const sources = [
+    callGemini(b64, mime, prompt, maxTokens), // race interne des 3 modèles Gemini
+    callGroq(b64, mime, prompt, maxTokens),
+  ]
   try {
-    return await Promise.any([
-      geminiP.then(t => { if (!t) throw new Error('empty'); return t }),
-      groqP.then(t   => { if (!t) throw new Error('empty'); return t }),
-    ])
+    return await Promise.any(sources.map(p => p.then(t => { if (!t) throw 0; return t })))
   } catch {
-    // Les deux ont échoué ou renvoyé null
-    return (await geminiP) ?? (await groqP)
+    return null
   }
 }
 
@@ -526,7 +527,7 @@ async function extractCard(buffers: { b64: string; mime: string }[]): Promise<{
 export async function POST(req: NextRequest) {
   if (!process.env.GEMINI_API_KEY) return NextResponse.json({ ok: false, error: 'GEMINI_API_KEY not configured' }, { status: 500 })
 
-  // Auth + form parsing en parallèle (gagne ~200ms)
+  // Auth + form parsing en parallèle
   const [{ userId: clerkId }, form] = await Promise.all([auth(), req.formData()])
   if (!clerkId) return NextResponse.json({ ok: false, error: 'Connexion requise', requiresAuth: true }, { status: 401 })
 
@@ -540,38 +541,29 @@ export async function POST(req: NextRequest) {
   }
   if (!imageFiles.length) return NextResponse.json({ ok: false, error: 'No image provided' }, { status: 400 })
 
-  // User lookup en parallèle avec la préparation des buffers
-  const [clerkUser, userP] = await Promise.all([
-    currentUser(),
-    (async () => {
-      // On a besoin du clerkUser email pour getUserWithTier, donc on attend
-      return null as any
-    })(),
-  ])
-  const email = clerkUser?.emailAddresses[0]?.emailAddress
-  const user = await getUserWithTier(clerkId, email ?? undefined)
-
-  const limits = getLimits(user.tier as any)
-  if (limits.scansPerMonth !== Infinity) {
-    const used = await getScanUsage(user.id)
-    if (used >= limits.scansPerMonth) {
-      return NextResponse.json({ ok: false, error: `Limite de ${limits.scansPerMonth} scans/mois atteinte.`, limitReached: true, used, limit: limits.scansPerMonth, upgradeUrl: '/pricing' }, { status: 429 })
-    }
-  }
-
   try {
-
-    // Préparer les images ET lancer l'extraction AI en parallèle
+    // Buffers + user lookup + AI : tout en parallèle
     const buffersP = Promise.all(imageFiles.map(async f => ({
       b64:  Buffer.from(await f.arrayBuffer()).toString('base64'),
       mime: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(f.type) ? f.type : 'image/jpeg',
     })))
 
-    // ── Phase 1 : AI + DB en parallèle maximum ───────────────────
-    // On attend d'abord les buffers (lecture mémoire, quasi-instant),
-    // puis l'AI et la résolution du set partent ensemble
+    // User lookup pendant que les buffers se préparent
+    const clerkUser = await currentUser()
+    const email = clerkUser?.emailAddresses[0]?.emailAddress
+    const user = await getUserWithTier(clerkId, email ?? undefined)
+
+    const limits = getLimits(user.tier as any)
+    if (limits.scansPerMonth !== Infinity) {
+      const used = await getScanUsage(user.id)
+      if (used >= limits.scansPerMonth) {
+        return NextResponse.json({ ok: false, error: `Limite de ${limits.scansPerMonth} scans/mois atteinte.`, limitReached: true, used, limit: limits.scansPerMonth, upgradeUrl: '/pricing' }, { status: 429 })
+      }
+    }
+
     const buffers = await buffersP
 
+    // ── Phase 1 : AI (race Gemini×3 + Groq) ─────────────────────
     const t0 = Date.now()
     const { num, total, enName, frName, setName, setId: setIdAI, language } = await extractCard(buffers)
     console.log(`[scan] AI ${Date.now() - t0}ms`)
