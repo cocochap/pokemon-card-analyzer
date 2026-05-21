@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   AlertCircle, Camera, CheckCircle2, Crop as CropIcon, ExternalLink, Info,
-  ImageUp, Plus, RotateCcw, Search, TrendingDown, TrendingUp, Upload, Zap, X,
+  ImageUp, Plus, RotateCcw, Search, Sparkles, TrendingDown, TrendingUp, Upload, Zap, X,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useT } from '@/lib/i18n/LanguageContext'
@@ -193,9 +193,31 @@ function ChangeBadge({ value, label }: { value: number; label: string }) {
 }
 
 /* ── Result panel ────────────────────────────────────────────── */
-function ResultPanel({ result, previews, onReset, onShowCandidates, hasCandidates, s }: {
+function AnonUpsellBanner() {
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+      className="rounded-2xl p-4 flex flex-col gap-3"
+      style={{ background: 'linear-gradient(135deg,rgba(255,203,5,0.10),rgba(167,139,250,0.08))', border: '1px solid rgba(255,203,5,0.25)' }}>
+      <div className="flex items-center gap-2">
+        <Sparkles className="w-4 h-4 text-pokemon-yellow flex-shrink-0" />
+        <p className="text-sm font-bold text-white">C'était votre scan gratuit !</p>
+      </div>
+      <p className="text-xs text-white/55 leading-relaxed">
+        Créez un compte gratuit pour scanner 3 cartes par mois, accéder aux prix Cardmarket en temps réel et suivre votre collection.
+      </p>
+      <Link href="/sign-up"
+        className="w-full py-2.5 rounded-xl text-sm font-bold text-center flex items-center justify-center gap-2"
+        style={{ background: '#FFCB05', color: '#000' }}>
+        <Zap className="w-4 h-4" />
+        Créer un compte gratuit
+      </Link>
+    </motion.div>
+  )
+}
+
+function ResultPanel({ result, previews, onReset, onShowCandidates, hasCandidates, isAnonymous, s }: {
   result: ScanResult; previews: string[]; onReset: () => void
-  onShowCandidates?: () => void; hasCandidates?: boolean; s: any
+  onShowCandidates?: () => void; hasCandidates?: boolean; isAnonymous?: boolean; s: any
 }) {
   const { identification: id, dbMatch: db } = result
 
@@ -347,18 +369,23 @@ function ResultPanel({ result, previews, onReset, onShowCandidates, hasCandidate
         </div>
       )}
 
+      {/* Bannière upsell pour scan anonyme */}
+      {isAnonymous && <AnonUpsellBanner />}
+
       {/* Actions */}
-      <div className="flex gap-3">
-        {db && (
-          <Link href={`/cards/${db.id}`} className="btn-primary flex-1 justify-center py-3 rounded-xl text-sm">
-            <Zap className="w-4 h-4" />{s.fullAnalysis}<ExternalLink className="w-3 h-3 opacity-60" />
-          </Link>
-        )}
-        <button className="btn-ghost px-4 py-3 rounded-xl" onClick={onReset}>
-          <RotateCcw className="w-4 h-4" />
-          {!db && <span className="ml-1 text-sm">{s.scanAgain}</span>}
-        </button>
-      </div>
+      {!isAnonymous && (
+        <div className="flex gap-3">
+          {db && (
+            <Link href={`/cards/${db.id}`} className="btn-primary flex-1 justify-center py-3 rounded-xl text-sm">
+              <Zap className="w-4 h-4" />{s.fullAnalysis}<ExternalLink className="w-3 h-3 opacity-60" />
+            </Link>
+          )}
+          <button className="btn-ghost px-4 py-3 rounded-xl" onClick={onReset}>
+            <RotateCcw className="w-4 h-4" />
+            {!db && <span className="ml-1 text-sm">{s.scanAgain}</span>}
+          </button>
+        </div>
+      )}
 
       {/* Bouton "Mauvaise carte ?" si auto-sélectionnée */}
       {hasCandidates && onShowCandidates && (
@@ -688,6 +715,7 @@ export function ScanUpload() {
   const [activeSlot, setActiveSlot] = useState(0)
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [scanIdentification, setScanIdentification] = useState<Identification | null>(null)
+  const [isAnonymous, setIsAnonymous] = useState(false)
 
   // Crop state
   const [cropSrc, setCropSrc]   = useState<string | null>(null)
@@ -754,8 +782,17 @@ export function ScanUpload() {
       activeFiles.forEach((f, i) => form.append(i === 0 ? 'image' : `image${i + 1}`, f))
       const res  = await fetch('/api/ai/scan', { method: 'POST', body: form })
       const data = await res.json()
+
+      // Limite anonyme atteinte — message spécifique
+      if (!data.ok && data.anonLimitReached) {
+        setState('error')
+        setErrorMsg('__anon_limit__')
+        return
+      }
+
       if (!res.ok || !data.ok) throw new Error(data.error ?? 'Scan failed')
 
+      setIsAnonymous(!!data.isAnonymous)
       const apiCandidates: Candidate[] = data.candidates ?? []
       const identification: Identification = {
         ...(data.identification ?? {}),
@@ -903,7 +940,7 @@ export function ScanUpload() {
     setState('idle')
     setPreviews([null, null, null])
     setFiles([null, null, null])
-    setResult(null); setErrorMsg(''); setCandidates([]); setScanIdentification(null)
+    setResult(null); setErrorMsg(''); setCandidates([]); setScanIdentification(null); setIsAnonymous(false)
     fileRefs.forEach(r => { if (r.current) r.current.value = '' })
   }
 
@@ -999,17 +1036,40 @@ export function ScanUpload() {
 
             {/* Error message */}
             {state === 'error' && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                className="glass-card p-4 flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold text-white mb-0.5">{s.scanFailed}</p>
-                  <p className="text-xs text-white/50">{errorMsg || s.scanFailedDesc}</p>
-                  <p className="text-xs text-white/35 mt-1">
-                    💡 Essayez avec une meilleure photo : bonne lumière, carte à plat, numéro visible
+              errorMsg === '__anon_limit__' ? (
+                <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                  className="rounded-2xl p-5 flex flex-col gap-3"
+                  style={{ background: 'linear-gradient(135deg,rgba(255,203,5,0.10),rgba(167,139,250,0.08))', border: '1px solid rgba(255,203,5,0.25)' }}>
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-pokemon-yellow" />
+                    <p className="text-base font-bold text-white">Scan gratuit utilisé !</p>
+                  </div>
+                  <p className="text-sm text-white/60 leading-relaxed">
+                    Créez un compte gratuit pour continuer à scanner vos cartes, accéder aux prix Cardmarket et suivre votre collection.
                   </p>
-                </div>
-              </motion.div>
+                  <Link href="/sign-up"
+                    className="w-full py-3 rounded-xl text-sm font-bold text-center flex items-center justify-center gap-2"
+                    style={{ background: '#FFCB05', color: '#000' }}>
+                    <Zap className="w-4 h-4" />
+                    Créer un compte gratuit — c'est gratuit
+                  </Link>
+                  <Link href="/sign-in" className="text-center text-xs text-white/35 hover:text-white/55 transition-colors">
+                    J'ai déjà un compte →
+                  </Link>
+                </motion.div>
+              ) : (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                  className="glass-card p-4 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-white mb-0.5">{s.scanFailed}</p>
+                    <p className="text-xs text-white/50">{errorMsg || s.scanFailedDesc}</p>
+                    <p className="text-xs text-white/35 mt-1">
+                      💡 Essayez avec une meilleure photo : bonne lumière, carte à plat, numéro visible
+                    </p>
+                  </div>
+                </motion.div>
+              )
             )}
           </motion.div>
         )}
@@ -1067,6 +1127,7 @@ export function ScanUpload() {
               onReset={reset}
               onShowCandidates={candidates.length > 1 ? () => setState('candidates') : undefined}
               hasCandidates={candidates.length > 1}
+              isAnonymous={isAnonymous}
               s={s}
             />
           </motion.div>

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db/prisma'
 import { getUserWithTier, getLimits, getScanUsage, incrementScanUsage } from '@/lib/subscription'
 import { PostHog } from 'posthog-node'
 import { charTier, RARITY_W, scarcityScore, detectEra, buildTargets } from '@/lib/investment/helpers'
+import { redis } from '@/lib/db/redis'
 
 const ph = new PostHog(process.env.NEXT_PUBLIC_POSTHOG_KEY!, { host: 'https://eu.i.posthog.com', flushAt: 1, flushInterval: 0 })
 
@@ -421,7 +422,23 @@ export async function POST(req: NextRequest) {
   if (!process.env.GEMINI_API_KEY) return NextResponse.json({ ok: false, error: 'GEMINI_API_KEY not configured' }, { status: 500 })
 
   const [{ userId: clerkId }, form] = await Promise.all([auth(), req.formData()])
-  if (!clerkId) return NextResponse.json({ ok: false, error: 'Connexion requise', requiresAuth: true }, { status: 401 })
+
+  // ── Scan anonyme : 1 essai gratuit par IP ────────────────────────────────
+  const isAnonymous = !clerkId
+  if (isAnonymous) {
+    const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim()
+      || req.headers.get('x-real-ip') || 'unknown'
+    const anonKey = `anon_scan:${ip}`
+    try {
+      const used = redis ? await redis.get(anonKey) : null
+      if (used) {
+        return NextResponse.json({
+          ok: false, requiresAuth: true, anonLimitReached: true,
+          error: 'Créez un compte gratuit pour continuer à scanner vos cartes.',
+        }, { status: 401 })
+      }
+    } catch { /* Redis indispo — on laisse passer */ }
+  }
 
   const imageFiles: File[] = []
   for (const key of ['image', 'image2', 'image3']) {
@@ -434,15 +451,18 @@ export async function POST(req: NextRequest) {
   if (!imageFiles.length) return NextResponse.json({ ok: false, error: 'No image provided' }, { status: 400 })
 
   try {
-    const clerkUser = await currentUser()
-    const email = clerkUser?.emailAddresses[0]?.emailAddress
-    const user  = await getUserWithTier(clerkId, email ?? undefined)
+    let user: any = null
+    if (!isAnonymous) {
+      const clerkUser = await currentUser()
+      const email = clerkUser?.emailAddresses[0]?.emailAddress
+      user = await getUserWithTier(clerkId!, email ?? undefined)
 
-    const limits = getLimits(user.tier as any)
-    if (limits.scansPerMonth !== Infinity) {
-      const used = await getScanUsage(user.id)
-      if (used >= limits.scansPerMonth) {
-        return NextResponse.json({ ok: false, error: `Limite de ${limits.scansPerMonth} scans/mois atteinte.`, limitReached: true, used, limit: limits.scansPerMonth, upgradeUrl: '/pricing' }, { status: 429 })
+      const limits = getLimits(user.tier as any)
+      if (limits.scansPerMonth !== Infinity) {
+        const used = await getScanUsage(user.id)
+        if (used >= limits.scansPerMonth) {
+          return NextResponse.json({ ok: false, error: `Limite de ${limits.scansPerMonth} scans/mois atteinte.`, limitReached: true, used, limit: limits.scansPerMonth, upgradeUrl: '/pricing' }, { status: 429 })
+        }
       }
     }
 
@@ -537,11 +557,19 @@ export async function POST(req: NextRequest) {
       annualGrowthRate = +(((targets.t1y / price) - 1) * 100).toFixed(1)
     }
 
-    await incrementScanUsage(user.id)
-    ph.capture({ distinctId: clerkId, event: 'card_scanned', properties: { card_name: card?.name ?? enName, card_found: !!card, tier: user.tier } })
+    if (!isAnonymous && user) {
+      await incrementScanUsage(user.id)
+      ph.capture({ distinctId: clerkId!, event: 'card_scanned', properties: { card_name: card?.name ?? enName, card_found: !!card, tier: user.tier } })
+    } else {
+      // Marquer l'IP comme ayant utilisé son scan gratuit (7 jours)
+      const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim()
+        || req.headers.get('x-real-ip') || 'unknown'
+      try { if (redis) await redis.setex(`anon_scan:${ip}`, 7 * 24 * 3600, '1') } catch {}
+    }
 
     return NextResponse.json({
       ok: true,
+      isAnonymous,
       confidence,
       autoSelect,
       identification: {
