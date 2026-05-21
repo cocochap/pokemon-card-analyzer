@@ -164,7 +164,8 @@ function matchScore(card: any, num: string, enName: string, frName: string, setI
 
   if (enNorm && cardNorm === enNorm)                                    s += 40
   else if (frNorm && cardNorm === frNorm)                               s += 40
-  else if (enNorm && cardNorm.includes(enNorm.split(' ')[0]))           s += 12
+  else if (frNorm && cardNorm.includes(frNorm.split(' ')[0]))           s += 15  // "dracaufeu ex" includes "dracaufeu"
+  else if (enNorm && cardNorm.includes(enNorm.split(' ')[0]))           s += 10
 
   if (setId && sid === setId)                                           s += 30
 
@@ -245,63 +246,73 @@ async function findCard(
     if (found) { console.log(`[scan] ✅ S1 externalId ${found.name}`); return found }
   }
 
-  // S2 — (number, printedTotal) : la clé la plus fiable, indépendante du setId
+  // S2 — (number, printedTotal) : clé primaire, tri par date décroissante pour départager
   if (num && total) {
     const rows = await prisma.card.findMany({
       where: { number: { in: nums }, set: { OR: [{ printedTotal: total }, { totalCards: total }] } },
       select: SEL,
+      orderBy: { set: { releaseDate: 'desc' } } as any,
       take: 10,
     })
-    if (rows.length === 1) { console.log(`[scan] ✅ S2 num+total unique ${rows[0].name}`); return rows[0] }
+    if (rows.length === 1) { console.log(`[scan] ✅ S2 unique ${rows[0].name}`); return rows[0] }
     if (rows.length > 1) {
       const scored = rows.map(c => ({ c, s: matchScore(c, num, enName, frName, setId, total) })).sort((a, b) => b.s - a.s)
-      console.log(`[scan] S2 num+total: ${rows.length} candidats, best="${scored[0].c.name}" score=${scored[0].s}`)
-      // Seuil abaissé : avec num+total on est déjà très confiant (50+35=85 si les deux matchent)
+      console.log(`[scan] S2 ${rows.length} candidats best="${scored[0].c.name}" score=${scored[0].s}`)
       if (scored[0].s >= 30) return scored[0].c
     }
   }
 
-  // S3 — name + number (fr et en en parallèle)
+  // S3 — premier mot du nom + numéro
+  // On cherche par le PREMIER MOT pour matcher "Dracaufeu-ex" avec la recherche "Dracaufeu"
   if (num && (enName || frName)) {
-    const nameQueries = [enName, frName].filter((v, i, a) => v && a.indexOf(v) === i)
-    const s3results = await Promise.all(nameQueries.map(name =>
+    const firstWords = [enName, frName]
+      .filter(Boolean)
+      .map(n => n.split(' ')[0]) // "Dracaufeu ex" → "Dracaufeu", "Charizard ex" → "Charizard"
+      .filter((v, i, a) => v.length >= 3 && a.indexOf(v) === i)
+
+    const s3results = await Promise.all(firstWords.map(word =>
       prisma.card.findMany({
-        where: { name: { contains: name, mode: 'insensitive' }, number: { in: nums } },
-        select: SEL, orderBy: { set: { releaseDate: 'desc' } } as any, take: 8,
+        where: { name: { contains: word, mode: 'insensitive' }, number: { in: nums } },
+        select: SEL, orderBy: { set: { releaseDate: 'desc' } } as any, take: 10,
       })
     ))
-    const s3all = s3results.flat()
+    const s3all = [...new Map(s3results.flat().map(c => [c.id, c])).values()]
     if (s3all.length) {
-      const exact = setId ? s3all.find(c => c.set.externalId === setId) : null
-      const best  = exact ?? s3all.sort((a, b) => matchScore(b, num, enName, frName, setId, total) - matchScore(a, num, enName, frName, setId, total))[0]
-      console.log(`[scan] ✅ S3 name+num ${best.name}`); return best
+      const scored = s3all.map(c => ({ c, s: matchScore(c, num, enName, frName, setId, total) })).sort((a, b) => b.s - a.s)
+      console.log(`[scan] ✅ S3 "${scored[0].c.name}" score=${scored[0].s}`)
+      return scored[0].c
     }
   }
 
   // S4 — number + setId
   if (num && setId) {
-    const s4 = await prisma.card.findFirst({ where: { number: { in: nums }, set: { externalId: setId } }, select: SEL })
+    const s4 = await prisma.card.findFirst({
+      where: { number: { in: nums }, set: { externalId: setId } }, select: SEL,
+    })
     if (s4) { console.log(`[scan] ✅ S4 num+set ${s4.name}`); return s4 }
   }
 
-  // S5 — number seul, scorer par nom
+  // S5 — number seul, scorer par nom + date
   if (num) {
-    const byNum = await prisma.card.findMany({ where: { number: { in: nums } }, select: SEL, take: 30 })
-    if (byNum.length === 1) { console.log(`[scan] ✅ S5 num unique ${byNum[0].name}`); return byNum[0] }
+    const byNum = await prisma.card.findMany({
+      where: { number: { in: nums } }, select: SEL,
+      orderBy: { set: { releaseDate: 'desc' } } as any, take: 30,
+    })
+    if (byNum.length === 1) { console.log(`[scan] ✅ S5 unique ${byNum[0].name}`); return byNum[0] }
     if (byNum.length > 1) {
       const scored = byNum.map(c => ({ c, s: matchScore(c, num, enName, frName, setId, total) })).sort((a, b) => b.s - a.s)
-      if (scored[0].s >= 40) { console.log(`[scan] ✅ S5 num+score ${scored[0].c.name}`); return scored[0].c }
+      if (scored[0].s >= 30) { console.log(`[scan] ✅ S5 ${scored[0].c.name} score=${scored[0].s}`); return scored[0].c }
     }
   }
 
-  // S6 — name + setId (sans numéro)
+  // S6 — premier mot du nom + setId (sans numéro)
   if (setId && (enName || frName)) {
-    const name = enName || frName
+    const firstWord = (frName || enName).split(' ')[0]
     const s6 = await prisma.card.findFirst({
-      where: { name: { contains: name, mode: 'insensitive' }, set: { externalId: setId } },
-      select: SEL,
+      where: { name: { contains: firstWord, mode: 'insensitive' }, set: { externalId: setId } },
+      select: SEL, orderBy: { set: { releaseDate: 'desc' } } as any,
     })
-    if (s6) { console.log(`[scan] ✅ S6 name+set ${s6.name}`); return s6 }
+    if (s6) { console.log(`[scan] ✅ S6 ${s6.name}`); return s6 }
   }
 
   return null
@@ -322,10 +333,14 @@ async function findCandidates(num: string, enName: string, frName: string, setId
   if (num && setId) {
     add(await prisma.card.findMany({ where: { number: { in: nums }, set: { externalId: setId } }, select: CAND_SEL, take: 4 }))
   }
-  // Chercher sur les deux noms séparément (EN en priorité, FR en fallback)
-  for (const name of [enName, frName].filter((v, i, a) => v && v !== a[i - 1])) {
+  // Chercher par premier mot du nom (FR d'abord car la DB est en FR)
+  const words = [frName, enName]
+    .filter(Boolean)
+    .map(n => n.split(' ')[0])
+    .filter((v, i, a) => v.length >= 3 && a.indexOf(v) === i)
+  for (const word of words) {
     add(await prisma.card.findMany({
-      where: { name: { contains: name, mode: 'insensitive' } },
+      where: { name: { contains: word, mode: 'insensitive' } },
       select: CAND_SEL, orderBy: { set: { releaseDate: 'desc' } } as any, take: 6,
     }))
   }
