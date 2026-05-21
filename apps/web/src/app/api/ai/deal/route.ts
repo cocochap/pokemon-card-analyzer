@@ -9,6 +9,7 @@ export const maxDuration = 60
 
 const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite']
 
+// Prompt pour screenshot d'annonce (PROMPT_DEAL — lit tout le texte visible)
 const PROMPT_DEAL = `Analyze this marketplace listing image (Vinted, eBay, LeBonCoin, etc.) and extract information about the Pokémon card being sold.
 
 READ ALL TEXT in the image: listing title, description, price tag, condition notes.
@@ -33,6 +34,66 @@ Rules:
 - cardNumber must include both parts: "006/165" not just "006"
 - Read the listing TITLE first — most reliable source`
 
+// Prompt pour photo de carte (même que le scan — identifie via le numéro en bas)
+const PROMPT_IDENTIFY = `You are identifying a Pokémon TCG card from this image.
+
+Look at the BOTTOM of the card. You will see either:
+- A regular card: "006/165" (number/total)
+- A promo card: "SVP 173" or "SWSH001" (set code + number, no slash)
+- A special card: "SV107/SV122" (prefixed number/total)
+
+Also look at the TOP for the Pokémon name.
+
+Return ONLY this JSON:
+{
+  "collector": "006/165",
+  "setCode": "",
+  "frName": "Dracaufeu ex",
+  "enName": "Charizard ex"
+}
+
+Rules:
+- collector: the FULL text at the bottom exactly as shown ("006/165", "SVP 173", "SV107/SV122", "SWSH001")
+- setCode: the set abbreviation if visible near the number ("SVP", "SWSH", "SMP", "XYP", etc.) — leave "" if not visible separately
+- frName: Pokémon name as printed on card (French if FR card)
+- enName: English name always (Eevee, Charizard ex, Pikachu VMAX...)
+- Use "" for any field not found`
+
+// Normalise le set code ("SVP" → "svp", "SWSH" → "swshp")
+function normalizeSetCode(code: string): string {
+  const c = code.toLowerCase().trim()
+  if (c === 'svp' || c === 'sv-p') return 'svp'
+  if (c === 'swsh' || c === 'swshp') return 'swshp'
+  if (c === 'smp' || c === 'sm-p') return 'smp'
+  if (c === 'xyp' || c === 'xy-p') return 'xyp'
+  if (c === 'bwp' || c === 'bw-p') return 'bwp'
+  return c
+}
+
+// Parse le champ "collector" retourné par PROMPT_IDENTIFY
+function parseCollector(collector: string, setCodeHint: string): { num: string; total: number | null; setCode: string | null } {
+  const c = (collector ?? '').trim()
+  if (!c) return { num: '', total: null, setCode: null }
+  if (c.includes('/')) {
+    const [left, right] = c.split('/')
+    const num = left.trim()
+    const t = parseInt(right?.trim() ?? '', 10)
+    const total = t > 0 && t <= 500 ? t : null
+    return { num, total, setCode: null }
+  }
+  const spaceMatch = c.match(/^([A-Z]{2,6})\s+(\d{1,4})$/i)
+  if (spaceMatch) {
+    const prefix = spaceMatch[1].toUpperCase()
+    const digits = spaceMatch[2].padStart(3, '0')
+    return { num: `${prefix}${digits}`, total: null, setCode: normalizeSetCode(spaceMatch[1]) }
+  }
+  const promoMatch = c.match(/^([A-Z]{2,5})(\d{2,4})$/i)
+  if (promoMatch) {
+    return { num: `${promoMatch[1].toUpperCase()}${promoMatch[2]}`, total: null, setCode: normalizeSetCode(promoMatch[1]) }
+  }
+  return { num: c, total: null, setCode: setCodeHint ? normalizeSetCode(setCodeHint) : null }
+}
+
 interface DealAiResult {
   cardName: string; englishName: string; cardNumber: string
   setName: string; setId: string; language: string; condition: string
@@ -40,14 +101,14 @@ interface DealAiResult {
 }
 
 // ── AI calls ──────────────────────────────────────────────────────────────────
-async function callGemini(b64: string, mime: string): Promise<string | null> {
+async function callGemini(b64: string, mime: string, prompt = PROMPT_DEAL): Promise<string | null> {
   const safeMime = ['image/jpeg','image/png','image/webp','image/gif'].includes(mime) ? mime : 'image/jpeg'
   for (const model of GEMINI_MODELS) {
     try {
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
         { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ inline_data: { mime_type: safeMime, data: b64 } }, { text: PROMPT_DEAL }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 400 } }),
+          body: JSON.stringify({ contents: [{ parts: [{ inline_data: { mime_type: safeMime, data: b64 } }, { text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 400 } }),
           signal: AbortSignal.timeout(20000) }
       )
       if (res.status === 429) { continue }
@@ -60,7 +121,7 @@ async function callGemini(b64: string, mime: string): Promise<string | null> {
   return null
 }
 
-async function callGroq(b64: string, mime: string): Promise<string | null> {
+async function callGroq(b64: string, mime: string, prompt = PROMPT_DEAL): Promise<string | null> {
   if (!process.env.GROQ_API_KEY) return null
   const safeMime = mime.startsWith('image/') ? mime : 'image/jpeg'
   try {
@@ -71,7 +132,7 @@ async function callGroq(b64: string, mime: string): Promise<string | null> {
         model: 'meta-llama/llama-4-scout-17b-16e-instruct',
         messages: [{ role: 'user', content: [
           { type: 'image_url', image_url: { url: `data:${safeMime};base64,${b64}` } },
-          { type: 'text', text: PROMPT_DEAL },
+          { type: 'text', text: prompt },
         ]}],
         max_tokens: 400, temperature: 0.1,
       }),
@@ -173,6 +234,129 @@ function extractJson(text: string): DealAiResult | null {
   }
 
   return null
+}
+
+// ── Scraping annonce depuis URL ───────────────────────────────────────────────
+
+interface ListingMeta {
+  imageUrls: string[]   // photos de la carte dans l'annonce
+  price: number
+  shipping: number
+  title: string
+  condition: string
+  platform: string
+}
+
+function normalizeCondition(raw: string): string {
+  const s = raw.toLowerCase()
+  if (s.includes('neuf avec') || s.includes('new with')) return 'Neuf'
+  if (s.includes('neuf sans') || s.includes('new without')) return 'Neuf'
+  if (s.includes('comme neuf') || s.includes('très bon') || s.includes('mint') || s.includes('nm') || s.includes('near mint')) return 'Comme neuf'
+  if (s.includes('bon') || s.includes('good') || s.includes('excellent')) return 'Bon état'
+  if (s.includes('satisfaisant') || s.includes('correct') || s.includes('played') || s.includes('lp')) return 'État correct'
+  return ''
+}
+
+async function fetchListingPage(url: string): Promise<ListingMeta | null> {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'no-cache',
+      },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!res.ok) return null
+    const html = await res.text()
+    const platform = detectPlatform(url)
+
+    // ── Images : og:image + og:image:secure_url ──────────────────
+    const imageUrls: string[] = []
+    const imgRx = /<meta[^>]*property=["']og:image(?::secure_url)?["'][^>]*content=["']([^"']+)["']/gi
+    let m: RegExpExecArray | null
+    while ((m = imgRx.exec(html)) !== null) {
+      const u = m[1]
+      if (u && !imageUrls.includes(u)) imageUrls.push(u)
+    }
+    // Also try reverse attribute order
+    const imgRx2 = /<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image(?::secure_url)?["']/gi
+    while ((m = imgRx2.exec(html)) !== null) {
+      const u = m[1]
+      if (u && !imageUrls.includes(u)) imageUrls.push(u)
+    }
+
+    // ── Prix : JSON-LD → meta → patterns HTML ────────────────────
+    let price = 0
+    const ldScripts = [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)]
+    for (const s of ldScripts) {
+      try {
+        const d = JSON.parse(s[1])
+        const p = d?.offers?.price ?? d?.offers?.[0]?.price ?? d?.price
+        if (p) { price = parseFloat(String(p)); break }
+      } catch {}
+    }
+    if (!price) {
+      for (const pat of [
+        /"price_amount"\s*:\s*"([\d.]+)"/,
+        /"price"\s*:\s*"?([\d.]+)"?(?:\s*,\s*"currency")/,
+        /content=["']([\d.,]+)["'][^>]*itemprop=["']price["']/i,
+        /<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([\d.,]+)/i,
+        /["']amount["']\s*:\s*"([\d.]+)"/,
+      ]) {
+        const pm = html.match(pat)
+        if (pm) { price = parseFloat(pm[1].replace(',', '.')); break }
+      }
+    }
+
+    // ── Frais de port ─────────────────────────────────────────────
+    let shipping = 0
+    const shipPatterns = [
+      /"service_fee_amount"\s*:\s*"([\d.]+)"/,
+      /frais[^<]{0,40}?(\d+[.,]\d{2})\s*€/i,
+      /livraison[^<]{0,40}?(\d+[.,]\d{2})\s*€/i,
+      /shipping[^<]{0,40}?([\d.]+)/i,
+    ]
+    for (const pat of shipPatterns) {
+      const sm = html.match(pat)
+      if (sm) { shipping = parseFloat(sm[1].replace(',', '.')); break }
+    }
+
+    // ── Titre ─────────────────────────────────────────────────────
+    const titleM = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']*)["']/i)
+      ?? html.match(/<meta[^>]*content=["']([^"']*)["'][^>]*property=["']og:title["']/i)
+      ?? html.match(/<title[^>]*>([^<]+)<\/title>/i)
+    const title = titleM?.[1]?.trim() ?? ''
+
+    // ── Condition (Vinted) ─────────────────────────────────────────
+    let condition = ''
+    for (const pat of [
+      /Neuf avec étiquette|Neuf sans étiquette|Très bon état|Bon état|Satisfaisant/i,
+      /"condition"\s*:\s*["']([^"']+)["']/i,
+      /Condition[^:]*:\s*([^\n<]+)/i,
+    ]) {
+      const cm = html.match(pat)
+      if (cm) { condition = normalizeCondition(cm[0]); break }
+    }
+
+    return { imageUrls, price, shipping, title, condition, platform }
+  } catch { return null }
+}
+
+async function downloadImageAsBase64(url: string): Promise<{ b64: string; mime: string } | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.vinted.fr/' },
+      signal: AbortSignal.timeout(6000),
+    })
+    if (!res.ok) return null
+    const buf = await res.arrayBuffer()
+    const mime = res.headers.get('content-type')?.split(';')[0] ?? 'image/jpeg'
+    const safeMime = ['image/jpeg','image/png','image/webp'].includes(mime) ? mime : 'image/jpeg'
+    return { b64: Buffer.from(buf).toString('base64'), mime: safeMime }
+  } catch { return null }
 }
 
 // Parse le slug d'une URL Vinted pour extraire des infos de secours
@@ -318,6 +502,84 @@ async function fetchListingMeta(url: string): Promise<{ title: string; price: nu
   }
 }
 
+// findCard depuis PROMPT_IDENTIFY (num+total+setCode) — même logique que scan/route.ts
+async function findCardFromIdentify(
+  num: string, total: number | null, setCode: string | null,
+  enName: string, frName: string,
+): Promise<any | null> {
+  if (!num && !enName && !frName) return null
+  const nums = num ? numberVariants(num) : []
+
+  // S0 : externalId direct (promo setCode+num)
+  if (num && setCode) {
+    const extIds = [...new Set([`${setCode}-${num}`, `${setCode}-${num.replace(/^0+(?=[0-9])/, '')}`, `${setCode}-${num.replace(/^0+(?=[0-9])/, '').padStart(3,'0')}`])]
+    const found = await prisma.card.findFirst({ where: { externalId: { in: extIds } }, select: DEAL_SEL })
+    if (found) return found
+  }
+
+  // S1 : num + total
+  if (num && total) {
+    const rows = await prisma.card.findMany({
+      where: { number: { in: nums }, set: { OR: [{ printedTotal: total }, { totalCards: total }] } },
+      select: DEAL_SEL, orderBy: { set: { releaseDate: 'desc' } } as any, take: 10,
+    })
+    if (rows.length === 1) return rows[0]
+    if (rows.length > 1) {
+      const norm = (n: string) => n.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/['-]/g,' ').trim()
+      const enN = norm(enName), frN = norm(frName)
+      const scored = rows.map(c => {
+        const cn = norm(c.name); let s = 50
+        if (enN && cn === enN) s += 40; else if (frN && cn === frN) s += 40
+        else if (frN && cn.includes(frN.split(' ')[0])) s += 15
+        return { c, s }
+      }).sort((a,b) => b.s - a.s)
+      return scored[0].c
+    }
+  }
+
+  // S2 : num + setCode via set.externalId
+  if (num && setCode) {
+    const row = await prisma.card.findFirst({ where: { number: { in: nums }, set: { externalId: setCode } }, select: DEAL_SEL })
+    if (row) return row
+  }
+
+  // S3 : num + nom (premier mot)
+  if (num && (enName || frName)) {
+    const words = [frName, enName].filter(Boolean).map(n => n.split(' ')[0]).filter((v,i,a) => v.length >= 3 && a.indexOf(v) === i)
+    for (const word of words) {
+      const rows = await prisma.card.findMany({ where: { name: { contains: word, mode: 'insensitive' }, number: { in: nums } }, select: DEAL_SEL, orderBy: { set: { releaseDate: 'desc' } } as any, take: 10 })
+      if (rows.length > 0) return rows[0]
+    }
+  }
+
+  // S3b : nom → filtrer par chiffres du numéro (SVP173 → "173")
+  if (num && (enName || frName)) {
+    const digits = num.replace(/^[A-Za-z]+/, '').replace(/^0+(?=\d)/, '')
+    if (digits.length >= 1) {
+      const words = [frName, enName].filter(Boolean).map(n => n.split(' ')[0]).filter((v,i,a) => v.length >= 3 && a.indexOf(v) === i)
+      for (const word of words) {
+        const byName = await prisma.card.findMany({ where: { name: { contains: word, mode: 'insensitive' } }, select: DEAL_SEL, orderBy: { set: { releaseDate: 'desc' } } as any, take: 30 })
+        const matching = byName.filter(c => (c.number ?? '').replace(/^[A-Za-z]+/, '').replace(/^0+(?=\d)/, '') === digits)
+        if (matching.length > 0) return matching[0]
+      }
+    }
+  }
+
+  // S4 : num seul
+  if (num) {
+    const rows = await prisma.card.findMany({ where: { number: { in: nums } }, select: DEAL_SEL, take: 20 })
+    if (rows.length === 1) return rows[0]
+    if (rows.length > 1 && (enName || frName)) {
+      const norm = (n: string) => n.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['-]/g,' ').trim()
+      const enN = norm(enName), frN = norm(frName)
+      const exact = rows.find(c => { const cn = norm(c.name); return cn === enN || cn === frN })
+      if (exact) return exact
+    }
+  }
+
+  return null
+}
+
 // ── Deal scoring ──────────────────────────────────────────────────────────────
 function conditionMultiplier(condition: string): number {
   const c = condition.toLowerCase()
@@ -329,17 +591,17 @@ function conditionMultiplier(condition: string): number {
   return 0.95 // unknown → légèrement sous NM
 }
 
-function computeDeal(listingPrice: number, marketPrice: number, condition: string) {
+function computeDeal(listingPrice: number, marketPrice: number, condition: string, shipping = 0) {
   if (!marketPrice || marketPrice <= 0) return null
 
-  // Ajuster le prix marché selon l'état
   const condMult = conditionMultiplier(condition)
   const adjustedMarket = marketPrice * condMult
+  // Prix total réel payé (carte + port)
+  const totalPrice = listingPrice + (shipping ?? 0)
 
-  const savingsEur = adjustedMarket - listingPrice
+  const savingsEur = adjustedMarket - totalPrice
   const savingsPct = (savingsEur / adjustedMarket) * 100
 
-  // Score : 50 = prix du marché, +2.5 pts par % d'économie
   const score = Math.max(0, Math.min(100, Math.round(50 + savingsPct * 2.5)))
 
   const label =
@@ -365,6 +627,8 @@ function computeDeal(listingPrice: number, marketPrice: number, condition: strin
     savingsEur: +savingsEur.toFixed(2),
     savingsPct: +savingsPct.toFixed(1),
     adjustedMarket: +adjustedMarket.toFixed(2),
+    totalPrice: +totalPrice.toFixed(2),
+    shipping: +(shipping ?? 0).toFixed(2),
     suggestedPrice,
     conditionMultiplier: condMult,
   }
@@ -394,97 +658,132 @@ export async function POST(req: NextRequest) {
     const file = form.get('image') as File | null
     const listingUrl = (form.get('url') as string | null)?.trim() || null
 
-    if (!file || file.size === 0) return NextResponse.json({ ok: false, error: 'Aucune image fournie' }, { status: 400 })
-    if (file.size > 10 * 1024 * 1024) return NextResponse.json({ ok: false, error: 'Image trop grande (max 10MB)' }, { status: 400 })
+    if (!listingUrl && (!file || file.size === 0))
+      return NextResponse.json({ ok: false, error: 'Fournis un lien d\'annonce ou un screenshot.' }, { status: 400 })
 
-    const mime = ['image/jpeg','image/png','image/webp','image/gif'].includes(file.type) ? file.type : 'image/jpeg'
-    const b64 = Buffer.from(await file.arrayBuffer()).toString('base64')
+    let b64 = '', mime = 'image/jpeg'
+    let listingMeta: ListingMeta | null = null
+    let fromUrl = false
 
-    // ── Fetch listing meta depuis l'URL si fournie ────────────────
-    let urlMeta: { title: string; price: number; platform: string } | null = null
+    // ── Mode URL : fetch page + photo de la carte ─────────────────
     if (listingUrl) {
-      urlMeta = await fetchListingMeta(listingUrl)
-    }
+      listingMeta = await fetchListingPage(listingUrl)
 
-    // ── Extraction IA ─────────────────────────────────────────────
-    const rawText = await callGemini(b64, mime) ?? await callGroq(b64, mime)
-    if (!rawText) return NextResponse.json({ ok: false, error: 'Impossible d\'analyser l\'image. Réessaie avec une meilleure photo.' }, { status: 422 })
-
-    const ai = extractJson(rawText)
-    if (!ai) {
-      console.warn('[deal] extractJson failed. Raw:', rawText.substring(0, 300))
-      return NextResponse.json({ ok: false, error: 'Impossible d\'extraire les informations de l\'annonce. Assure-toi que l\'image montre bien la carte et le prix.' }, { status: 422 })
-    }
-
-    // Enrichir avec les données de l'URL si dispo
-    if (urlMeta) {
-      if (!ai.listingPrice && urlMeta.price) ai.listingPrice = urlMeta.price
-      if (!ai.listingTitle && urlMeta.title) ai.listingTitle = urlMeta.title
-    }
-    // Enrichir avec le slug Vinted si champs manquants
-    if (listingUrl) {
-      const slug = parseVintedSlug(listingUrl)
-      if (slug) {
-        if (!ai.cardNumber && slug.cardNumber) ai.cardNumber = slug.cardNumber
-        if (!ai.setName   && slug.setName)    ai.setName    = slug.setName
-        if (!ai.listingTitle && slug.listingTitle) ai.listingTitle = slug.listingTitle
+      if (listingMeta && listingMeta.imageUrls.length > 0) {
+        // Télécharger la photo de la carte depuis l'annonce
+        for (const imgUrl of listingMeta.imageUrls.slice(0, 3)) {
+          const dl = await downloadImageAsBase64(imgUrl)
+          if (dl) { b64 = dl.b64; mime = dl.mime; fromUrl = true; break }
+        }
       }
     }
 
-    // ── Recherche en base ─────────────────────────────────────────
-    const card = await findCard(ai)
-
-    // ── Prix marché : CardPrice → priceHistory → marketData ───────
-    let marketPrice = card ? Number(card.prices?.[0]?.market ?? 0) : 0
-
-    if (!marketPrice && card) {
-      // Fallback 1 : dernière entrée priceHistory
-      const lastPH = await prisma.priceHistory.findFirst({
-        where: { cardId: card.id, source: 'cardmarket' },
-        orderBy: { recordedAt: 'desc' },
-        select: { price: true },
-      })
-      if (lastPH) marketPrice = Number(lastPH.price)
+    // ── Mode screenshot (fallback ou upload direct) ───────────────
+    if (!b64 && file && file.size > 0) {
+      if (file.size > 10 * 1024 * 1024)
+        return NextResponse.json({ ok: false, error: 'Image trop grande (max 10MB)' }, { status: 400 })
+      mime = ['image/jpeg','image/png','image/webp','image/gif'].includes(file.type) ? file.type : 'image/jpeg'
+      b64 = Buffer.from(await file.arrayBuffer()).toString('base64')
     }
 
+    if (!b64)
+      return NextResponse.json({ ok: false, error: 'Impossible de charger la photo de l\'annonce. Essaie d\'uploader un screenshot.' }, { status: 422 })
+
+    // ── Identification IA ─────────────────────────────────────────
+    let card: any | null = null
+    let aiInfo = { cardName: '', englishName: '', cardNumber: '', setName: '', condition: '', listingPrice: 0, currency: 'EUR', listingTitle: '' }
+
+    if (fromUrl) {
+      // Photo propre de la carte → PROMPT_IDENTIFY (même que le scan de carte)
+      const calls = [
+        callGemini(b64, mime, PROMPT_IDENTIFY),
+        callGroq(b64, mime, PROMPT_IDENTIFY),
+      ]
+      let rawText: string | null = null
+      try {
+        rawText = await Promise.any(calls.map(p => p.then(t => {
+          if (!t) throw 0
+          // Validation minimale : doit contenir "collector" ou un nom
+          if (!t.includes('collector') && !t.includes('Name')) throw 0
+          return t
+        })))
+      } catch { rawText = await callGemini(b64, mime, PROMPT_IDENTIFY) }
+
+      if (rawText) {
+        const parsed = extractAllJsonObjects(rawText)[0] ?? null
+        if (parsed) {
+          const { num, total, setCode } = parseCollector(parsed.collector ?? '', parsed.setCode ?? '')
+          const enName = (parsed.enName ?? '').trim()
+          const frName = (parsed.frName ?? '').trim()
+
+          card = await findCardFromIdentify(num, total, setCode, enName, frName)
+
+          aiInfo.cardName     = frName || enName || card?.name || ''
+          aiInfo.englishName  = enName || frName || card?.name || ''
+          aiInfo.cardNumber   = num && total ? `${num}/${total}` : num
+          aiInfo.condition    = listingMeta?.condition ?? ''
+          aiInfo.listingPrice = listingMeta?.price ?? 0
+          aiInfo.listingTitle = listingMeta?.title ?? ''
+        }
+      }
+
+      // Si prix non trouvé dans HTML, essaie le slug
+      if (!aiInfo.listingPrice && listingUrl) {
+        const slug = parseVintedSlug(listingUrl)
+        if (slug?.cardNumber && !aiInfo.cardNumber) aiInfo.cardNumber = slug.cardNumber
+      }
+    } else {
+      // Screenshot → PROMPT_DEAL (lit tout le texte de l'annonce)
+      const rawText = await callGemini(b64, mime, PROMPT_DEAL) ?? await callGroq(b64, mime, PROMPT_DEAL)
+      if (!rawText) return NextResponse.json({ ok: false, error: 'Impossible d\'analyser l\'image. Réessaie avec une photo plus nette.' }, { status: 422 })
+
+      const ai = extractJson(rawText)
+      if (!ai) return NextResponse.json({ ok: false, error: 'Impossible d\'extraire les infos. Assure-toi que la carte et le prix sont visibles.' }, { status: 422 })
+
+      // Enrichir avec URL si fournie
+      if (listingMeta) {
+        if (!ai.listingPrice && listingMeta.price) ai.listingPrice = listingMeta.price
+        if (!ai.listingTitle && listingMeta.title) ai.listingTitle = listingMeta.title
+        if (!ai.condition && listingMeta.condition) ai.condition = listingMeta.condition
+      }
+      if (listingUrl) {
+        const slug = parseVintedSlug(listingUrl)
+        if (slug) {
+          if (!ai.cardNumber && slug.cardNumber) ai.cardNumber = slug.cardNumber
+          if (!ai.listingTitle && slug.listingTitle) ai.listingTitle = slug.listingTitle
+        }
+      }
+
+      card = await findCard(ai)
+      aiInfo = ai
+    }
+
+    // ── Prix marché ───────────────────────────────────────────────
+    let marketPrice = card ? Number(card.prices?.[0]?.market ?? 0) : 0
     if (!marketPrice && card) {
-      // Fallback 2 : toutes sources CardPrice
-      const anyPrice = await prisma.cardPrice.findFirst({
-        where: { cardId: card.id },
-        orderBy: { fetchedAt: 'desc' },
-        select: { market: true, mid: true },
-      })
+      const lastPH = await prisma.priceHistory.findFirst({ where: { cardId: card.id, source: 'cardmarket' }, orderBy: { recordedAt: 'desc' }, select: { price: true } })
+      if (lastPH) marketPrice = Number(lastPH.price)
+    }
+    if (!marketPrice && card) {
+      const anyPrice = await prisma.cardPrice.findFirst({ where: { cardId: card.id }, orderBy: { fetchedAt: 'desc' }, select: { market: true, mid: true } })
       if (anyPrice) marketPrice = Number(anyPrice.market ?? anyPrice.mid ?? 0)
     }
 
-    console.warn(`[deal] listingPrice=${ai.listingPrice} marketPrice=${marketPrice} card=${card?.name ?? 'null'}`)
-
-    // ── Calcul du deal ────────────────────────────────────────────
-    const deal = ai.listingPrice > 0 && marketPrice > 0
-      ? computeDeal(ai.listingPrice, marketPrice, ai.condition)
+    const shipping = listingMeta?.shipping ?? 0
+    const deal = aiInfo.listingPrice > 0 && marketPrice > 0
+      ? computeDeal(aiInfo.listingPrice, marketPrice, aiInfo.condition, shipping)
       : null
 
     await incrementScanUsage(user.id)
 
     return NextResponse.json({
       ok: true,
-      ai: {
-        cardName: ai.cardName,
-        englishName: ai.englishName,
-        cardNumber: ai.cardNumber,
-        setName: ai.setName,
-        condition: ai.condition,
-        listingPrice: ai.listingPrice,
-        currency: ai.currency,
-        listingTitle: ai.listingTitle,
-      },
+      fromUrl,
+      ai: aiInfo,
       card: card ? {
-        id:    card.id,
-        name:  card.name,
-        number: card.number,
-        rarity: card.rarity,
+        id: card.id, name: card.name, number: card.number, rarity: card.rarity,
         imageUrl: card.imageLgUrl ?? card.imageSmUrl ?? null,
-        set:   { name: card.set?.name, externalId: card.set?.externalId, logoUrl: card.set?.logoUrl ?? null },
+        set: { name: card.set?.name, externalId: card.set?.externalId, logoUrl: card.set?.logoUrl ?? null },
         marketPrice,
         marketLow:  Number(card.prices?.[0]?.low  ?? 0),
         marketHigh: Number(card.prices?.[0]?.high ?? 0),
@@ -495,6 +794,7 @@ export async function POST(req: NextRequest) {
         allTimeHigh: Number(card.marketData?.allTimeHigh ?? 0),
       } : null,
       deal,
+      shipping,
       noMarketPrice: marketPrice === 0,
       listingUrl,
       listingPlatform: listingUrl ? detectPlatform(listingUrl) : null,

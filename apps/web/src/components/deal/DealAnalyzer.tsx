@@ -235,12 +235,14 @@ export function DealAnalyzer() {
     if (file?.type.startsWith('image/')) processFile(file)
   }, [processFile])
 
+  const canAnalyze = !!url.trim() || !!fileRef2.current
+
   const analyze = async () => {
-    if (!fileRef2.current) return
+    if (!canAnalyze) return
     setState('loading'); setErrorMsg('')
     try {
       const form = new FormData()
-      form.append('image', fileRef2.current)
+      if (fileRef2.current) form.append('image', fileRef2.current)
       if (url.trim()) form.append('url', url.trim())
       const res = await fetch('/api/ai/deal', { method: 'POST', body: form })
       const data = await res.json()
@@ -264,34 +266,42 @@ export function DealAnalyzer() {
       {/* Upload zone */}
       {(state === 'idle' || state === 'error') && (
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-          {/* Tips */}
-          <div className="glass-card p-4 mb-4 flex items-start gap-3">
-            <ShoppingBag className="w-5 h-5 text-pokemon-yellow shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-semibold text-white/90 mb-1">Comment ça marche ?</p>
-              <ol className="text-xs text-white/50 space-y-1 list-decimal list-inside">
-                <li>Fais un screenshot de l'annonce Vinted / eBay / LeBonCoin</li>
-                <li>Upload le screenshot ici</li>
-                <li>L'IA identifie la carte, lit le prix et calcule si c'est une bonne affaire</li>
-                <li>Génère un message de négociation en 1 clic si besoin</li>
-              </ol>
+          {/* URL — input principal */}
+          <div className="space-y-2 mb-4">
+            <div className="relative">
+              <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                <Link2 className="w-4 h-4 text-pokemon-yellow/60" />
+              </div>
+              <input
+                type="url"
+                value={url}
+                onChange={e => { setUrl(e.target.value); setResult(null); setErrorMsg('') }}
+                onKeyDown={e => { if (e.key === 'Enter' && canAnalyze) analyze() }}
+                placeholder="Colle le lien Vinted / eBay / LeBonCoin…"
+                className="w-full pl-9 pr-4 py-3.5 rounded-xl text-sm text-white/90 placeholder-white/30 focus:outline-none transition-colors"
+                style={{ background: 'rgba(255,255,255,0.06)', border: `1px solid ${url ? 'rgba(255,203,5,0.5)' : 'rgba(255,255,255,0.12)'}` }}
+                autoFocus
+              />
             </div>
+            <p className="text-[11px] text-white/30 text-center">
+              ou glisse un screenshot ci-dessous
+            </p>
           </div>
 
-          {/* Drop zone */}
+          {/* Drop zone — secondaire */}
           <div
             onDrop={onDrop}
             onDragOver={e => e.preventDefault()}
             onClick={() => fileRef.current?.click()}
-            className="relative cursor-pointer rounded-2xl border-2 border-dashed transition-all hover:border-pokemon-yellow/50"
-            style={{ borderColor: preview ? 'rgba(255,203,5,0.4)' : 'rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.02)' }}
+            className="relative cursor-pointer rounded-2xl border-2 border-dashed transition-all hover:border-white/30"
+            style={{ borderColor: preview ? 'rgba(255,203,5,0.4)' : 'rgba(255,255,255,0.10)', background: 'rgba(255,255,255,0.02)' }}
           >
             {preview ? (
               <div className="relative">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={preview} alt="Screenshot" className="w-full max-h-80 object-contain rounded-2xl" />
+                <img src={preview} alt="Screenshot" className="w-full max-h-60 object-contain rounded-2xl" />
                 <button
-                  onClick={e => { e.stopPropagation(); reset() }}
+                  onClick={e => { e.stopPropagation(); setPreview(null); fileRef2.current = null }}
                   className="absolute top-3 right-3 w-7 h-7 rounded-full flex items-center justify-center"
                   style={{ background: 'rgba(0,0,0,0.7)', border: '1px solid rgba(255,255,255,0.2)' }}
                 >
@@ -299,15 +309,9 @@ export function DealAnalyzer() {
                 </button>
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center gap-4 py-16 px-8">
-                <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
-                  style={{ background: 'rgba(255,203,5,0.08)', border: '1px solid rgba(255,203,5,0.15)' }}>
-                  <ImageUp className="w-7 h-7 text-pokemon-yellow/60" />
-                </div>
-                <div className="text-center">
-                  <p className="text-sm font-semibold text-white/70">Screenshot Vinted / eBay / LeBonCoin</p>
-                  <p className="text-xs text-white/35 mt-1">Glisse-dépose ou clique pour choisir</p>
-                </div>
+              <div className="flex items-center justify-center gap-3 py-6 px-8">
+                <ImageUp className="w-5 h-5 text-white/25" />
+                <p className="text-xs text-white/30">Screenshot de l'annonce (optionnel)</p>
               </div>
             )}
             <input
@@ -320,32 +324,19 @@ export function DealAnalyzer() {
             <div className="mt-3 p-3 rounded-xl flex items-start gap-2"
               style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
               <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-              <p className="text-xs text-red-300">{errorMsg || 'Analyse échouée. Réessaie avec un screenshot plus net.'}</p>
+              <p className="text-xs text-red-300">{errorMsg || 'Analyse échouée. Réessaie avec un lien ou screenshot plus net.'}</p>
             </div>
           )}
 
-          {/* URL input */}
-          <div className="mt-3 relative">
-            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-              <Link2 className="w-4 h-4 text-white/30" />
-            </div>
-            <input
-              type="url"
-              value={url}
-              onChange={e => setUrl(e.target.value)}
-              placeholder="Lien de l'annonce (optionnel) — Vinted, eBay, LeBonCoin…"
-              className="w-full pl-9 pr-4 py-3 rounded-xl text-sm bg-white/5 border border-white/10 text-white/80 placeholder-white/25 focus:outline-none focus:border-pokemon-yellow/40 transition-colors"
-            />
-          </div>
-
-          {preview && (
+          {canAnalyze && (
             <motion.button
               initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
               onClick={analyze}
-              className="w-full mt-3 py-3.5 rounded-xl font-bold text-base text-black transition-all hover:brightness-110 active:scale-[0.98]"
+              className="w-full mt-3 py-3.5 rounded-xl font-bold text-base text-black transition-all hover:brightness-110 active:scale-[0.98] flex items-center justify-center gap-2"
               style={{ background: 'linear-gradient(135deg, #FFCB05, #F59E0B)' }}
             >
-              Analyser le deal
+              <Sparkles className="w-5 h-5" />
+              Analyser ce deal
             </motion.button>
           )}
         </motion.div>
