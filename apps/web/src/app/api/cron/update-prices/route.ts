@@ -230,54 +230,55 @@ async function updateCardPricing(
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  // 1. Upsert CardPrice Cardmarket
-  await prisma.cardPrice.upsert({
-    where: { cardId_source_variant: { cardId, source: 'cardmarket', variant: 'NORMAL' } },
-    create: {
-      cardId, source: 'cardmarket', variant: 'NORMAL', currency: 'EUR',
-      market: norm.market, mid: norm.mid, low: norm.low, high: norm.high,
-    },
-    update: {
-      market: norm.market, mid: norm.mid, low: norm.low, high: norm.high,
-      fetchedAt: new Date(),
-    },
-  })
+  // 1. Update CardPrice Cardmarket — findFirst+update/create pour éviter les problèmes de contrainte
+  const existingCm = await prisma.cardPrice.findFirst({ where: { cardId, source: 'cardmarket', variant: 'NORMAL' } })
+  if (existingCm) {
+    await prisma.cardPrice.update({
+      where: { id: existingCm.id },
+      data: { market: norm.market, mid: norm.mid, low: norm.low, high: norm.high, fetchedAt: new Date() },
+    })
+  } else {
+    await prisma.cardPrice.create({
+      data: { cardId, source: 'cardmarket', variant: 'NORMAL', currency: 'EUR',
+               market: norm.market, mid: norm.mid, low: norm.low, high: norm.high },
+    })
+  }
 
   // Reverse holo si disponible
   const cm = ptcg.cardmarket?.prices
   if (cm?.reverseHoloTrend && cm.reverseHoloTrend > 0 && Math.abs(cm.reverseHoloTrend - norm.market) > 0.05) {
-    await prisma.cardPrice.upsert({
-      where: { cardId_source_variant: { cardId, source: 'cardmarket', variant: 'REVERSE_HOLO' } },
-      create: {
+    const existingRh = await prisma.cardPrice.findFirst({ where: { cardId, source: 'cardmarket', variant: 'REVERSE_HOLO' } })
+    if (existingRh) {
+      await prisma.cardPrice.update({ where: { id: existingRh.id }, data: { market: cm.reverseHoloTrend, fetchedAt: new Date() } })
+    } else {
+      await prisma.cardPrice.create({ data: {
         cardId, source: 'cardmarket', variant: 'REVERSE_HOLO', currency: 'EUR',
         market: cm.reverseHoloTrend,
         mid: cm.reverseHoloSell ?? cm.reverseHoloTrend,
         low: cm.reverseHoloLow ?? cm.reverseHoloTrend * 0.8,
         high: cm.reverseHoloTrend * 1.2,
-      },
-      update: {
-        market: cm.reverseHoloTrend, fetchedAt: new Date(),
-      },
-    })
+      }})
+    }
   }
 
   // 2. TCGPlayer USD
   const tcp = ptcg.tcgplayer?.prices
   const tcpMain = tcp?.holofoil ?? tcp?.normal
   if (tcpMain?.market && tcpMain.market > 0) {
-    await prisma.cardPrice.upsert({
-      where: { cardId_source_variant: { cardId, source: 'tcgplayer', variant: 'NORMAL' } },
-      create: {
-        cardId, source: 'tcgplayer', variant: 'NORMAL', currency: 'USD',
-        market: tcpMain.market, low: tcpMain.low ?? tcpMain.market * 0.8,
-        mid: tcpMain.mid ?? tcpMain.market, high: tcpMain.high ?? tcpMain.market * 1.2,
-      },
-      update: {
+    const existingTcp = await prisma.cardPrice.findFirst({ where: { cardId, source: 'tcgplayer', variant: 'NORMAL' } })
+    if (existingTcp) {
+      await prisma.cardPrice.update({ where: { id: existingTcp.id }, data: {
         market: tcpMain.market, low: tcpMain.low ?? tcpMain.market * 0.8,
         mid: tcpMain.mid ?? tcpMain.market, high: tcpMain.high ?? tcpMain.market * 1.2,
         fetchedAt: new Date(),
-      },
-    })
+      }})
+    } else {
+      await prisma.cardPrice.create({ data: {
+        cardId, source: 'tcgplayer', variant: 'NORMAL', currency: 'USD',
+        market: tcpMain.market, low: tcpMain.low ?? tcpMain.market * 0.8,
+        mid: tcpMain.mid ?? tcpMain.market, high: tcpMain.high ?? tcpMain.market * 1.2,
+      }})
+    }
   }
 
   // 3. PriceHistory — ajouter un point pour aujourd'hui si inexistant
@@ -359,51 +360,33 @@ async function updateCardPricing(
     norm.change7d < -0.05 ? 'BEARISH' : 'STABLE'
 
   // 5. Upsert CardMarketData
-  await prisma.cardMarketData.upsert({
-    where: { cardId },
-    create: {
-      cardId,
-      marketCap,
-      priceChange24h: norm.change24h,
-      priceChange7d: norm.change7d,
-      priceChange30d: norm.change30d,
-      volatility30d: norm.volatility,
-      rsi14: rsi,
-      investmentScore,
+  const commonData = {
+    marketCap,
+    priceChange24h: norm.change24h,
+    priceChange7d: norm.change7d,
+    priceChange30d: norm.change30d,
+    volatility30d: norm.volatility,
+    rsi14: rsi,
+    investmentScore,
+    trendDirection: trendDirection as any,
+  }
+
+  const existingMd = await prisma.cardMarketData.findUnique({ where: { cardId }, select: { id: true, allTimeHigh: true, allTimeLow: true } })
+  if (existingMd) {
+    const athUpdates: Record<string, any> = {}
+    if (!existingMd.allTimeHigh || norm.market > Number(existingMd.allTimeHigh)) {
+      athUpdates.allTimeHigh = norm.market; athUpdates.allTimeHighDate = new Date()
+    }
+    if (!existingMd.allTimeLow || norm.low < Number(existingMd.allTimeLow)) {
+      athUpdates.allTimeLow = norm.low; athUpdates.allTimeLowDate = new Date()
+    }
+    await prisma.cardMarketData.update({ where: { id: existingMd.id }, data: { ...commonData, ...athUpdates } })
+  } else {
+    await prisma.cardMarketData.create({ data: {
+      cardId, ...commonData,
       rarityScore: Math.round(rarityRank * 10),
       liquidityScore: norm.market > 50 ? 80 : norm.market > 10 ? 60 : norm.market > 2 ? 40 : 20,
-      trendDirection: trendDirection as any,
-      allTimeHigh: norm.market,
-      allTimeLow: norm.low,
-    },
-    update: {
-      marketCap,
-      priceChange24h: norm.change24h,
-      priceChange7d: norm.change7d,
-      priceChange30d: norm.change30d,
-      volatility30d: norm.volatility,
-      rsi14: rsi,
-      investmentScore,
-      trendDirection: trendDirection as any,
-      // Mettre à jour ATH/ATL si nécessaire
-      allTimeHigh: { set: undefined },
-    },
-  })
-
-  // Mettre à jour ATH si le prix actuel est plus élevé
-  const existing = await prisma.cardMarketData.findUnique({ where: { cardId }, select: { allTimeHigh: true, allTimeLow: true } })
-  if (existing) {
-    const updates: Record<string, any> = {}
-    if (!existing.allTimeHigh || norm.market > Number(existing.allTimeHigh)) {
-      updates.allTimeHigh = norm.market
-      updates.allTimeHighDate = new Date()
-    }
-    if (!existing.allTimeLow || norm.low < Number(existing.allTimeLow)) {
-      updates.allTimeLow = norm.low
-      updates.allTimeLowDate = new Date()
-    }
-    if (Object.keys(updates).length > 0) {
-      await prisma.cardMarketData.update({ where: { cardId }, data: updates })
-    }
+      allTimeHigh: norm.market, allTimeLow: norm.low,
+    }})
   }
 }
