@@ -104,6 +104,7 @@ export async function GET(req: NextRequest) {
   const HARD_LIMIT = 270_000
   const stats = { sets: 0, cards: 0, updated: 0, skipped: 0, errors: 0 }
   const sampleErrors: string[] = []
+  const today = new Date(); today.setHours(0, 0, 0, 0)
 
   // Neon est pré-chauffé par le cron warmup (5h45 UTC).
   // Lancer les fetches pokemontcg.io et la vérification DB en parallèle.
@@ -157,35 +158,120 @@ export async function GET(req: NextRequest) {
       if (!dbCards.length) continue
 
       const cardIndex = new Map(dbCards.map((c) => [c.externalId, c]))
-
       stats.sets++
-      let setUpdated = 0
 
+      // ── Collecter toutes les cartes à mettre à jour ───────────────
+      const toUpdate: Array<{ dbCard: typeof dbCards[0]; norm: ReturnType<typeof normalizeCardmarketPrices> & {} }> = []
       for (const [dbExtId, ptcg] of ptcgByDbId) {
         const dbCard = cardIndex.get(dbExtId)
         if (!dbCard) { stats.skipped++; continue }
-
         const cm = ptcg.cardmarket?.prices
         if (!cm) { stats.skipped++; continue }
-
         const norm = normalizeCardmarketPrices(cm)
         if (!norm || norm.market <= 0) { stats.skipped++; continue }
-
-        try {
-          await updateCardPricing(dbCard.id, dbCard.rarity, norm, ptcg)
-          setUpdated++
-          stats.updated++
-        } catch (err: any) {
-          stats.errors++
-          if (sampleErrors.length < 3) sampleErrors.push(err?.message ?? String(err))
-        }
+        toUpdate.push({ dbCard, norm })
       }
 
+      if (!toUpdate.length) continue
+
+      const cardIds = toUpdate.map(u => u.dbCard.id)
+
+      // ── Batch CardPrice — 1 findMany + createMany + Promise.all updates ──
+      const existingPrices = await prisma.cardPrice.findMany({
+        where: { cardId: { in: cardIds }, source: 'cardmarket' },
+        select: { id: true, cardId: true },
+      })
+      const priceById = new Map(existingPrices.map(p => [p.cardId, p.id]))
+
+      const toCreatePrices = toUpdate.filter(u => !priceById.has(u.dbCard.id))
+      if (toCreatePrices.length) {
+        await prisma.cardPrice.createMany({
+          data: toCreatePrices.map(u => ({
+            cardId: u.dbCard.id, source: 'cardmarket', variant: 'NORMAL', currency: 'EUR',
+            market: u.norm.market, mid: u.norm.mid, low: u.norm.low, high: u.norm.high,
+          })),
+          skipDuplicates: true,
+        })
+      }
+
+      await Promise.all(
+        toUpdate.filter(u => priceById.has(u.dbCard.id)).map(u =>
+          prisma.cardPrice.update({
+            where: { id: priceById.get(u.dbCard.id)! },
+            data: { market: u.norm.market, mid: u.norm.mid, low: u.norm.low, high: u.norm.high, fetchedAt: new Date() },
+          })
+        )
+      )
+
+      // ── Batch CardMarketData — 1 findMany + createMany + Promise.all updates ──
+      const existingMds = await prisma.cardMarketData.findMany({
+        where: { cardId: { in: cardIds } },
+        select: { id: true, cardId: true, allTimeHigh: true, allTimeLow: true },
+      })
+      const mdById = new Map(existingMds.map(m => [m.cardId, m]))
+
+      const toCreateMds = toUpdate.filter(u => !mdById.has(u.dbCard.id))
+      if (toCreateMds.length) {
+        const rarityRank = (r: string) => RARITY_RANK[r] ?? 2
+        await prisma.cardMarketData.createMany({
+          data: toCreateMds.map(u => ({
+            cardId: u.dbCard.id,
+            marketCap: u.norm.market * (10000),
+            priceChange24h: u.norm.change24h, priceChange7d: u.norm.change7d, priceChange30d: u.norm.change30d,
+            volatility30d: u.norm.volatility, investmentScore: 50,
+            rarityScore: Math.round(rarityRank(u.dbCard.rarity) * 10),
+            liquidityScore: u.norm.market > 50 ? 80 : u.norm.market > 10 ? 60 : 40,
+            trendDirection: (u.norm.change7d > 0.05 ? 'BULLISH' : u.norm.change7d < -0.05 ? 'BEARISH' : 'STABLE') as any,
+            allTimeHigh: u.norm.market, allTimeLow: u.norm.low,
+          })),
+          skipDuplicates: true,
+        })
+      }
+
+      await Promise.all(
+        toUpdate.filter(u => mdById.has(u.dbCard.id)).map(u => {
+          const existing = mdById.get(u.dbCard.id)!
+          const athUpdate: Record<string, any> = {}
+          if (!existing.allTimeHigh || u.norm.market > Number(existing.allTimeHigh)) {
+            athUpdate.allTimeHigh = u.norm.market; athUpdate.allTimeHighDate = new Date()
+          }
+          if (!existing.allTimeLow || u.norm.low < Number(existing.allTimeLow)) {
+            athUpdate.allTimeLow = u.norm.low; athUpdate.allTimeLowDate = new Date()
+          }
+          return prisma.cardMarketData.update({
+            where: { id: existing.id },
+            data: {
+              priceChange24h: u.norm.change24h, priceChange7d: u.norm.change7d, priceChange30d: u.norm.change30d,
+              volatility30d: u.norm.volatility,
+              trendDirection: (u.norm.change7d > 0.05 ? 'BULLISH' : u.norm.change7d < -0.05 ? 'BEARISH' : 'STABLE') as any,
+              ...athUpdate,
+            },
+          })
+        })
+      )
+
+      // ── PriceHistory (1 point par carte pour aujourd'hui) ─────────
+      const existingToday = await prisma.priceHistory.findMany({
+        where: { cardId: { in: cardIds }, source: 'cardmarket', recordedAt: { gte: today } },
+        select: { cardId: true },
+      })
+      const todaySet = new Set(existingToday.map(h => h.cardId))
+      const newHistory = toUpdate.filter(u => !todaySet.has(u.dbCard.id))
+      if (newHistory.length) {
+        await prisma.priceHistory.createMany({
+          data: newHistory.map(u => ({
+            cardId: u.dbCard.id, source: 'cardmarket', variant: 'NORMAL', currency: 'EUR',
+            price: u.norm.market, recordedAt: today,
+          })),
+          skipDuplicates: true,
+        })
+      }
+
+      const setUpdated = toUpdate.length
+      stats.updated += setUpdated
       stats.cards += ptcgCards.length
       console.log(`✅ ${setId}: ${setUpdated}/${ptcgCards.length} cartes mises à jour`)
-
-      // Rate limiting : 150ms avec API key, sinon 300ms
-      await sleep(process.env.POKEMON_TCG_API_KEY ? 150 : 300)
+      await sleep(100)
     } catch (err) {
       console.error(`❌ Erreur set ${setId}:`, err)
       stats.errors++
