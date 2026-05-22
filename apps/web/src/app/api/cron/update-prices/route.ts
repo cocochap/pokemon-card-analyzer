@@ -75,15 +75,23 @@ function ptcgioToDbId(id: string): string {
 }
 
 async function fetchPtcgSet(setId: string): Promise<PtcgCard[]> {
-  const headers: Record<string, string> = { Accept: 'application/json' }
-  if (process.env.POKEMON_TCG_API_KEY) headers['X-Api-Key'] = process.env.POKEMON_TCG_API_KEY
-  const res = await fetch(
-    `https://api.pokemontcg.io/v2/cards?q=set.id:${setId}&pageSize=250&select=id,cardmarket,tcgplayer`,
-    { headers, signal: AbortSignal.timeout(20000) }
-  )
-  if (!res.ok) return []
-  const json = await res.json()
-  return json.data ?? []
+  try {
+    const headers: Record<string, string> = { Accept: 'application/json' }
+    if (process.env.POKEMON_TCG_API_KEY) headers['X-Api-Key'] = process.env.POKEMON_TCG_API_KEY
+    const res = await fetch(
+      `https://api.pokemontcg.io/v2/cards?q=set.id:${setId}&pageSize=250&select=id,cardmarket,tcgplayer`,
+      { headers, cache: 'no-store', signal: AbortSignal.timeout(25000) }
+    )
+    if (!res.ok) {
+      console.warn(`fetchPtcgSet ${setId}: HTTP ${res.status}`)
+      return []
+    }
+    const json = await res.json()
+    return json.data ?? []
+  } catch (err: any) {
+    console.warn(`fetchPtcgSet ${setId} error: ${err?.name} ${err?.message}`)
+    return []
+  }
 }
 
 function sleep(ms: number) {
@@ -125,7 +133,7 @@ export async function GET(req: NextRequest) {
   const preFetched = new Map<string, PtcgCard[]>()
   preFetchIds.forEach((id, i) => {
     const r = preFetchResults[i]
-    if (r?.status === 'fulfilled') preFetched.set(id, r.value)
+    if (r?.status === 'fulfilled' && r.value.length > 0) preFetched.set(id, r.value)
   })
 
   // Traiter set par set — index DB chargé par set (évite le global findMany qui timeout sur Neon free)
