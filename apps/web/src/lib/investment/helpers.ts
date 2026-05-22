@@ -97,8 +97,15 @@ export function investmentScoreFromProfile(
 }
 
 // ── Price targets ─────────────────────────────────────────────────────────────
-// Multiplicateurs fondés sur l'analyse de cartes comparables réelles.
-// Source unique utilisée par le scan ET l'analyse Elite pour cohérence.
+// Estimations réalistes basées sur l'historique réel du marché Pokémon TCG.
+// Principe : honnêteté > optimisme. La plupart des cartes modernes ne s'apprécient pas.
+//
+// Données de référence (Cardmarket, 2020-2025) :
+// - Vintage S-tier (Charizard Base, Pikachu promo) : +15-25%/an sur 5 ans
+// - SIR/SAR iconiques hors impression : +10-20%/an après 12 mois de set arrêté
+// - SV encore en impression : flat à -10% possible (dilution supply)
+// - Communs/Uncommons modernes : -10% à -30% sur 3 ans (remplacement par nouveaux sets)
+
 export function buildTargets(
   price: number,
   ath: number,
@@ -108,65 +115,109 @@ export function buildTargets(
   era: string,
   athDropPct: number,
 ) {
-  const isSIR = rarityW >= 0.85
+  const isSIR     = rarityW >= 0.85   // Special/Hyper/Crown Rare
+  const isUltra   = rarityW >= 0.55   // Ultra Rare, VMAX, VSTAR, ex...
+  const isHolo    = rarityW >= 0.25   // Rare Holo+
   const isVintage = era === 'vintage'
+  const isScarce  = scarce >= 0.85    // Set rare / promos limitées
+  // SV encore en impression = prix sous pression jusqu'à arrêt du set
+  const isModernSV = era === 'sv' && scarce < 0.65
 
-  let mult1y = 1.10
-  let mult3y = 1.35
-  let mult5y = 1.70
-  let horizon = '6-12 mois'
-  let conviction: 'FORTE' | 'MODÉRÉE' | 'FAIBLE' = 'MODÉRÉE'
+  let mult1y: number
+  let mult3y: number
+  let mult5y: number
+  let horizon: string
+  let conviction: 'FORTE' | 'MODÉRÉE' | 'FAIBLE'
 
+  // ── Vintage (Base Set, Neo, E-Card…) ────────────────────────────
+  // Offre fixe, demande nostalgie croissante — les plus fiables long terme
   if (isVintage && charTierVal === 'S') {
-    mult1y = 1.45; mult3y = 3.0; mult5y = 5.5
+    mult1y = 1.18; mult3y = 1.65; mult5y = 2.40
     horizon = '3-5 ans'; conviction = 'FORTE'
   } else if (isVintage && charTierVal === 'A') {
-    mult1y = 1.25; mult3y = 2.2; mult5y = 4.0
+    mult1y = 1.10; mult3y = 1.40; mult5y = 1.90
     horizon = '3-5 ans'; conviction = 'FORTE'
   } else if (isVintage) {
-    mult1y = 1.15; mult3y = 1.8; mult5y = 3.0
+    mult1y = 1.05; mult3y = 1.20; mult5y = 1.50
+    horizon = '4-6 ans'; conviction = 'MODÉRÉE'
+
+  // ── Sets rares / promos limitées (cel25, smp…) ─────────────────
+  } else if (isScarce && charTierVal === 'S') {
+    mult1y = 1.15; mult3y = 1.55; mult5y = 2.20
+    horizon = '2-4 ans'; conviction = 'FORTE'
+  } else if (isScarce) {
+    mult1y = 1.08; mult3y = 1.30; mult5y = 1.70
     horizon = '2-4 ans'; conviction = 'MODÉRÉE'
-  } else if (isSIR && charTierVal === 'S') {
-    mult1y = 1.45; mult3y = 2.5; mult5y = 4.0
+
+  // ── SIR/SAR (Illustration Rare Spéciale) hors impression ────────
+  // Les meilleures cartes modernes une fois le set arrêté (~18 mois après sortie)
+  } else if (!isModernSV && isSIR && charTierVal === 'S') {
+    mult1y = 1.15; mult3y = 1.55; mult5y = 2.10
     horizon = '1-3 ans'; conviction = 'FORTE'
-  } else if (isSIR && charTierVal === 'A') {
-    mult1y = 1.30; mult3y = 2.0; mult5y = 3.2
-    horizon = '1-3 ans'; conviction = 'FORTE'
-  } else if (isSIR) {
-    mult1y = 1.15; mult3y = 1.7; mult5y = 2.5
+  } else if (!isModernSV && isSIR && charTierVal === 'A') {
+    mult1y = 1.10; mult3y = 1.40; mult5y = 1.85
     horizon = '2-4 ans'; conviction = 'MODÉRÉE'
-  } else if (scarce >= 0.85 && charTierVal === 'S') {
-    mult1y = 1.35; mult3y = 2.2; mult5y = 3.8
-    horizon = '1-2 ans'; conviction = 'FORTE'
-  } else if (charTierVal === 'S') {
-    mult1y = 1.20; mult3y = 1.75; mult5y = 2.5
-    horizon = '1-2 ans'; conviction = 'MODÉRÉE'
-  } else if (charTierVal === 'A') {
-    mult1y = 1.10; mult3y = 1.50; mult5y = 2.0
-    horizon = '2-3 ans'; conviction = 'MODÉRÉE'
-  } else {
-    mult1y = 1.05; mult3y = 1.25; mult5y = 1.60
+  } else if (!isModernSV && isSIR) {
+    mult1y = 1.03; mult3y = 1.15; mult5y = 1.40
     horizon = '3-5 ans'; conviction = 'FAIBLE'
+
+  // ── SIR/SAR SV encore en impression ─────────────────────────────
+  // Prudence : le marché est saturé, les prix peuvent baisser avant de remonter
+  } else if (isModernSV && isSIR && charTierVal === 'S') {
+    mult1y = 1.00; mult3y = 1.25; mult5y = 1.70
+    horizon = '2-4 ans (attendre fin impression)'; conviction = 'MODÉRÉE'
+  } else if (isModernSV && isSIR) {
+    mult1y = 0.95; mult3y = 1.10; mult5y = 1.40
+    horizon = '3-5 ans'; conviction = 'FAIBLE'
+
+  // ── Ultra Rare (ex, V, GX, VMAX) hors impression ────────────────
+  } else if (!isModernSV && isUltra && charTierVal === 'S') {
+    mult1y = 1.10; mult3y = 1.38; mult5y = 1.75
+    horizon = '1-3 ans'; conviction = 'MODÉRÉE'
+  } else if (!isModernSV && isUltra) {
+    mult1y = 1.02; mult3y = 1.12; mult5y = 1.30
+    horizon = '3-5 ans'; conviction = 'FAIBLE'
+
+  // ── Ultra Rare SV encore en impression ──────────────────────────
+  } else if (isModernSV && isUltra) {
+    mult1y = 0.92; mult3y = 1.00; mult5y = 1.20
+    horizon = '3-5 ans'; conviction = 'FAIBLE'
+
+  // ── Rare Holo / commune / peu commune ───────────────────────────
+  // Réalité : la majorité perd de la valeur avec le temps (remplacement par nouveaux sets)
+  } else if (isHolo && charTierVal === 'S') {
+    mult1y = 1.05; mult3y = 1.18; mult5y = 1.40
+    horizon = '2-4 ans'; conviction = 'FAIBLE'
+  } else {
+    // Bulk et cartes sans potentiel : dépréciées sur le marché secondaire
+    mult1y = 0.85; mult3y = 0.75; mult5y = 0.65
+    horizon = 'Non recommandé'; conviction = 'FAIBLE'
   }
 
-  // ATH recovery boost
-  if (athDropPct > 40) { mult1y *= 1.15; mult3y *= 1.10 }
-  else if (athDropPct > 20) { mult1y *= 1.08 }
+  // ── ATH recovery bonus (réel : retour vers l'ATH si fondamentaux solides) ──
+  if (athDropPct > 40 && (isSIR || isVintage || isScarce)) {
+    mult1y = Math.min(mult1y * 1.12, 1.40)
+    mult3y = Math.min(mult3y * 1.08, 2.50)
+  } else if (athDropPct > 20 && (isSIR || isVintage)) {
+    mult1y = Math.min(mult1y * 1.06, 1.30)
+  }
 
-  // Round cleanly
-  mult1y = +mult1y.toFixed(3)
-  mult3y = +mult3y.toFixed(3)
-  mult5y = +mult5y.toFixed(3)
+  // Arrondi réaliste (pas de fausse précision)
+  mult1y = +mult1y.toFixed(2)
+  mult3y = +mult3y.toFixed(2)
+  mult5y = +mult5y.toFixed(2)
 
-  // y10 : CAGR implicite des 5 ans appliqué jusqu'à 10 ans, plafonné à 6x
+  // 10 ans : on extrapole le CAGR des 5 ans, mais on plafonne sévèrement
+  // (les projections à 10 ans sont très spéculatives sur les cartes modernes)
   const cagr5 = Math.pow(mult5y, 1 / 5) - 1
-  const mult10 = Math.min(6.0, +Math.pow(1 + cagr5, 10).toFixed(2))
+  const maxMult10 = isVintage ? 4.0 : isScarce ? 3.0 : 2.5
+  const mult10 = +Math.min(maxMult10, Math.pow(1 + cagr5, 10)).toFixed(2)
 
   const t1y  = +(price * mult1y).toFixed(2)
   const t3y  = +(price * mult3y).toFixed(2)
   const t5y  = +(price * mult5y).toFixed(2)
   const t10y = +(price * mult10).toFixed(2)
-  const athTarget = ath > price ? +(ath * 1.05).toFixed(2) : null
+  const athTarget = ath > price && (isSIR || isVintage) ? +(ath * 1.02).toFixed(2) : null
 
   return { t1y, t3y, t5y, t10y, athTarget, horizon, conviction, mult1y, mult3y, mult5y, mult10 }
 }
