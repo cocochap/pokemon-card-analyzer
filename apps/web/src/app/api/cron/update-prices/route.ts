@@ -103,6 +103,7 @@ export async function GET(req: NextRequest) {
   // maxDuration = 300s — on s'arrête à 270s pour laisser du temps à la réponse
   const HARD_LIMIT = 270_000
   const stats = { sets: 0, cards: 0, updated: 0, skipped: 0, errors: 0 }
+  const sampleErrors: string[] = []
 
   // Neon est pré-chauffé par le cron warmup (5h45 UTC).
   // Lancer les fetches pokemontcg.io et la vérification DB en parallèle.
@@ -174,8 +175,9 @@ export async function GET(req: NextRequest) {
           await updateCardPricing(dbCard.id, dbCard.rarity, norm, ptcg)
           setUpdated++
           stats.updated++
-        } catch (err) {
+        } catch (err: any) {
           stats.errors++
+          if (sampleErrors.length < 3) sampleErrors.push(err?.message ?? String(err))
         }
       }
 
@@ -210,6 +212,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true, duration, ...stats,
+    sampleErrors,
     diag: {
       preFetchedSets: [...preFetched.keys()],
       preFetchedCounts: Object.fromEntries([...preFetched.entries()].map(([k,v]) => [k, v.length])),
