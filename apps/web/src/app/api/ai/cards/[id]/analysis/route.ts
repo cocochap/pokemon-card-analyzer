@@ -164,15 +164,28 @@ async function computeAnalysis(card: any) {
       ? change30d / 100
       : Number(md?.priceChange30d ?? 0) / 100
 
-  const predictions = buildPredictions(currentPrice, roi30dReal, vol30, targets, {
+  // Pour les cartes de qualité en correction temporaire, ne pas extrapoler la chute indéfiniment.
+  // Une carte OOP S-tier qui baisse de 25%/30j reviendra — mean-reversion documentée.
+  const boundedRoi30d = investmentScore > 55 && roi30dReal < -0.15
+    ? Math.max(roi30dReal, -0.15)
+    : roi30dReal
+
+  const predictions = buildPredictions(currentPrice, boundedRoi30d, vol30, targets, {
     lastSalePrice,
     salesCount30d,
     avgSale30d,
-  })
+  }, investmentScore)
 
   // ── Signaux enrichis ──────────────────────────────────────────────────────
   const bullishSignals = [...result.bullishSignals]
   const bearishSignals = [...result.bearishSignals]
+
+  // Signal de cohérence score/timing : bonne carte mais mauvais moment d'achat
+  if (result.trendDirection === 'BEARISH' && investmentScore > 55 && change7d < -5) {
+    bearishSignals.unshift('Tendance baissière en cours — qualité élevée mais attendre la stabilisation avant d\'acheter')
+  } else if (result.trendDirection === 'BEARISH' && investmentScore > 55) {
+    bearishSignals.unshift('Légère pression vendeuse — surveiller le retournement pour optimiser le point d\'entrée')
+  }
 
   // Signaux depuis les ventes réelles
   if (salesCount30d >= 5 && saleTrend30d > 10) {
@@ -260,6 +273,7 @@ function buildPredictions(
   vol30: number,
   targets: { t1y: number; t3y: number; t5y: number },
   sales?: { lastSalePrice: number; salesCount30d: number; avgSale30d: number },
+  investmentScore = 50,
 ) {
   if (currentPrice <= 0) return []
 
@@ -278,9 +292,15 @@ function buildPredictions(
     { days: 365, mw: 0.00, sw: 1.00 },
   ]
 
+  // Pour les cartes de qualité, le momentum négatif s'attenue plus vite (mean-reversion).
+  // Une bonne carte qui baisse de 30%/an ne continue pas à baisser de 30%/an indéfiniment.
+  const momentumAnnualRaw = roi30d * 12
+  const momentumAnnual = investmentScore > 55 && momentumAnnualRaw < 0
+    ? Math.max(momentumAnnualRaw, annualRate > 0.08 ? -annualRate * 1.5 : -0.25)
+    : momentumAnnualRaw
+
   return horizons.map(({ days, mw, sw }) => {
     // Composante momentum : projection annualisée avec décroissance
-    const momentumAnnual = roi30d * 12
     const momentumRoi = momentumAnnual * (days / 365) * Math.exp(-days / 90)
 
     // Composante structurelle : interpolation linéaire du taux annuel

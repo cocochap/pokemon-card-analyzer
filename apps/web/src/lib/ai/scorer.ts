@@ -137,11 +137,20 @@ function momentumScore(inp: ScoringInput): number {
      : inp.priceChange30d < -15 ? -12
      : inp.priceChange30d < -5  ? -6 : 0
 
-  // ATH recovery : potentiel documenté (Unlimited Base Charizard : -63% crash 2022 → recovery 2025-2026)
-  if (inp.athDropPct > 40 && inp.isVintage)         s += 15
-  else if (inp.athDropPct > 30 && inp.rarityRank >= 8) s += 10
-  else if (inp.athDropPct > 30)                      s += 6
-  else if (inp.athDropPct > 20)                      s += 3
+  // ATH recovery : bonus réduit si la chute est encore en cours (ne pas attraper un couteau qui tombe)
+  // Documenté : Charizard Base crash 2022 a continué 4 mois avant retournement
+  const stillFalling = inp.priceChange7d < -3 && inp.priceChange30d < -5
+  const athMult = stillFalling ? 0.4 : 1
+  if (inp.athDropPct > 40 && inp.isVintage)            s += Math.round(15 * athMult)
+  else if (inp.athDropPct > 30 && inp.rarityRank >= 8) s += Math.round(10 * athMult)
+  else if (inp.athDropPct > 30)                        s += Math.round(6 * athMult)
+  else if (inp.athDropPct > 20)                        s += Math.round(3 * athMult)
+
+  // Pénalité timing : tendance baissière confirmée sur les deux horizons = mauvais moment d'achat
+  // RSI < 35 = oversold, signal de retournement → pénalité allégée
+  if (inp.priceChange7d < -5 && inp.priceChange30d < -10) {
+    s -= inp.rsi14 < 35 ? 5 : 15
+  }
 
   return clamp(s, 0, 100)
 }

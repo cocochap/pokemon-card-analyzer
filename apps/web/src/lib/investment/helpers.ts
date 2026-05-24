@@ -88,10 +88,11 @@ export function investmentScoreFromProfile(
   if (athDropPct > 40) score += 8
   else if (athDropPct > 20) score += 4
 
-  // Recent momentum (0-7 pts)
+  // Recent momentum timing — double négatif confirmé = mauvais point d'entrée
   if (change7d > 10 || change30d > 15) score += 7
   else if (change7d > 5 || change30d > 8) score += 4
-  else if (change7d < -10 || change30d < -15) score -= 5
+  else if (change7d < -5 && change30d < -10) score -= 12  // tendance baissière confirmée
+  else if (change7d < -10 || change30d < -15) score -= 7
 
   return Math.max(0, Math.min(100, Math.round(score)))
 }
