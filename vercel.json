@@ -4,11 +4,7 @@
   "installCommand": "echo 'install handled in build'",
   "framework": "nextjs",
   "crons": [
-    { "path": "/api/cron/warmup",          "schedule": "45 5 * * *"  },
-    { "path": "/api/cron/update-prices",   "schedule": "0 6 * * *"   },
-    { "path": "/api/cron/update-prices-fr","schedule": "0 7 * * *"   },
-    { "path": "/api/cron/sealed-prices",   "schedule": "0 9 * * *"   },
-    { "path": "/api/cron/leaderboard",     "schedule": "30 9 * * *"  },
+    { "path": "/api/cron/daily",           "schedule": "0 6 * * *"   },
     { "path": "/api/cron/investment-picks","schedule": "0 8 1 * *"   }
   ]
 }
