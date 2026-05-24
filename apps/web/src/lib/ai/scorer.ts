@@ -60,19 +60,21 @@ export function scoreCard(inp: ScoringInput): ScoringResult {
   const liquidityScore_ = clamp(Math.round(liquidity), 0, 100)
   const riskLevel       = computeRisk(inp)
 
-  // Prédiction ROI simplifiée
-  const decay30 = 0.7
-  const decay90 = 0.4
-  const baseMom = inp.priceChange7d * 0.4 + inp.priceChange30d * 0.6
-  const predictedRoi30d = clamp(baseMom * decay30 / 100, -0.8, 3.0)
-  const predictedRoi90d = clamp(baseMom * decay90 / 100, -0.8, 3.0)
+  // Prédiction ROI : mean-reversion ajustée par la volatilité
+  // (sera overridée par buildPredictions() dans la route, mais sert de fallback)
+  const volAdj = Math.max(0.3, 1 - Math.min(inp.volatility30d, 2.0) * 0.20)
+  const baseMom30 = inp.priceChange7d * 0.35 + inp.priceChange30d * 0.65
+  const baseMom90 = inp.priceChange30d * 0.70 + inp.priceChange90d * 0.30
+  const predictedRoi30d = clamp(baseMom30 * 0.60 * volAdj / 100, -0.8, 3.0)
+  const predictedRoi90d = clamp(baseMom90 * 0.35 * volAdj / 100, -0.8, 3.0)
 
-  // Trend
-  const roi30 = predictedRoi30d
+  // Trend depuis les variations observées (pas depuis le ROI prédit)
   const trendDirection: ScoringResult['trendDirection'] =
-    inp.volatility30d > 0.8 ? 'VOLATILE'
-    : roi30 > 0.05 ? 'BULLISH'
-    : roi30 < -0.05 ? 'BEARISH'
+    inp.volatility30d > 0.65 ? 'VOLATILE'
+    : inp.priceChange30d > 8 ? 'BULLISH'
+    : inp.priceChange30d < -8 ? 'BEARISH'
+    : inp.priceChange7d > 5 ? 'BULLISH'
+    : inp.priceChange7d < -5 ? 'BEARISH'
     : 'STABLE'
 
   const { bullishSignals, bearishSignals } = extractSignals(inp)
@@ -122,8 +124,10 @@ function technicalScore(inp: ScoringInput): number {
   else if (inp.rsi14 < 40) s += 10
   else if (inp.rsi14 > 70) s -= 15
   else if (inp.rsi14 > 80) s -= 25
-  if (inp.volatility30d > 1.5) s -= 15
-  else if (inp.volatility30d > 1.0) s -= 8
+  // Seuils calibrés pour volatilité annualisée correcte (base √252)
+  if (inp.volatility30d > 1.20) s -= 15
+  else if (inp.volatility30d > 0.80) s -= 8
+  else if (inp.volatility30d < 0.20) s += 5  // carte stable = signal positif
   return clamp(s, 0, 100)
 }
 
@@ -164,13 +168,18 @@ function fundamentalScore(inp: ScoringInput): number {
 }
 
 function computeRisk(inp: ScoringInput): number {
-  let r = 30
-  r += Math.min(30, inp.volatility30d * 20)
+  let r = 25
+  // Volatilité : calibré pour base √252 (valeurs typiques 0.20-1.50)
+  r += Math.min(35, inp.volatility30d * 22)
   if (inp.ebayCount30d < 5) r += 20
+  else if (inp.ebayCount30d < 15) r += 8
   if (inp.listingsCount < 5) r += 15
   if (inp.priceChange30d < -30) r += 20
+  else if (inp.priceChange30d < -15) r += 10
   if (inp.rsi14 > 75) r += 15
   if (inp.setAgeDays < 60) r += 10
+  // Bonus stabilité : set ancien + liquidité correcte = risque réduit
+  if (inp.setAgeDays > 3650 && inp.ebayCount30d > 10) r -= 8
   return clamp(Math.round(r), 0, 100)
 }
 

@@ -87,10 +87,20 @@ async function computeAnalysis(card: any) {
   const effectiveChange30d = salesCount30d >= 3 ? saleTrend30d : change30d
 
   // ── Volatilité et RSI ─────────────────────────────────────────────────────
-  const returns30 = prices.slice(-30).map((p, i, a) => i === 0 ? 0 : (p - a[i - 1]) / (a[i - 1] + 1e-8))
-  const vol30 = returns30.length > 1
-    ? Math.sqrt(returns30.reduce((s, r) => s + r * r, 0) / returns30.length) * Math.sqrt(365)
-    : (md?.volatility30d ? Number(md.volatility30d) : 0.35)
+  // Volatilité annualisée correcte : écart-type des rendements journaliers × √252
+  const slice = prices.slice(-31)
+  const rawReturns: number[] = []
+  for (let i = 1; i < slice.length; i++) {
+    if (slice[i - 1] > 0) rawReturns.push((slice[i] - slice[i - 1]) / slice[i - 1])
+  }
+  let vol30: number
+  if (rawReturns.length >= 3) {
+    const meanR = rawReturns.reduce((s, r) => s + r, 0) / rawReturns.length
+    const variance = rawReturns.reduce((s, r) => s + (r - meanR) ** 2, 0) / (rawReturns.length - 1)
+    vol30 = Math.sqrt(variance) * Math.sqrt(252)
+  } else {
+    vol30 = md?.volatility30d ? Number(md.volatility30d) : 0.35
+  }
 
   const rsi = computeRSI(prices.length >= 15 ? prices : []) ?? (md?.rsi14 ? Number(md.rsi14) : 50)
 
@@ -138,11 +148,11 @@ async function computeAnalysis(card: any) {
   const result = scoreCard(inp)
 
   // ── Score d'investissement blendé ─────────────────────────────────────────
-  const profileScore = investmentScoreFromProfile(cTier, rarityW, scarce, era, athDrop, change7d, effectiveChange30d)
-  const hasHistory   = prices.length >= 7 || Math.abs(change7d) > 0.1 || Math.abs(change30d) > 0.1 || salesCount30d >= 3
-  const investmentScore = hasHistory
-    ? Math.round(result.investmentScore * 0.5 + profileScore * 0.5)
-    : profileScore
+  // Pondération dynamique : plus on a de données réelles, plus le momentum compte
+  const profileScore  = investmentScoreFromProfile(cTier, rarityW, scarce, era, athDrop, change7d, effectiveChange30d)
+  const dataRichness  = Math.min(1, (prices.length + salesCount30d * 3) / 45)
+  const momentumWeight = dataRichness * 0.45  // 0% (pas de données) → 45% (données riches)
+  const investmentScore = Math.round(result.investmentScore * momentumWeight + profileScore * (1 - momentumWeight))
 
   // ── Targets structurels ───────────────────────────────────────────────────
   const targets = buildTargets(currentPrice, ath, cTier, rarityW, scarce, era, athDrop)
@@ -211,8 +221,19 @@ async function computeAnalysis(card: any) {
     bullishSignals: bullishSignals.slice(0, 5),
     bearishSignals: bearishSignals.slice(0, 5),
     keyInsight,
-    predictedRoi30d: result.predictedRoi30d,
-    predictedRoi90d: result.predictedRoi90d,
+    // ROI dérivé de buildPredictions() — plus fiable que la formule simpliste du scorer
+    predictedRoi30d: (() => {
+      const p30 = predictions.find(p => p.horizonDays === 30)
+      return p30 && currentPrice > 0
+        ? +((p30.predictedPrice - currentPrice) / currentPrice).toFixed(4)
+        : result.predictedRoi30d
+    })(),
+    predictedRoi90d: (() => {
+      const p90 = predictions.find(p => p.horizonDays === 90)
+      return p90 && currentPrice > 0
+        ? +((p90.predictedPrice - currentPrice) / currentPrice).toFixed(4)
+        : result.predictedRoi90d
+    })(),
     predictions,
     currentPrice,
     priceChange7d: +change7d.toFixed(2),
