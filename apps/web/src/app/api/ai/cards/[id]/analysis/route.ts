@@ -151,10 +151,24 @@ async function computeAnalysis(card: any) {
   const profileScore  = investmentScoreFromProfile(cTier, rarityW, scarce, era, athDrop, change7d, effectiveChange30d)
   const dataRichness  = Math.min(1, (prices.length + salesCount30d * 3) / 45)
   const momentumWeight = dataRichness * 0.45  // 0% (pas de données) → 45% (données riches)
-  const investmentScore = Math.round(result.investmentScore * momentumWeight + profileScore * (1 - momentumWeight))
+  const rawScore = Math.round(result.investmentScore * momentumWeight + profileScore * (1 - momentumWeight))
 
   // ── Targets structurels ───────────────────────────────────────────────────
   const targets = buildTargets(currentPrice, ath, cTier, rarityW, scarce, era, athDrop)
+
+  // ── Plafonnement du score par le rendement attendu ────────────────────────
+  // Un score élevé sur une carte qui va perdre de la valeur est un mensonge.
+  // Le rendement 1 an de buildTargets est la vérité structurelle — le score doit s'y conformer.
+  const ret1y = targets.mult1y - 1
+  const scoreCap =
+    ret1y < -0.10 ? 30 :   // perte >10%/an → mauvais investissement
+    ret1y < -0.03 ? 42 :   // perte 3-10%/an → faible
+    ret1y < 0     ? 52 :   // perte <3%/an → légèrement négatif
+    ret1y < 0.05  ? 62 :   // 0-5%/an → marché neutre
+    ret1y < 0.10  ? 75 :   // 5-10%/an → correct
+    ret1y < 0.15  ? 85 :   // 10-15%/an → bien
+    92                      // 15%+/an → excellent (jamais 100 — aucun actif n'est garanti)
+  const investmentScore = Math.min(rawScore, scoreCap)
 
   // ── Prédictions enrichies ─────────────────────────────────────────────────
   // roi30d réel : priorité aux ventes > historique > 0

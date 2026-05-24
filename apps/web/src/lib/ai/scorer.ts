@@ -56,7 +56,7 @@ export function scoreCard(inp: ScoringInput): ScoringResult {
     technical   * 0.05
   )
 
-  const investmentScore = clamp(Math.round(raw), 0, 100)
+  const investmentScore = clamp(Math.round(raw), 0, 92)
   const rarityScore     = clamp(Math.round(scarcity), 0, 100)
   const liquidityScore_ = clamp(Math.round(liquidity), 0, 100)
   const riskLevel       = computeRisk(inp)
@@ -101,8 +101,9 @@ function fundamentalScore(inp: ScoringInput): number {
   let s = 35
 
   // Popularité Pokémon : S-tier (Charizard, Pikachu) vs B-tier (générique)
-  // Fonte : premium documenté Charizard vs autres holos Base Set = 5-10x
-  s += Math.round(inp.pokemonPopularity * 0.30)  // 0-30 pts
+  // Pondéré par la rareté : un Pikachu commun bénéficie moins qu'un Pikachu SIR
+  const rarityMod = Math.min(1, inp.rarityRank / 7)  // commun(2)=0.29, holo(5)=0.71, SIR(9)=1.0
+  s += Math.round(inp.pokemonPopularity * 0.22 * (0.4 + rarityMod * 0.6))  // 0-20 pts
 
   // Ancienneté du set : offre fixe = rareté croissante mécaniquement
   const years = inp.setAgeDays / 365
