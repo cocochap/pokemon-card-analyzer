@@ -90,7 +90,7 @@ export function CardMarketStats({ card }: { card: any }) {
       )}
 
       {/* Stats grid */}
-      <div className="grid grid-cols-3 gap-px bg-white/5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-px bg-white/5">
         {stats.map((s, i) => (
           <div key={i} className="bg-card/80 p-3 sm:p-4 flex flex-col gap-1.5">
             <div className={clsx('w-7 h-7 rounded-lg flex items-center justify-center', s.bg)}>

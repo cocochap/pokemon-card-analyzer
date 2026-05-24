@@ -113,7 +113,7 @@ export function CardAiAnalysis({ cardId }: { cardId: string }) {
 
       <div className="p-5 space-y-6">
         {/* Score Rings */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <ScoreRing value={data.investmentScore} label={t.card.investment} color="#FFCB05" tooltip={t.tooltips.investmentScore} />
           <ScoreRing value={data.rarityScore} label={t.card.rarity} color="#7B2D8B" tooltip={t.tooltips.rarityScore} />
           <ScoreRing value={data.liquidityScore} label={t.card.liquidity} color="#3D7DCA" tooltip={t.tooltips.liquidityScore} />

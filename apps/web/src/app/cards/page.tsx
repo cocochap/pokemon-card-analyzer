@@ -44,7 +44,7 @@ export default function CardsPage() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <main className="container mx-auto px-4 py-8 max-w-[1600px]">
+      <main className="container mx-auto px-4 py-5 md:py-8 max-w-[1600px]">
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-3xl font-bold mb-1">🃏 {t.cards.title}</h1>
@@ -86,7 +86,7 @@ export default function CardsPage() {
         </div>
 
         {/* Grid */}
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8 gap-2 sm:gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8 gap-2 sm:gap-3">
           {isLoading
             ? Array.from({ length: 24 }).map((_, i) => (
                 <div key={i} className="skeleton aspect-[2/3] rounded-2xl" />
