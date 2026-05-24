@@ -7,6 +7,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
+import { checkCronAuth } from '@/lib/cron-auth'
 import { fetchDecrypt, fetchCardPrice } from '@/lib/pokecardex/decrypt'
 import { computeInvestmentScore, RARITY_RANK } from '@/lib/pricing/normalize'
 import { flushAllCache } from '@/lib/db/redis'
@@ -91,12 +92,8 @@ async function upsertPrice(
 }
 
 export async function GET(req: NextRequest) {
-  // Auth
-  const auth = req.headers.get('authorization')
-  const secret = process.env.CRON_SECRET
-  if (secret && auth && auth !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const authErr = checkCronAuth(req)
+  if (authErr) return authErr
 
   const startedAt = Date.now()
   const TIMEOUT = 250_000

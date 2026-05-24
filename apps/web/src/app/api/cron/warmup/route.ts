@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
+import { checkCronAuth } from '@/lib/cron-auth'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -10,11 +11,8 @@ export const maxDuration = 60
  * Neon free tier peut prendre 30-55s à se réveiller après inactivité.
  */
 export async function GET(req: NextRequest) {
-  const auth = req.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && auth && auth !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const authErr = checkCronAuth(req)
+  if (authErr) return authErr
 
   const start = Date.now()
   try {

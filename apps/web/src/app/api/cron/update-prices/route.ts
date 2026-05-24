@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 import { flushAllCache } from '@/lib/db/redis'
+import { checkCronAuth } from '@/lib/cron-auth'
 import { computeLeaderboard } from '@/lib/leaderboard'
 import {
   normalizeCardmarketPrices,
@@ -99,13 +100,8 @@ function sleep(ms: number) {
 }
 
 export async function GET(req: NextRequest) {
-  // Sécurité : vérifier le secret Vercel cron OU un token admin local
-  const auth = req.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-  // Block only if a wrong token is actively provided (not if no token at all)
-  if (cronSecret && auth && auth !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const authErr = checkCronAuth(req)
+  if (authErr) return authErr
 
   const startedAt = Date.now()
   // maxDuration = 300s — on s'arrête à 270s pour laisser du temps à la réponse

@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
+import { checkCronAuth } from '@/lib/cron-auth'
 
 // ─── Character tier scoring ────────────────────────────────────────────────
 const CHARACTER_TIERS = {
@@ -165,12 +166,8 @@ function horizon(pickType: string) {
 
 // ─── Main handler ──────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
-  // Verify Vercel cron secret (skip on localhost)
-  const authHeader = req.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && authHeader && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const authErr = checkCronAuth(req)
+  if (authErr) return authErr
 
   const period = new Date().toISOString().slice(0, 7)
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
+import { checkCronAuth } from '@/lib/cron-auth'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -50,10 +51,8 @@ function estimateMarketPrice(product: {
 }
 
 export async function GET(req: NextRequest) {
-  const secret = req.headers.get('x-cron-secret') ?? req.nextUrl.searchParams.get('secret')
-  if (secret && secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const authErr = checkCronAuth(req)
+  if (authErr) return authErr
 
   const products = await prisma.sealedProduct.findMany({
     select: {
