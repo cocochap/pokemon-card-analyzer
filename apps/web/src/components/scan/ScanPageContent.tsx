@@ -69,10 +69,10 @@ export function ScanPageContent() {
   const s = t.scan
 
   return (
-    <main className="container mx-auto px-4 max-w-5xl py-10">
+    <main className="container mx-auto px-4 max-w-5xl py-6 md:py-10">
 
       {/* Page header */}
-      <div className="text-center mb-12">
+      <div className="text-center mb-6 md:mb-12">
         <motion.div
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}

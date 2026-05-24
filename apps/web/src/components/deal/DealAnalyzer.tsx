@@ -460,7 +460,7 @@ export function DealAnalyzer() {
               <div className="glass-card p-5 space-y-5">
                 <p className="text-xs text-white/40 uppercase tracking-wider font-semibold">Analyse du deal</p>
 
-                <div className="flex items-start gap-6">
+                <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6">
                   {/* Score ring */}
                   <DealScoreRing
                     score={result.deal.score}

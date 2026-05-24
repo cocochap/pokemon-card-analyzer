@@ -107,10 +107,10 @@ export function PortfolioTable({ portfolioId }: { portfolioId?: string }) {
                         <div className="min-w-0">
                           <Link href={`/cards/${card?.id}`}
                             className="font-medium text-white hover:text-pokemon-yellow transition-colors flex items-center gap-1 group/link">
-                            <span className="truncate max-w-[150px]">{card?.name ?? '—'}</span>
+                            <span className="truncate max-w-[110px] sm:max-w-[180px]">{card?.name ?? '—'}</span>
                             <ExternalLink className="w-2.5 h-2.5 opacity-0 group-hover/link:opacity-60 flex-shrink-0" />
                           </Link>
-                          <p className="text-xs text-white/35 truncate max-w-[150px]">{card?.set?.name ?? ''}</p>
+                          <p className="text-xs text-white/35 truncate max-w-[110px] sm:max-w-[180px]">{card?.set?.name ?? ''}</p>
                         </div>
                       </div>
                     </td>
@@ -160,7 +160,7 @@ export function PortfolioTable({ portfolioId }: { portfolioId?: string }) {
                       <button
                         onClick={() => deleteItem(item.id)}
                         disabled={deletingId === item.id}
-                        className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/10 transition-all"
+                        className="p-1.5 rounded-lg opacity-60 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-red-500/10 active:bg-red-500/20 transition-all"
                         title="Retirer du portfolio"
                       >
                         {deletingId === item.id
