@@ -122,6 +122,8 @@ async function computeAnalysis(card: any) {
   const cTier    = charTier(card.name)
   const ath      = md?.allTimeHigh ? Number(md.allTimeHigh) : currentPrice
   const athDrop  = ath > currentPrice ? +(((ath - currentPrice) / ath) * 100).toFixed(1) : 0
+  // Set OOP : vintage/old/swsh ont cessé d'être imprimés ; SV sets arrêtés après ~14 mois
+  const isOOP    = era === 'vintage' || era === 'old' || era === 'swsh' || (era === 'sv' && setAgeDays > 420)
 
   // ── Scorer momentum ───────────────────────────────────────────────────────
   const inp: ScoringInput = {
@@ -130,8 +132,7 @@ async function computeAnalysis(card: any) {
     priceChange90d: change90d,
     volatility30d: vol30,
     rsi14: rsi,
-    volume7d: salesCount30d > 0 ? Math.round(salesCount30d / 4) : 0,
-    volumeAvg90d: salesCount90d > 0 ? Math.round(salesCount90d / 3) : 0,
+    ebayCount30d: salesCount30d,
     rarityRank: RARITY_MAP[card.rarity] ?? 3,
     populationPsa10,
     setAgeDays,
@@ -139,11 +140,9 @@ async function computeAnalysis(card: any) {
     isFirstEdition: card.variant === 'FIRST_EDITION',
     isShadowless: card.variant === 'SHADOWLESS',
     isPromo: card.variant === 'PROMO',
+    isOOP,
     pokemonPopularity: cTier === 'S' ? 90 : cTier === 'A' ? 60 : 30,
-    watchlistGrowth7d: change7d > 10 ? 25 : change7d > 5 ? 12 : 0,
-    socialMentions7d: cTier === 'S' ? 80 : cTier === 'A' ? 30 : 5,
-    ebayCount30d: salesCount30d > 0 ? salesCount30d : (scarce > 0.5 ? 5 : 20),
-    listingsCount: scarce > 0.8 ? 8 : scarce > 0.5 ? 25 : 60,
+    athDropPct: athDrop,
   }
   const result = scoreCard(inp)
 

@@ -82,7 +82,7 @@ export function investmentScoreFromProfile(
 
   // Era (0-10 pts)
   if (era === 'vintage') score += 10
-  else if (era === 'old') score += 5
+  else if (era === 'old' || era === 'swsh') score += 5
 
   // ATH discount boost (0-8 pts)
   if (athDropPct > 40) score += 8
@@ -130,44 +130,44 @@ export function buildTargets(
   let conviction: 'FORTE' | 'MODÉRÉE' | 'FAIBLE'
 
   // ── Vintage (Base Set, Neo, E-Card…) ────────────────────────────
-  // Offre fixe, demande nostalgie croissante — les plus fiables long terme
+  // CAGR réel documenté : Charizard Base +18-22%/an sur 5 ans (Charizard Price Tracker 2026)
   if (isVintage && charTierVal === 'S') {
-    mult1y = 1.18; mult3y = 1.65; mult5y = 2.40
+    mult1y = 1.22; mult3y = 1.82; mult5y = 2.70
     horizon = '3-5 ans'; conviction = 'FORTE'
   } else if (isVintage && charTierVal === 'A') {
-    mult1y = 1.10; mult3y = 1.40; mult5y = 1.90
+    mult1y = 1.12; mult3y = 1.48; mult5y = 2.10
     horizon = '3-5 ans'; conviction = 'FORTE'
   } else if (isVintage) {
-    mult1y = 1.05; mult3y = 1.20; mult5y = 1.50
+    mult1y = 1.06; mult3y = 1.24; mult5y = 1.58
     horizon = '4-6 ans'; conviction = 'MODÉRÉE'
 
   // ── Sets rares / promos limitées (cel25, smp…) ─────────────────
   } else if (isScarce && charTierVal === 'S') {
-    mult1y = 1.15; mult3y = 1.55; mult5y = 2.20
+    mult1y = 1.18; mult3y = 1.62; mult5y = 2.35
     horizon = '2-4 ans'; conviction = 'FORTE'
   } else if (isScarce) {
-    mult1y = 1.08; mult3y = 1.30; mult5y = 1.70
+    mult1y = 1.10; mult3y = 1.35; mult5y = 1.78
     horizon = '2-4 ans'; conviction = 'MODÉRÉE'
 
   // ── SIR/SAR (Illustration Rare Spéciale) hors impression ────────
-  // Les meilleures cartes modernes une fois le set arrêté (~18 mois après sortie)
+  // CAGR SIR OOP S-tier : +20%/an 1 an, +73% sur 3 ans (source: Cards N Packs index 2026)
   } else if (!isModernSV && isSIR && charTierVal === 'S') {
-    mult1y = 1.15; mult3y = 1.55; mult5y = 2.10
+    mult1y = 1.20; mult3y = 1.73; mult5y = 2.49
     horizon = '1-3 ans'; conviction = 'FORTE'
   } else if (!isModernSV && isSIR && charTierVal === 'A') {
-    mult1y = 1.10; mult3y = 1.40; mult5y = 1.85
+    mult1y = 1.12; mult3y = 1.45; mult5y = 1.95
     horizon = '2-4 ans'; conviction = 'MODÉRÉE'
   } else if (!isModernSV && isSIR) {
-    mult1y = 1.03; mult3y = 1.15; mult5y = 1.40
+    mult1y = 1.04; mult3y = 1.18; mult5y = 1.44
     horizon = '3-5 ans'; conviction = 'FAIBLE'
 
   // ── SIR/SAR SV encore en impression ─────────────────────────────
-  // Prudence : le marché est saturé, les prix peuvent baisser avant de remonter
+  // Pression baissière active — supply dépasse demande pendant la période d'impression
   } else if (isModernSV && isSIR && charTierVal === 'S') {
-    mult1y = 1.00; mult3y = 1.25; mult5y = 1.70
+    mult1y = 0.97; mult3y = 1.28; mult5y = 1.69
     horizon = '2-4 ans (attendre fin impression)'; conviction = 'MODÉRÉE'
   } else if (isModernSV && isSIR) {
-    mult1y = 0.95; mult3y = 1.10; mult5y = 1.40
+    mult1y = 0.82; mult3y = 0.96; mult5y = 1.15
     horizon = '3-5 ans'; conviction = 'FAIBLE'
 
   // ── Ultra Rare (ex, V, GX, VMAX) hors impression ────────────────
