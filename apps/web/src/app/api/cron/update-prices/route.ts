@@ -216,18 +216,22 @@ export async function GET(req: NextRequest) {
 
       const toCreateMds = toUpdate.filter(u => !mdById.has(u.dbCard.id))
       if (toCreateMds.length) {
-        const rarityRank = (r: string) => RARITY_RANK[r] ?? 2
+        const rrFn = (r: string) => RARITY_RANK[r] ?? 2
         await prisma.cardMarketData.createMany({
-          data: toCreateMds.map(u => ({
-            cardId: u.dbCard.id,
-            marketCap: u.norm.market * (10000),
-            priceChange24h: u.norm.change24h, priceChange7d: u.norm.change7d, priceChange30d: u.norm.change30d,
-            volatility30d: u.norm.volatility, investmentScore: 50,
-            rarityScore: Math.round(rarityRank(u.dbCard.rarity) * 10),
-            liquidityScore: u.norm.market > 50 ? 80 : u.norm.market > 10 ? 60 : 40,
-            trendDirection: (u.norm.change7d > 0.05 ? 'BULLISH' : u.norm.change7d < -0.05 ? 'BEARISH' : 'STABLE') as any,
-            allTimeHigh: u.norm.market, allTimeLow: u.norm.low,
-          })),
+          data: toCreateMds.map(u => {
+            const rr = rrFn(u.dbCard.rarity)
+            const score = computeInvestmentScore({ change7d: u.norm.change7d, change30d: u.norm.change30d, volatility: u.norm.volatility, rarityRank: rr, price: u.norm.market, rsi: 50 })
+            return {
+              cardId: u.dbCard.id,
+              marketCap: u.norm.market * 10000,
+              priceChange24h: u.norm.change24h, priceChange7d: u.norm.change7d, priceChange30d: u.norm.change30d,
+              volatility30d: u.norm.volatility, investmentScore: score, rsi14: 50,
+              rarityScore: Math.round(rr * 10),
+              liquidityScore: u.norm.market > 50 ? 80 : u.norm.market > 10 ? 60 : 40,
+              trendDirection: (u.norm.change7d > 0.05 ? 'BULLISH' : u.norm.change7d < -0.05 ? 'BEARISH' : 'STABLE') as any,
+              allTimeHigh: u.norm.market, allTimeLow: u.norm.low,
+            }
+          }),
           skipDuplicates: true,
         })
       }
@@ -235,6 +239,8 @@ export async function GET(req: NextRequest) {
       await Promise.all(
         toUpdate.filter(u => mdById.has(u.dbCard.id)).map(u => {
           const existing = mdById.get(u.dbCard.id)!
+          const rr = RARITY_RANK[u.dbCard.rarity] ?? 2
+          const score = computeInvestmentScore({ change7d: u.norm.change7d, change30d: u.norm.change30d, volatility: u.norm.volatility, rarityRank: rr, price: u.norm.market, rsi: 50 })
           const athUpdate: Record<string, any> = {}
           if (!existing.allTimeHigh || u.norm.market > Number(existing.allTimeHigh)) {
             athUpdate.allTimeHigh = u.norm.market; athUpdate.allTimeHighDate = new Date()
@@ -245,8 +251,9 @@ export async function GET(req: NextRequest) {
           return prisma.cardMarketData.update({
             where: { id: existing.id },
             data: {
+              marketCap: u.norm.market * 10000,
               priceChange24h: u.norm.change24h, priceChange7d: u.norm.change7d, priceChange30d: u.norm.change30d,
-              volatility30d: u.norm.volatility,
+              volatility30d: u.norm.volatility, investmentScore: score,
               trendDirection: (u.norm.change7d > 0.05 ? 'BULLISH' : u.norm.change7d < -0.05 ? 'BEARISH' : 'STABLE') as any,
               ...athUpdate,
             },
