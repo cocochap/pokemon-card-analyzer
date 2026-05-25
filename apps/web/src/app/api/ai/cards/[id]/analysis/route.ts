@@ -154,20 +154,22 @@ async function computeAnalysis(card: any) {
   const rawScore = Math.round(result.investmentScore * momentumWeight + profileScore * (1 - momentumWeight))
 
   // ── Targets structurels ───────────────────────────────────────────────────
-  const targets = buildTargets(currentPrice, ath, cTier, rarityW, scarce, era, athDrop)
+  const targets = buildTargets(currentPrice, ath, cTier, rarityW, scarce, era, athDrop, isOOP)
 
-  // ── Plafonnement du score par le rendement attendu ────────────────────────
-  // Un score élevé sur une carte qui va perdre de la valeur est un mensonge.
-  // Le rendement 1 an de buildTargets est la vérité structurelle — le score doit s'y conformer.
-  const ret1y = targets.mult1y - 1
+  // ── Plafonnement du score par le CAGR 3 ans ───────────────────────────────
+  // Les cartes Pokémon sont des actifs 3-5 ans, pas 1 an.
+  // On utilise le CAGR 3 ans comme vérité : une carte qui perd sur 3 ans est un mauvais investissement.
+  // Exemple : SIR Pikachu SV en impression → mult1y=0.97 (attente OOP) mais mult3y=1.28 (bon)
+  // → CAGR3 ≈ 8.6%/an → score plafonné à 78, pas 52.
+  const cagr3y = Math.pow(targets.mult3y, 1 / 3) - 1
   const scoreCap =
-    ret1y < -0.10 ? 30 :   // perte >10%/an → mauvais investissement
-    ret1y < -0.03 ? 42 :   // perte 3-10%/an → faible
-    ret1y < 0     ? 52 :   // perte <3%/an → légèrement négatif
-    ret1y < 0.05  ? 62 :   // 0-5%/an → marché neutre
-    ret1y < 0.10  ? 75 :   // 5-10%/an → correct
-    ret1y < 0.15  ? 85 :   // 10-15%/an → bien
-    92                      // 15%+/an → excellent (jamais 100 — aucun actif n'est garanti)
+    cagr3y < -0.05 ? 30 :  // perte >5%/an sur 3 ans → mauvais investissement
+    cagr3y < -0.01 ? 42 :  // perte 1-5%/an → faible
+    cagr3y < 0.03  ? 55 :  // flat → neutre
+    cagr3y < 0.07  ? 67 :  // 3-7%/an → marché
+    cagr3y < 0.12  ? 78 :  // 7-12%/an → bon
+    cagr3y < 0.18  ? 87 :  // 12-18%/an → très bon (SIR OOP S-tier)
+    92                      // 18%+/an → excellent (vintage S-tier)
   const investmentScore = Math.min(rawScore, scoreCap)
 
   // ── Prédictions enrichies ─────────────────────────────────────────────────
