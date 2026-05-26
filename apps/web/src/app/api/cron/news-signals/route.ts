@@ -11,8 +11,9 @@ export const runtime = 'nodejs'
 export const maxDuration = 120
 
 const RSS_SOURCES = [
-  { url: 'https://news.google.com/rss/search?q=pokemon+tcg+card+price+tournament&hl=en&gl=US&ceid=US:en', name: 'google_news_en' },
-  { url: 'https://news.google.com/rss/search?q=pokemon+carte+tournoi+prix+reprint&hl=fr&gl=FR&ceid=FR:fr', name: 'google_news_fr' },
+  { url: 'https://news.google.com/rss/search?q=pokemon+tcg+when:2d&hl=en&gl=US&ceid=US:en', name: 'google_news_en' },
+  { url: 'https://news.google.com/rss/search?q=pokemon+tcg+tournament+deck+when:2d&hl=en&gl=US&ceid=US:en', name: 'google_news_tournament' },
+  { url: 'https://news.google.com/rss/search?q=pokemon+carte+when:2d&hl=fr&gl=FR&ceid=FR:fr', name: 'google_news_fr' },
 ]
 
 const REDDIT_SOURCES = [
