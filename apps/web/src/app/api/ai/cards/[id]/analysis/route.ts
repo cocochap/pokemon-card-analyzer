@@ -154,7 +154,7 @@ async function computeAnalysis(card: any) {
   const rawScore = Math.round(result.investmentScore * momentumWeight + profileScore * (1 - momentumWeight))
 
   // ── Targets structurels ───────────────────────────────────────────────────
-  const targets = buildTargets(currentPrice, ath, cTier, rarityW, scarce, era, athDrop, isOOP)
+  const targets = buildTargets(currentPrice, ath, cTier, rarityW, scarce, era, athDrop, isOOP, card.variant === 'PROMO')
 
   // ── Plafonnement du score par le CAGR 3 ans ───────────────────────────────
   // Les cartes Pokémon sont des actifs 3-5 ans, pas 1 an.

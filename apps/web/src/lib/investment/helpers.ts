@@ -115,13 +115,15 @@ export function buildTargets(
   scarce: number,
   era: string,
   athDropPct: number,
-  isOOP = false,  // passé depuis route.ts — plus fiable que le proxy scarce
+  isOOP = false,
+  isPromo = false,
 ) {
   const isSIR     = rarityW >= 0.85   // Special/Hyper/Crown Rare
   const isUltra   = rarityW >= 0.55   // Ultra Rare, VMAX, VSTAR, ex...
   const isHolo    = rarityW >= 0.25   // Rare Holo+
   const isVintage = era === 'vintage'
-  const isScarce  = scarce >= 0.85    // Set rare / promos limitées
+  // Promos = supply fixe dès la sortie → traiter comme set rare/limité
+  const isScarce  = scarce >= 0.85 || (isPromo && scarce >= 0.60)
   // SV encore en impression = pas encore OOP (ex: set sorti il y a <14 mois)
   // Bug corrigé : un SV OOP (151, Failles Paradoxe…) ne doit PAS être traité comme "en impression"
   const isModernSV = era === 'sv' && !isOOP
