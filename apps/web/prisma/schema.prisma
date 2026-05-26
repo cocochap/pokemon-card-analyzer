@@ -261,6 +261,7 @@ model Card {
   salesHistory      SaleEvent[]
   popularityMetrics PopularityMetric[]
   investmentPicks   InvestmentPick[]
+  newsSignals       NewsSignal[]
 
   @@index([setId])
   @@index([name])
@@ -769,6 +770,31 @@ model InvestmentPick {
 // ============================================================
 // LEADERBOARD
 // ============================================================
+
+// ============================================================
+// NEWS SIGNALS — actualités marché influençant les prédictions
+// ============================================================
+
+model NewsSignal {
+  id          String   @id @default(cuid())
+  cardId      String?
+  source      String   // "pokebeach" | "limitless" | "cardmarket" | "serebii" | "reddit"
+  title       String
+  url         String
+  summary     String   @db.Text
+  sentiment   String   // "BULLISH" | "BEARISH" | "NEUTRAL"
+  eventType   String   // "REPRINT" | "TOURNAMENT_WIN" | "SET_ANNOUNCEMENT" | "META_SHIFT" | "MARKET" | "PROMO"
+  impact      Int      // -50 à +50 (ajustement score)
+  publishedAt DateTime
+  fetchedAt   DateTime @default(now())
+
+  card Card? @relation(fields: [cardId], references: [id], onDelete: SetNull)
+
+  @@index([cardId])
+  @@index([publishedAt])
+  @@index([source])
+  @@index([sentiment])
+}
 
 model LeaderboardEntry {
   id          String   @id @default(cuid())

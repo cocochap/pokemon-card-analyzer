@@ -5,6 +5,17 @@ import { scoreCard, ScoringInput } from '@/lib/ai/scorer'
 import { charTier, RARITY_W, scarcityScore, detectEra, buildTargets, investmentScoreFromProfile } from '@/lib/investment/helpers'
 import { subDays } from 'date-fns'
 
+interface NewsSignalItem {
+  title: string
+  url: string
+  sentiment: string
+  eventType: string
+  impact: number
+  source: string
+  publishedAt: string
+  summary: string
+}
+
 export const runtime = 'nodejs'
 
 const RARITY_MAP: Record<string, number> = {
@@ -46,6 +57,17 @@ async function computeAnalysis(card: any) {
   })
   const prices = history.map(h => Number(h.price))
   const currentPrice = prices.at(-1) ?? Number(card.prices[0]?.market ?? 0)
+
+  // ── Signaux d'actualités récents ─────────────────────────────────────────
+  const recentSignals = await prisma.newsSignal.findMany({
+    where: {
+      cardId: card.id,
+      publishedAt: { gte: subDays(now, 30) },
+    },
+    orderBy: { publishedAt: 'desc' },
+    take: 5,
+    select: { title: true, url: true, sentiment: true, eventType: true, impact: true, source: true, publishedAt: true, summary: true },
+  })
 
   // ── Ventes réelles (SaleEvent) ────────────────────────────────────────────
   const salesAll = await prisma.saleEvent.findMany({
@@ -173,7 +195,15 @@ async function computeAnalysis(card: any) {
     cagr3y < 0.12  ? 78 :  // 7-12%/an → bon
     cagr3y < 0.18  ? 87 :  // 12-18%/an → très bon (SIR OOP S-tier)
     92                      // 18%+/an → excellent (vintage S-tier)
-  const investmentScore = Math.min(rawScore, scoreCap)
+  // Ajustement news : ±8 pts max selon impact des signaux récents
+  const newsAdj = Math.max(-8, Math.min(8, Math.round(
+    recentSignals.reduce((acc, sig) => {
+      if (sig.sentiment === 'BULLISH' && sig.impact > 5) return acc + Math.min(sig.impact * 0.06, 4)
+      if (sig.sentiment === 'BEARISH' && sig.impact < -5) return acc - Math.min(Math.abs(sig.impact) * 0.06, 4)
+      return acc
+    }, 0)
+  )))
+  const investmentScore = Math.max(1, Math.min(scoreCap, rawScore + newsAdj))
 
   // ── Prédictions enrichies ─────────────────────────────────────────────────
   // roi30d réel : priorité aux ventes > historique > 0
@@ -228,6 +258,13 @@ async function computeAnalysis(card: any) {
     bullishSignals.push(`${athDrop.toFixed(0)}% sous ATH (${ath.toFixed(2)}€) — potentiel de recovery élevé`)
   }
 
+  // ── Signaux d'actualités → labels bullish/bearish ────────────────────────
+  for (const sig of recentSignals) {
+    const label = `[Actu] ${sig.title.slice(0, 80)}`
+    if (sig.sentiment === 'BULLISH' && sig.impact > 5) bullishSignals.push(label)
+    else if (sig.sentiment === 'BEARISH' && sig.impact < -5) bearishSignals.push(label)
+  }
+
   // ── Confidence globale ────────────────────────────────────────────────────
   const dataQuality = Math.min(1, (prices.length / 30) * 0.5 + (salesCount90d > 0 ? 0.3 : 0) + (populationPsa10 < 999 ? 0.2 : 0))
   const confidenceScore = +(0.35 + dataQuality * 0.40).toFixed(4)
@@ -280,11 +317,21 @@ async function computeAnalysis(card: any) {
       t1y: targets.t1y, t3y: targets.t3y, t5y: targets.t5y,
       conviction: targets.conviction, horizon: targets.horizon,
     },
-    modelVersion: 'scorer-ts-v3',
+    modelVersion: 'scorer-ts-v4',
     updatedAt: new Date().toISOString(),
+    recentNews: recentSignals.map((s): NewsSignalItem => ({
+      title: s.title,
+      url: s.url,
+      sentiment: s.sentiment,
+      eventType: s.eventType,
+      impact: s.impact,
+      source: s.source,
+      publishedAt: s.publishedAt.toISOString(),
+      summary: s.summary,
+    })),
     dataSources: buildDataSources({
       pricesLength: prices.length, salesCount90d, populationPsa10, era, isOOP,
-      cTier, rarityW, salesCount30d,
+      cTier, rarityW, salesCount30d, newsCount: recentSignals.length,
     }),
   }
 }
@@ -293,6 +340,7 @@ async function computeAnalysis(card: any) {
 function buildDataSources(p: {
   pricesLength: number; salesCount90d: number; populationPsa10: number
   era: string; isOOP: boolean; cTier: string; rarityW: number; salesCount30d: number
+  newsCount?: number
 }): Array<{ label: string; detail: string }> {
   const sources: Array<{ label: string; detail: string }> = []
 
@@ -321,6 +369,10 @@ function buildDataSources(p: {
     sources.push({ label: 'Cards N Packs · PokeInsider', detail: 'CAGR SIR OOP A-tier : 10-14%/an · B-tier : 4%/an (données marché secondaire 2020-2026)' })
   } else {
     sources.push({ label: 'PokeInvesting.com', detail: 'Ultra Rare OOP hors mascotte : flat à +2%/an · seuls Charizard/Pikachu s\'apprécient significativement' })
+  }
+
+  if (p.newsCount && p.newsCount > 0) {
+    sources.push({ label: 'Actualités marché', detail: `${p.newsCount} signal${p.newsCount > 1 ? 's' : ''} d'actualités TCG analysés (PokeBeach · PokéGuardian · Reddit)` })
   }
 
   // Méthodologie fixe

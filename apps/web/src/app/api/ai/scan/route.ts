@@ -16,27 +16,29 @@ export const maxDuration = 60
 // Prompt unique — extrait tout ce dont on a besoin pour identifier la carte
 const PROMPT_IDENTIFY = `You are identifying a Pokémon TCG card from this image.
 
-Look at the BOTTOM of the card. You will see either:
-- A regular card: "006/165" (number/total)
-- A promo card: "SVP 173" or "SWSH001" (set code + number, no slash)
-- A special card: "SV107/SV122" (prefixed number/total)
+Step 1 — look at the BOTTOM of the card for the collector number:
+- Regular card: "006/165" or "025/078" → number/total format
+- Promo with space: "SVP 173" or "SWSH 098" → set prefix + space + digits
+- Promo no space: "SVP173" or "SWSH098" → prefix merged with digits
+- Special: "SV107/SV122" or "TG01/TG30" → prefixed number/total
+- Secret rare: "166/165" → number higher than total, still write both
 
-Also look at the TOP for the Pokémon name.
+Step 2 — look at the TOP for the Pokémon name in both languages if visible.
 
-Return ONLY this JSON:
+Return ONLY valid JSON, no markdown, no explanation:
 {
   "collector": "006/165",
-  "setCode": "",
+  "setCode": "SVP",
   "frName": "Dracaufeu ex",
   "enName": "Charizard ex"
 }
 
-Rules:
-- collector: the FULL text at the bottom exactly as shown ("006/165", "SVP 173", "SV107/SV122", "SWSH001")
-- setCode: the set abbreviation if visible near the number ("SVP", "SWSH", "SMP", "XYP", etc.) — leave "" if not visible separately
-- frName: Pokémon name as printed on card (French if FR card)
-- enName: English name always (Eevee, Charizard ex, Pikachu VMAX...)
-- Use "" for any field not found`
+Field rules:
+- collector: copy the EXACT text at the bottom ("SVP 173", "006/165", "TG01/TG30") — never invent or truncate
+- setCode: the 2-6 letter set code near the number if it appears SEPARATELY from the collector ("SVP", "SWSH", "SMP", "XYP", "BW", "XY") — use "" if already part of collector or not visible
+- frName: name as printed on card (use French if the card is French)
+- enName: English Pokémon name (Charizard, Pikachu, Eevee, Charizard ex, Pikachu VMAX)
+- Use "" for any field you cannot read clearly`
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
 function normalizeName(name: string): string {
@@ -74,7 +76,7 @@ function parseTotal(raw: string): number | null {
   const s = (raw ?? '').split('/')[1]?.trim() ?? raw?.trim()
   if (!s || /[A-Za-z]/.test(s)) return null
   const n = parseInt(s, 10)
-  return n > 0 && n <= 500 ? n : null
+  return n > 0 && n <= 700 ? n : null
 }
 
 function ptcgioToDbId(id: string): string {
@@ -201,7 +203,10 @@ async function findCard(
     if (rows.length > 1) {
       const scored = rows.map(c => ({ c, s: matchScore(c, num, enName, frName, total) })).sort((a, b) => b.s - a.s)
       console.log(`[scan] S1 ${rows.length} résultats, best="${scored[0].c.name}" score=${scored[0].s}`)
-      return scored[0].c
+      // Exiger un score minimum pour éviter de retourner une mauvaise carte
+      if (scored[0].s >= 35 || rows.length === 1) return scored[0].c
+      // Si score trop bas mais nom connu, continuer vers S3
+      if (!enName && !frName) return scored[0].c
     }
   }
 
@@ -266,8 +271,7 @@ async function findCard(
     if (byNum.length > 1) {
       const scored = byNum.map(c => ({ c, s: matchScore(c, num, enName, frName, total) })).sort((a, b) => b.s - a.s)
       if (scored[0].s >= 20) { console.log(`[scan] ✅ S4 "${scored[0].c.name}" score=${scored[0].s}`); return scored[0].c }
-      // Avec un nom dispo mais mauvais score → ne pas retourner une mauvaise carte par défaut
-      if (!enName && !frName) { console.log(`[scan] S4 sans nom, fallback date "${byNum[0].name}"`); return byNum[0] }
+      // Sans nom ET score faible : ne pas retourner n'importe quoi, laisser ptcgio tenter
       console.log(`[scan] S4 score trop bas (${scored[0].s}), laisse ptcgio tenter`)
       return null
     }

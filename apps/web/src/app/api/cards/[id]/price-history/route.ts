@@ -52,15 +52,22 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       select: { price: true, recordedAt: true, volume: true },
     })
 
-    const prices = history.map((h) => ({
+    // Dédoublonner par jour (garder le dernier enregistrement du jour)
+    const byDay = new Map<string, typeof history[0]>()
+    for (const h of history) {
+      byDay.set(h.recordedAt.toISOString().slice(0, 10), h)
+    }
+    const deduped = Array.from(byDay.values())
+
+    const prices = deduped.map((h) => ({
       time: Math.floor(h.recordedAt.getTime() / 1000),
       value: Number(h.price),
     }))
 
-    const volumes = history.map((h, i) => ({
+    const volumes = deduped.map((h, i) => ({
       time: Math.floor(h.recordedAt.getTime() / 1000),
       value: h.volume ?? 0,
-      color: i > 0 && Number(h.price) >= Number(history[i - 1].price)
+      color: i > 0 && Number(h.price) >= Number(deduped[i - 1].price)
         ? 'rgba(34,197,94,0.4)'
         : 'rgba(239,68,68,0.4)',
     }))
@@ -77,14 +84,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       ? ((prices.at(-1)!.value - prices[0].value) / prices[0].value) * 100
       : 0
 
-    // Candles groupées par jour
-    const byDay = new Map<string, number[]>()
+    // Candles groupées par jour (utilise history brut pour agréger les variations intra-jour)
+    const candleMap = new Map<string, number[]>()
     history.forEach((h) => {
       const day = h.recordedAt.toISOString().slice(0, 10)
-      if (!byDay.has(day)) byDay.set(day, [])
-      byDay.get(day)!.push(Number(h.price))
+      if (!candleMap.has(day)) candleMap.set(day, [])
+      candleMap.get(day)!.push(Number(h.price))
     })
-    const candles = Array.from(byDay.entries()).map(([time, p]) => ({
+    const candles = Array.from(candleMap.entries()).map(([time, p]) => ({
       time,
       open: p[0],
       high: Math.max(...p),

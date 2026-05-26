@@ -261,7 +261,9 @@ export async function GET(req: NextRequest) {
         })
       )
 
-      // ── PriceHistory (1 point par carte pour aujourd'hui) ─────────
+      // ── PriceHistory (aujourd'hui + backfill avg7/avg30) ─────────
+      const day7 = subDays(today, 7)
+      const day30 = subDays(today, 30)
       const existingToday = await prisma.priceHistory.findMany({
         where: { cardId: { in: cardIds }, source: 'cardmarket', recordedAt: { gte: today } },
         select: { cardId: true },
@@ -273,6 +275,39 @@ export async function GET(req: NextRequest) {
           data: newHistory.map(u => ({
             cardId: u.dbCard.id, source: 'cardmarket', variant: 'NORMAL', currency: 'EUR',
             price: u.norm.market, recordedAt: today,
+          })),
+          skipDuplicates: true,
+        })
+      }
+
+      // Backfill avg7 (prix il y a 7j) et avg30 (prix il y a 30j) si pas encore en base
+      const existing7 = await prisma.priceHistory.findMany({
+        where: { cardId: { in: cardIds }, source: 'cardmarket', recordedAt: { gte: day7, lt: subDays(today, 6) } },
+        select: { cardId: true },
+      })
+      const existing30 = await prisma.priceHistory.findMany({
+        where: { cardId: { in: cardIds }, source: 'cardmarket', recordedAt: { gte: day30, lt: subDays(today, 29) } },
+        select: { cardId: true },
+      })
+      const has7Set = new Set(existing7.map(h => h.cardId))
+      const has30Set = new Set(existing30.map(h => h.cardId))
+
+      const backfill7 = toUpdate.filter(u => u.norm.avg7 > 0 && !has7Set.has(u.dbCard.id))
+      const backfill30 = toUpdate.filter(u => u.norm.avg30 > 0 && !has30Set.has(u.dbCard.id))
+      if (backfill7.length) {
+        await prisma.priceHistory.createMany({
+          data: backfill7.map(u => ({
+            cardId: u.dbCard.id, source: 'cardmarket', variant: 'NORMAL', currency: 'EUR',
+            price: u.norm.avg7, recordedAt: day7,
+          })),
+          skipDuplicates: true,
+        })
+      }
+      if (backfill30.length) {
+        await prisma.priceHistory.createMany({
+          data: backfill30.map(u => ({
+            cardId: u.dbCard.id, source: 'cardmarket', variant: 'NORMAL', currency: 'EUR',
+            price: u.norm.avg30, recordedAt: day30,
           })),
           skipDuplicates: true,
         })

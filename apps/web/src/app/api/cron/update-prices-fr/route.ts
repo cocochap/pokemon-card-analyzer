@@ -112,37 +112,41 @@ export async function GET(req: NextRequest) {
     if (!seriesData) { stats.errors++; continue }
 
     const pokecardexCards: any[] = seriesData.cartes ?? []
-    // Prioriser les cartes qui n'ont pas de prix ou dont le prix est vieux (> 23h)
     const threshold = new Date(Date.now() - 23 * 60 * 60 * 1000)
-
-    const cardsToUpdate = pokecardexCards.slice(0, CARDS_PER_SET)
     stats.sets++
 
-    for (const pcCard of cardsToUpdate) {
+    // Construire une map num_card → pokecardex card pour lookup rapide
+    const pcByNum = new Map<string, any>()
+    for (const pc of pokecardexCards) {
+      const num = String(pc.num_card ?? '').trim()
+      if (num) {
+        pcByNum.set(num, pc)
+        pcByNum.set(num.replace(/^0+(?=[0-9])/, ''), pc)
+        pcByNum.set(num.padStart(3, '0'), pc)
+      }
+    }
+
+    // Trouver les cartes du set en DB qui n'ont PAS été mises à jour récemment
+    const dbCards = await prisma.card.findMany({
+      where: { setId: dbSet.id },
+      select: { id: true, rarity: true, number: true },
+    })
+    const recentPrices = await prisma.cardPrice.findMany({
+      where: { cardId: { in: dbCards.map(c => c.id) }, source: 'cardmarket', fetchedAt: { gte: threshold } },
+      select: { cardId: true },
+    })
+    const recentSet = new Set(recentPrices.map(p => p.cardId))
+    const needsUpdate = dbCards.filter(c => !recentSet.has(c.id)).slice(0, CARDS_PER_SET)
+
+    let setUpdated = 0
+    for (const dbCard of needsUpdate) {
       if (Date.now() - startedAt > TIMEOUT) break
 
-      const numCard = String(pcCard.num_card ?? '').trim()
-      const idCard  = pcCard.id_card as number
-      if (!numCard || !idCard) continue
+      const pcCard = pcByNum.get(dbCard.number ?? '') ?? pcByNum.get((dbCard.number ?? '').replace(/^0+(?=[0-9])/, ''))
+      if (!pcCard?.id_card) { stats.errors++; continue }
 
       try {
-        const numClean = numCard.replace(/^0+(?=[0-9])/, '')
-        const dbCard = await prisma.card.findFirst({
-          where: {
-            setId: dbSet.id,
-            OR: [{ number: numCard }, { number: numClean }, { number: numCard.padStart(3, '0') }],
-          },
-          select: { id: true, rarity: true },
-        })
-        if (!dbCard) { stats.errors++; continue }
-
-        // Vérifier si le prix est récent
-        const recent = await prisma.cardPrice.findFirst({
-          where: { cardId: dbCard.id, source: 'cardmarket', fetchedAt: { gte: threshold } },
-        })
-        if (recent) continue  // Déjà à jour
-
-        const prices = await fetchCardPrice(idCard)
+        const prices = await fetchCardPrice(pcCard.id_card)
         if (!prices || !prices.trendPrice) { await sleep(300); continue }
 
         await upsertPrice(
@@ -154,11 +158,12 @@ export async function GET(req: NextRequest) {
         )
         stats.updated++
         stats.cards++
+        setUpdated++
         await sleep(600)  // Rate limiting
       } catch { stats.errors++ }
     }
 
-    console.log(`✅ ${code}: ${CARDS_PER_SET} cartes traitées`)
+    console.log(`✅ ${code}: ${setUpdated}/${needsUpdate.length} cartes mises à jour`)
     await sleep(500)
   }
 

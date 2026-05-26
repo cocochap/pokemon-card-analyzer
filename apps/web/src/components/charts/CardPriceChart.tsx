@@ -75,14 +75,17 @@ export function CardPriceChart({ cardId }: { cardId: string }) {
   const priceChange: number = data && 'priceChange' in (data as any) ? Number((data as any).priceChange) : 0
   const rsi: number = data && 'rsi' in (data as any) ? Number((data as any).rsi) : 50
 
-  // Merger prix + MA20 en un seul tableau
+  // Merger prix + MA20 en un seul tableau, dédupliqué par jour (dernier prix du jour)
   const chartData = useMemo(() => {
     const maMap = new Map(rawMA20.map((m) => [m.time, m.value]))
-    return rawPrices.map((d) => ({
-      date: new Date(d.time * 1000).toLocaleDateString(locale === 'fr' ? 'fr-FR' : 'en-US', {
-        month: 'short',
-        day: 'numeric',
-      }),
+    const fmt = (t: number) => new Date(t * 1000).toLocaleDateString(locale === 'fr' ? 'fr-FR' : 'en-US', { month: 'short', day: 'numeric' })
+    // Garder le dernier prix par jour
+    const byDate = new Map<string, { time: number; value: number }>()
+    for (const d of rawPrices) {
+      byDate.set(fmt(d.time), d)
+    }
+    return Array.from(byDate.values()).map((d) => ({
+      date: fmt(d.time),
       price: +d.value.toFixed(2),
       ma20: maMap.has(d.time) ? +maMap.get(d.time)!.toFixed(2) : null,
     }))
@@ -92,6 +95,7 @@ export function CardPriceChart({ cardId }: { cardId: string }) {
   const startPrice = chartData[0]?.price ?? 0
   const isPositive = priceChange >= 0
   const color = isPositive ? '#22C55E' : '#EF4444'
+  const isSparse = chartData.length < 10
 
   const RANGES: { key: Range; label: string; locked: boolean }[] = [
     { key: '7d',  label: t.chart.range7d,  locked: false },
@@ -218,8 +222,9 @@ export function CardPriceChart({ cardId }: { cardId: string }) {
                 stroke={color}
                 strokeWidth={2}
                 fill="url(#priceGrad)"
-                dot={false}
+                dot={isSparse ? { r: 3.5, fill: color, strokeWidth: 0 } : false}
                 activeDot={{ r: 4, strokeWidth: 0, fill: color }}
+                connectNulls
               />
               {showMA && (
                 <Line
