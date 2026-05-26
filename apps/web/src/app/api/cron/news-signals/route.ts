@@ -11,9 +11,13 @@ export const runtime = 'nodejs'
 export const maxDuration = 120
 
 const RSS_SOURCES = [
-  { url: 'https://www.pokebeach.com/feed/', name: 'pokebeach' },
-  { url: 'https://www.pokeguardian.com/feed', name: 'pokeguardian' },
-  { url: 'https://www.reddit.com/r/pkmntcg/top/.rss?t=day', name: 'reddit' },
+  { url: 'https://news.google.com/rss/search?q=pokemon+tcg+card+price+tournament&hl=en&gl=US&ceid=US:en', name: 'google_news_en' },
+  { url: 'https://news.google.com/rss/search?q=pokemon+carte+tournoi+prix+reprint&hl=fr&gl=FR&ceid=FR:fr', name: 'google_news_fr' },
+]
+
+const REDDIT_SOURCES = [
+  'https://www.reddit.com/r/pkmntcg/hot.json?limit=15',
+  'https://www.reddit.com/r/PokemonTCG/hot.json?limit=10',
 ]
 
 const MAX_ARTICLES_PER_RUN = 12
@@ -97,6 +101,28 @@ function parseRssXml(xml: string, source: string): RssItem[] {
     items.push({ title, url: url.trim(), description, publishedAt: parsedDate, source })
   }
   return items
+}
+
+// ── Reddit JSON fetching ─────────────────────────────────────────────────────
+
+async function fetchRedditJson(url: string): Promise<RssItem[]> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'PokeMarket/1.0 market-intelligence-bot' },
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!res.ok) return []
+    const json = await res.json()
+    const posts: RssItem[] = []
+    for (const child of (json?.data?.children ?? [])) {
+      const p = child?.data
+      if (!p?.title || !p?.url || !p.url.startsWith('http')) continue
+      const publishedAt = p.created_utc ? new Date(p.created_utc * 1000) : new Date()
+      const description = (p.selftext ?? '').slice(0, 600)
+      posts.push({ title: p.title, url: p.url, description, publishedAt, source: 'reddit' })
+    }
+    return posts
+  } catch { return [] }
 }
 
 // ── Gemini text analysis ──────────────────────────────────────────────────────
@@ -202,8 +228,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'GEMINI_API_KEY not configured' }, { status: 500 })
   }
 
-  // 1. Fetch all RSS sources in parallel
-  const allItems = (await Promise.all(RSS_SOURCES.map(fetchRss))).flat()
+  // 1. Fetch all sources in parallel (RSS + Reddit JSON)
+  const [rssItems, redditItems] = await Promise.all([
+    Promise.all(RSS_SOURCES.map(fetchRss)).then(r => r.flat()),
+    Promise.all(REDDIT_SOURCES.map(fetchRedditJson)).then(r => r.flat()),
+  ])
+  const allItems = [...rssItems, ...redditItems]
 
   // 2. Keep only last 48h
   const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000)
