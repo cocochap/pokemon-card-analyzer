@@ -9,8 +9,9 @@ export const runtime = 'nodejs'
 
 const RARITY_MAP: Record<string, number> = {
   CROWN_RARE: 10, HYPER_RARE: 9, SPECIAL_ILLUSTRATION_RARE: 9, ILLUSTRATION_RARE: 8,
-  RARE_SECRET: 8, RARE_RAINBOW: 7, RARE_ULTRA: 7, RARE_HOLO_VSTAR: 6, RARE_HOLO_VMAX: 6,
-  RARE_HOLO_V: 5, RARE_HOLO: 5, RARE: 4, UNCOMMON: 3, COMMON: 2,
+  RARE_SECRET: 8, RARE_RAINBOW: 7, RARE_SHINY_GX: 7, LEGEND: 7,
+  RARE_ULTRA: 7, RARE_HOLO_VSTAR: 6, RARE_HOLO_VMAX: 6, RARE_HOLO_EX: 6, RARE_HOLO_GX: 6,
+  AMAZING_RARE: 6, RARE_HOLO_V: 5, RARE_HOLO: 5, RARE: 4, UNCOMMON: 3, COMMON: 2,
 }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -102,7 +103,9 @@ async function computeAnalysis(card: any) {
     vol30 = md?.volatility30d ? Number(md.volatility30d) : 0.35
   }
 
-  const rsi = computeRSI(prices.length >= 15 ? prices : []) ?? (md?.rsi14 ? Number(md.rsi14) : 50)
+  // Priorité : RSI calculé sur l'historique réel > valeur DB > 50 (neutre)
+  const rsiComputed = prices.length >= 15 ? computeRSI(prices) : null
+  const rsi = rsiComputed ?? (md?.rsi14 ? Number(md.rsi14) : 50)
 
   // ── Population PSA 10 ─────────────────────────────────────────────────────
   const psaPop = await prisma.psaPopulation.findFirst({

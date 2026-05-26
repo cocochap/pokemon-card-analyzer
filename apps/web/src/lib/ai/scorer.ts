@@ -161,7 +161,9 @@ function momentumScore(inp: ScoringInput): number {
 // ── Scarcity (20%) ────────────────────────────────────────────────────────────
 // Calibré sur PSA Population Reports et prime shadowless documentée (300-400%)
 function scarcityScore(inp: ScoringInput): number {
-  let s = inp.rarityRank * 10
+  // Multiplier réduit à 6 (au lieu de 10) pour laisser de la place aux bonus PSA/variant
+  // Avec * 10, les cartes Crown/SIR (rank 9-10) atteignaient 90-100 avant tout bonus → bonus ignorés
+  let s = inp.rarityRank * 6
 
   // PSA 10 population — sweet spot investissable : <1000 à 24 mois (source: PokeInsider 2026)
   // Seuils PSA calibrés sur données professionnelles (source: PokeInsider/Ravaver 2026)
@@ -286,7 +288,7 @@ function extractSignals(inp: ScoringInput) {
     bearishSignals.push('OOP récent (<2 ans) — risque de réimpression surprise par TPC à surveiller')
 
   // Fenêtre pré-OOP : cartes SV 12-20 mois = zone d'accumulation avant fin impression
-  if (!inp.isOOP && inp.setAgeDays >= 365 && inp.setAgeDays <= 600 && inp.rarityRank >= 8)
+  if (!inp.isOOP && inp.setAgeDays >= 365 && inp.setAgeDays <= 600 && inp.rarityRank >= 7)
     bullishSignals.push('Fenêtre pré-OOP : set approchant la fin d\'impression — zone d\'accumulation historique')
 
   // Supply plafond PSA (Umbreon ex Prismatic : 4418 PSA 10 = upside plafonné)

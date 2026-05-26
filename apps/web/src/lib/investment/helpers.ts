@@ -50,9 +50,19 @@ export function scarcityScore(exId: string, rarity: string): number {
 export function detectEra(exId: string, series: string | null): 'vintage' | 'old' | 'swsh' | 'sv' | 'modern' {
   if (VINTAGE_SERIES.has(exId)) return 'vintage'
   const s = (series ?? '').toLowerCase()
-  if (s.includes('écarlate') || s.includes('scarlet') || exId.startsWith('sv')) return 'sv'
-  if (s.includes('épée') || s.includes('sword') || exId.startsWith('swsh')) return 'swsh'
+  const id = exId.toLowerCase()
+  if (s.includes('écarlate') || s.includes('scarlet') || id.startsWith('sv')) return 'sv'
+  if (s.includes('épée') || s.includes('sword') || id.startsWith('swsh')) return 'swsh'
+  // XY / Soleil-Lune / Sun-Moon
   if (s.includes('xy') || s.includes('sol') || s.includes('sun') || s.includes('lune') || s.includes('moon')) return 'old'
+  // Noir-Blanc / Black-White (2010-2013)
+  if (s.includes('noir') || s.includes('black') || s.includes('blanc') || s.includes('white') || id.startsWith('bw')) return 'old'
+  // HeartGold SoulSilver (2009-2011)
+  if (s.includes('heartgold') || s.includes('soulsilver') || s.includes('or') || s.includes('argent') || id.startsWith('hgss')) return 'old'
+  // Diamant-Perle / Diamond-Pearl / Platine (2006-2009)
+  if (s.includes('diamond') || s.includes('pearl') || s.includes('platinum') || s.includes('diamant') || s.includes('perle') || s.includes('platine') || id.startsWith('dp') || id.startsWith('pl')) return 'old'
+  // Série EX (2003-2007) — borderline vintage/old, traité comme 'old'
+  if (s.includes(' ex') || id.startsWith('ex')) return 'old'
   return 'modern'
 }
 
