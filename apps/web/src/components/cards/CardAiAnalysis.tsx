@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import {
   ArrowDownRight, ArrowUpRight, Brain, CheckCircle2,
-  Loader2, Minus, TrendingDown, TrendingUp, XCircle, Zap,
+  ExternalLink, Loader2, Minus, TrendingDown, TrendingUp, XCircle, Zap,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { api } from '@/lib/api'
@@ -212,8 +212,25 @@ export function CardAiAnalysis({ cardId }: { cardId: string }) {
         </div>
       </div>
 
-      <div className="px-5 py-3 border-t border-white/10">
-        <p className="text-xs text-muted-foreground/50">
+      {/* Sources */}
+      <div className="px-5 py-4 border-t border-white/10 space-y-3">
+        {data.dataSources?.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <ExternalLink className="w-3 h-3" />
+              Sources & estimation
+            </p>
+            <div className="space-y-1.5">
+              {data.dataSources.map((src: { label: string; detail: string }, i: number) => (
+                <div key={i} className="flex items-start gap-2 text-xs">
+                  <span className="font-semibold text-white/55 shrink-0 min-w-[110px]">{src.label}</span>
+                  <span className="text-white/35 leading-relaxed">{src.detail}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <p className="text-xs text-white/25">
           {data.modelVersion} · {t.card.notFinancialAdvice}
         </p>
       </div>

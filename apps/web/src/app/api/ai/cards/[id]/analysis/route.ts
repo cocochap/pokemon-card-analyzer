@@ -282,7 +282,51 @@ async function computeAnalysis(card: any) {
     },
     modelVersion: 'scorer-ts-v3',
     updatedAt: new Date().toISOString(),
+    dataSources: buildDataSources({
+      pricesLength: prices.length, salesCount90d, populationPsa10, era, isOOP,
+      cTier, rarityW, salesCount30d,
+    }),
   }
+}
+
+// ── Sources de données ────────────────────────────────────────────────────────
+function buildDataSources(p: {
+  pricesLength: number; salesCount90d: number; populationPsa10: number
+  era: string; isOOP: boolean; cTier: string; rarityW: number; salesCount30d: number
+}): Array<{ label: string; detail: string }> {
+  const sources: Array<{ label: string; detail: string }> = []
+
+  // Données de prix réelles
+  if (p.pricesLength > 0) {
+    sources.push({ label: 'Cardmarket', detail: `${p.pricesLength} jour${p.pricesLength > 1 ? 's' : ''} d'historique de prix (Europe)` })
+  }
+  if (p.salesCount90d > 0) {
+    sources.push({ label: 'Ventes réelles', detail: `${p.salesCount90d} transaction${p.salesCount90d > 1 ? 's' : ''} tracées sur 90 jours` })
+  }
+  if (p.populationPsa10 < 999) {
+    sources.push({ label: 'PSA Population Report', detail: `${p.populationPsa10} copie${p.populationPsa10 > 1 ? 's' : ''} PSA 10 soumises` })
+  }
+
+  // Référence CAGR selon l'ère/catégorie
+  const isSIR = p.rarityW >= 0.85
+  if (p.era === 'vintage') {
+    sources.push({ label: 'CardLadder · Cards N Packs', detail: 'Index Pokémon +3 261% depuis 2004 · CAGR Charizard Base PSA 10 : 34-37%/an (2015-2025)' })
+  } else if (p.era === 'swsh' && isSIR) {
+    sources.push({ label: 'SportsCardInvestor · Cards N Packs', detail: 'CAGR Umbreon VMAX Alt Art PSA 10 : ~54%/an · panier SWSH Alt Art OOP : 25-45%/an' })
+  } else if (p.era === 'sv' && p.isOOP && isSIR) {
+    sources.push({ label: 'PokeInsider · Ravaver 2026', detail: 'CAGR SIR OOP mascotte (Charizard ex 151) : $90→$410 en 3 ans · rotation Standard printemps 2026' })
+  } else if (p.era === 'sv' && !p.isOOP) {
+    sources.push({ label: 'PokeInvesting · Ravaver 2026', detail: 'Cartes en impression : flat à -20% jusqu\'à l\'arrêt du set · seuil investissable : <500 PSA 10' })
+  } else if (isSIR) {
+    sources.push({ label: 'Cards N Packs · PokeInsider', detail: 'CAGR SIR OOP A-tier : 10-14%/an · B-tier : 4%/an (données marché secondaire 2020-2026)' })
+  } else {
+    sources.push({ label: 'PokeInvesting.com', detail: 'Ultra Rare OOP hors mascotte : flat à +2%/an · seuls Charizard/Pikachu s\'apprécient significativement' })
+  }
+
+  // Méthodologie fixe
+  sources.push({ label: 'Méthodologie', detail: 'Pondération : Fondamentaux 35% · Momentum 25% · Rareté 20% · Liquidité 15% · Technique 5%' })
+
+  return sources
 }
 
 // ── Prédictions multi-horizon cohérentes ──────────────────────────────────────
