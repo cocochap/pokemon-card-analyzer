@@ -7,7 +7,7 @@ import { usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { SignInButton, SignedIn, SignedOut, UserButton } from '@clerk/nextjs'
 import {
-  BarChart3, Bell, Briefcase, Camera, Home, Menu, Package, Search,
+  BarChart3, Bell, Briefcase, Camera, Home, Menu, Newspaper, Package, Search,
   ShoppingBag, Sparkles, Trophy, TrendingUp, X, Zap,
 } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -30,6 +30,7 @@ export function Navbar() {
     { href: '/sets',      label: t.nav.sets,      icon: TrendingUp },
     { href: '/portfolio', label: t.nav.portfolio, icon: Briefcase },
     { href: '/ai',        label: t.nav.aiInsights,icon: Sparkles, badge: 'AI' },
+    { href: '/news',        label: 'Actualités',   icon: Newspaper },
     { href: '/deal',        label: 'Deal Vinted',  icon: ShoppingBag, badge: 'NEW' },
     { href: '/leaderboard', label: 'Classement',   icon: Trophy },
     { href: '/sealed',      label: 'Coffrets',     icon: Package },
