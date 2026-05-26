@@ -132,77 +132,82 @@ export function buildTargets(
   let horizon: string
   let conviction: 'FORTE' | 'MODÉRÉE' | 'FAIBLE'
 
-  // ── Vintage (Base Set, Neo, E-Card…) ────────────────────────────
-  // CAGR réel documenté : Charizard Base +18-22%/an sur 5 ans (Charizard Price Tracker 2026)
+  // ── Vintage WOTC (Base Set, Neo, E-Card…) ───────────────────────
+  // Sources : CardLadder Pokemon Index +3261% depuis 2004 ; Charizard Base PSA 10 CAGR
+  // 2015-2025 ~34-37%/an (1st Ed) ; CAGR conservateur sur panier diversifié : 15-25%/an
   if (isVintage && charTierVal === 'S') {
-    mult1y = 1.22; mult3y = 1.82; mult5y = 2.70
+    mult1y = 1.22; mult3y = 1.82; mult5y = 2.70  // 22%/an — Charizard/Pikachu vintage
     horizon = '3-5 ans'; conviction = 'FORTE'
   } else if (isVintage && charTierVal === 'A') {
-    mult1y = 1.12; mult3y = 1.48; mult5y = 2.10
+    mult1y = 1.10; mult3y = 1.33; mult5y = 1.61  // 10%/an — personnages A-tier vintage
     horizon = '3-5 ans'; conviction = 'FORTE'
   } else if (isVintage) {
-    mult1y = 1.06; mult3y = 1.24; mult5y = 1.58
-    horizon = '4-6 ans'; conviction = 'MODÉRÉE'
+    mult1y = 1.06; mult3y = 1.19; mult5y = 1.34  // 6%/an — bulk vintage WOTC
+    horizon = '5-8 ans'; conviction = 'MODÉRÉE'
 
   // ── Sets rares / promos limitées (cel25, smp…) ─────────────────
   } else if (isScarce && charTierVal === 'S') {
-    mult1y = 1.18; mult3y = 1.62; mult5y = 2.35
+    mult1y = 1.18; mult3y = 1.62; mult5y = 2.35  // 19%/an — promo iconique mascotte
     horizon = '2-4 ans'; conviction = 'FORTE'
   } else if (isScarce) {
-    mult1y = 1.10; mult3y = 1.35; mult5y = 1.78
+    mult1y = 1.10; mult3y = 1.33; mult5y = 1.61  // 10%/an — promo populaire
     horizon = '2-4 ans'; conviction = 'MODÉRÉE'
 
-  // ── SIR/SAR (Illustration Rare Spéciale) hors impression ────────
-  // CAGR SIR OOP S-tier : +20%/an 1 an, +73% sur 3 ans (source: Cards N Packs index 2026)
+  // ── SIR/SAR hors impression (SWSH OOP + SV OOP post rotation 2026) ──
+  // Sources : Umbreon VMAX Alt Art (Evolving Skies) : ~54% CAGR PSA 10 sur 4.75 ans
+  // SWSH alt art non-outlier : 25-45%/an ; SV SIR mascotte OOP : 20-40%/an (projection)
+  // Charizard ex SIR 151 (OOP SV) : $90→$410 en <3 ans ≈ 66%/an (réimpression risk)
   } else if (!isModernSV && isSIR && charTierVal === 'S') {
-    mult1y = 1.20; mult3y = 1.73; mult5y = 2.49
+    mult1y = 1.25; mult3y = 1.95; mult5y = 2.98  // 25%/an — mascotte SIR OOP
     horizon = '1-3 ans'; conviction = 'FORTE'
   } else if (!isModernSV && isSIR && charTierVal === 'A') {
-    mult1y = 1.12; mult3y = 1.45; mult5y = 1.95
+    mult1y = 1.14; mult3y = 1.48; mult5y = 1.93  // 14%/an — A-tier SIR OOP
     horizon = '2-4 ans'; conviction = 'MODÉRÉE'
   } else if (!isModernSV && isSIR) {
-    mult1y = 1.04; mult3y = 1.18; mult5y = 1.44
-    horizon = '3-5 ans'; conviction = 'FAIBLE'
+    mult1y = 1.04; mult3y = 1.12; mult5y = 1.22  // 4%/an — SIR non-mascotte OOP
+    horizon = '4-6 ans'; conviction = 'FAIBLE'
 
   // ── SIR/SAR SV encore en impression ─────────────────────────────
-  // Pression baissière active — supply dépasse demande pendant la période d'impression
+  // Données : en impression active = flat à -5%/an ; attendre OOP avant d'investir
   } else if (isModernSV && isSIR && charTierVal === 'S') {
-    mult1y = 0.97; mult3y = 1.28; mult5y = 1.69
+    mult1y = 0.95; mult3y = 1.28; mult5y = 1.80  // attente OOP ~18 mois puis +25%/an
     horizon = '2-4 ans (attendre fin impression)'; conviction = 'MODÉRÉE'
   } else if (isModernSV && isSIR) {
-    mult1y = 0.82; mult3y = 0.96; mult5y = 1.15
+    mult1y = 0.80; mult3y = 0.92; mult5y = 1.10  // pression impression active
     horizon = '3-5 ans'; conviction = 'FAIBLE'
 
   // ── Ultra Rare (ex, V, GX, VMAX) hors impression ────────────────
+  // Sources : seuls les Charizard/Pikachu Ultra Rare OOP s'apprécient (8-18%/an)
+  // Médiane non-mascotte OOP Ultra Rare : -2% à +5%/an
   } else if (!isModernSV && isUltra && charTierVal === 'S') {
-    mult1y = 1.10; mult3y = 1.38; mult5y = 1.75
-    horizon = '1-3 ans'; conviction = 'MODÉRÉE'
+    mult1y = 1.10; mult3y = 1.33; mult5y = 1.61  // 10%/an — mascotte Ultra OOP
+    horizon = '2-4 ans'; conviction = 'MODÉRÉE'
   } else if (!isModernSV && isUltra) {
-    mult1y = 1.02; mult3y = 1.12; mult5y = 1.30
-    horizon = '3-5 ans'; conviction = 'FAIBLE'
+    mult1y = 1.01; mult3y = 1.04; mult5y = 1.08  // 2%/an — non-mascotte Ultra OOP (flat)
+    horizon = '5+ ans'; conviction = 'FAIBLE'
 
   // ── Ultra Rare SV encore en impression ──────────────────────────
   } else if (isModernSV && isUltra) {
-    mult1y = 0.92; mult3y = 1.00; mult5y = 1.20
-    horizon = '3-5 ans'; conviction = 'FAIBLE'
+    mult1y = 0.88; mult3y = 0.96; mult5y = 1.10  // baisse active, horizon incertain
+    horizon = '4-6 ans'; conviction = 'FAIBLE'
 
   // ── Rare Holo / commune / peu commune ───────────────────────────
-  // Réalité : la majorité perd de la valeur avec le temps (remplacement par nouveaux sets)
+  // Réalité marché : médiane des cartes modernes perd de la valeur (remplacement par nouveaux sets)
   } else if (isHolo && charTierVal === 'S') {
-    mult1y = 1.05; mult3y = 1.18; mult5y = 1.40
-    horizon = '2-4 ans'; conviction = 'FAIBLE'
+    mult1y = 1.04; mult3y = 1.12; mult5y = 1.22  // 4%/an — holo mascotte (flat-ish)
+    horizon = '3-5 ans'; conviction = 'FAIBLE'
   } else {
-    // Bulk et cartes sans potentiel : dépréciées sur le marché secondaire
-    mult1y = 0.85; mult3y = 0.75; mult5y = 0.65
+    mult1y = 0.82; mult3y = 0.68; mult5y = 0.56  // bulk et cartes sans potentiel
     horizon = 'Non recommandé'; conviction = 'FAIBLE'
   }
 
-  // ── ATH recovery bonus (réel : retour vers l'ATH si fondamentaux solides) ──
+  // ── ATH recovery bonus ────────────────────────────────────────────
+  // Documenté : cartes de qualité retournent vers l'ATH sur 2-4 ans si fondamentaux intacts
   if (athDropPct > 40 && (isSIR || isVintage || isScarce)) {
-    mult1y = Math.min(mult1y * 1.12, 1.40)
-    mult3y = Math.min(mult3y * 1.08, 2.50)
+    mult1y = Math.min(mult1y * 1.15, 1.45)
+    mult3y = Math.min(mult3y * 1.10, 2.80)
   } else if (athDropPct > 20 && (isSIR || isVintage)) {
-    mult1y = Math.min(mult1y * 1.06, 1.30)
+    mult1y = Math.min(mult1y * 1.07, 1.35)
   }
 
   // Arrondi réaliste (pas de fausse précision)
@@ -210,10 +215,10 @@ export function buildTargets(
   mult3y = +mult3y.toFixed(2)
   mult5y = +mult5y.toFixed(2)
 
-  // 10 ans : on extrapole le CAGR des 5 ans, mais on plafonne sévèrement
-  // (les projections à 10 ans sont très spéculatives sur les cartes modernes)
+  // 10 ans : extrapolation CAGR 5 ans avec plafond réaliste
+  // Vintage top-tier : jusqu'à 5x (documenté) ; moderne : 3x max (spéculatif)
   const cagr5 = Math.pow(mult5y, 1 / 5) - 1
-  const maxMult10 = isVintage ? 4.0 : isScarce ? 3.0 : 2.5
+  const maxMult10 = isVintage && charTierVal === 'S' ? 5.0 : isVintage ? 3.0 : isScarce ? 3.5 : 2.5
   const mult10 = +Math.min(maxMult10, Math.pow(1 + cagr5, 10)).toFixed(2)
 
   const t1y  = +(price * mult1y).toFixed(2)

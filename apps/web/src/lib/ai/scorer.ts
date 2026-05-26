@@ -113,8 +113,10 @@ function fundamentalScore(inp: ScoringInput): number {
   else if (years > 2)  s += 3
   else if (years < 1)  s -= 8  // set récent : dilution supply encore active
 
-  // Statut OOP renforce la thèse fondamentale (offre cesse d'augmenter)
-  if (inp.isOOP && years > 1) s += 8
+  // OOP = signal clé investissement (offre fixe définitivement)
+  // Rotation Standard printemps 2026 : SV Base, 151, Failles Paradoxe officiellement OOP
+  if (inp.isOOP && years > 2) s += 14       // OOP confirmé long terme
+  else if (inp.isOOP && years > 1) s += 9   // OOP récent, prix en transition
 
   return clamp(s, 0, 100)
 }
@@ -162,12 +164,16 @@ function scarcityScore(inp: ScoringInput): number {
   let s = inp.rarityRank * 10
 
   // PSA 10 population — sweet spot investissable : <1000 à 24 mois (source: PokeInsider 2026)
-  if (inp.populationPsa10 !== 999) {  // 999 = pas de données PSA
-    if (inp.populationPsa10 < 10)        s += 25
-    else if (inp.populationPsa10 < 50)   s += 20
-    else if (inp.populationPsa10 < 200)  s += 14
-    else if (inp.populationPsa10 < 1000) s += 8
-    else if (inp.populationPsa10 > 5000) s -= 12
+  // Seuils PSA calibrés sur données professionnelles (source: PokeInsider/Ravaver 2026)
+  // Investissable : <500 PSA 10 pour modern ; <100 pour vintage
+  // >5000 PSA 10 = supply plafond, upside limité (ex: Umbreon ex Prismatic 4418 PSA 10s)
+  if (inp.populationPsa10 !== 999) {
+    if (inp.populationPsa10 < 50)         s += 28  // ultra-rare grading : sweet spot absolu
+    else if (inp.populationPsa10 < 200)   s += 22  // investissable vintage
+    else if (inp.populationPsa10 < 500)   s += 16  // investissable modern (seuil pro)
+    else if (inp.populationPsa10 < 1000)  s += 9   // acceptable
+    else if (inp.populationPsa10 < 5000)  s += 3   // supply élevée, upside limité
+    else                                   s -= 18  // >5000 PSA 10 = plafond d'offre confirmé
   }
 
   // Primes documentées par catégorie
@@ -274,6 +280,18 @@ function extractSignals(inp: ScoringInput) {
     bearishSignals.push(`Offre PSA 10 abondante (${inp.populationPsa10}) — upside limité`)
   if (!inp.isOOP && inp.setAgeDays < 400)
     bearishSignals.push('Set encore en impression — dilution supply active, pression baissière')
+
+  // Risque réimpression (source: TPC a réimprimé 151 sans prévenir → -40% sur Charizard ex SIR)
+  if (inp.isOOP && inp.setAgeDays < 730 && !inp.isVintage)
+    bearishSignals.push('OOP récent (<2 ans) — risque de réimpression surprise par TPC à surveiller')
+
+  // Fenêtre pré-OOP : cartes SV 12-20 mois = zone d'accumulation avant fin impression
+  if (!inp.isOOP && inp.setAgeDays >= 365 && inp.setAgeDays <= 600 && inp.rarityRank >= 8)
+    bullishSignals.push('Fenêtre pré-OOP : set approchant la fin d\'impression — zone d\'accumulation historique')
+
+  // Supply plafond PSA (Umbreon ex Prismatic : 4418 PSA 10 = upside plafonné)
+  if (inp.populationPsa10 !== 999 && inp.populationPsa10 > 3000 && inp.rarityRank >= 8)
+    bearishSignals.push(`Pop PSA 10 élevée (${inp.populationPsa10}) — supply abondante, upside structurellement limité`)
 
   return { bullishSignals, bearishSignals }
 }
