@@ -240,7 +240,10 @@ export async function GET(req: NextRequest) {
   const recentItems = allItems.filter(item => item.publishedAt >= cutoff)
 
   if (recentItems.length === 0) {
-    return NextResponse.json({ ok: true, created: 0, message: 'No recent articles found' })
+    return NextResponse.json({
+      ok: true, created: 0, message: 'No recent articles found',
+      debug: { rssCount: rssItems.length, redditCount: redditItems.length, totalCount: allItems.length, cutoff: cutoff.toISOString() }
+    })
   }
 
   // 3. Deduplicate against DB
